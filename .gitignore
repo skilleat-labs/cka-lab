@@ -1,5 +1,5 @@
 # 수강생 작업 디렉토리 — 각자 로컬에서만 사용
-work/
+work/*
 !work/.gitkeep
 
 # 클러스터 접속 정보 — 절대 커밋 금지
@@ -18,3 +18,7 @@ etcd-backup*
 
 # OS
 .DS_Store
+
+# 미완성 실습 세트 (exam-start.sh / verify.sh 없음) — 수강생 배포 제외
+07-ingress-gateway/
+10-helm-kustomize/
