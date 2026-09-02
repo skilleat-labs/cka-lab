@@ -38,6 +38,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | 폴더 | 주제 | 핵심 |
 |------|------|------|
 | `00-session-check` | 1세션 점검 | kubectl run / label / create deployment / scale / expose |
+| `01-session2-exam` | 2세션 시험 | 네임스페이스 지정 / NodePort / ConfigMap / Secret |
 | `02-cluster-setup` | 클러스터 구축 | kubeadm join, crictl |
 | `03-workloads` | 워크로드 | Deployment, ConfigMap, CronJob, DaemonSet |
 | `04-scheduling` | 스케줄링 | Requests/Limits, Affinity, Taint/Toleration |
