@@ -194,56 +194,51 @@ echo ""
 sep
 
 # ════════════════════════════════════════════════════════════════
-# E3: Secret — 특정 키만 선택 주입
+# E3: Deployment 스케일 · 롤링 업데이트 · 롤백
 # ════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}${GREEN}[E3] Secret 생성 + 특정 키만 주입${RESET}"
+echo -e "\n${BOLD}${GREEN}[E3] Deployment 스케일 · 롤링 업데이트 · 롤백${RESET}"
 
 check \
-  "db-secret Secret 이 app 네임스페이스에 존재한다" \
-  "kubectl get secret db-secret -n app"
+  "frontend Deployment 가 app 네임스페이스에 존재한다" \
+  "kubectl get deployment frontend -n app"
 
 check_output \
-  "db-secret 타입이 Opaque 이다 (generic)" \
-  "kubectl get secret db-secret -n app -o jsonpath='{.type}'" \
-  "^Opaque$"
+  "frontend replicas 가 4 이다 (kubectl scale)" \
+  "kubectl get deployment frontend -n app -o jsonpath='{.spec.replicas}'" \
+  "^4$"
 
 check_output \
-  "db-secret 의 DB_USER 가 admin 이다 (base64 디코딩 검증)" \
-  "kubectl get secret db-secret -n app -o jsonpath='{.data.DB_USER}' 2>/dev/null | base64 -d" \
-  "^admin$"
+  "frontend 파드 4개가 모두 Ready 이다" \
+  "kubectl get deployment frontend -n app -o jsonpath='{.status.readyReplicas}'" \
+  "^4$"
 
 check_output \
-  "db-secret 의 DB_PASSWORD 가 supersecret 이다 (base64 디코딩 검증)" \
-  "kubectl get secret db-secret -n app -o jsonpath='{.data.DB_PASSWORD}' 2>/dev/null | base64 -d" \
-  "^supersecret$"
-
-check \
-  "secret-pod Pod 가 app 네임스페이스에 존재한다" \
-  "kubectl get pod secret-pod -n app"
+  "롤백 후 최종 이미지가 nginx:1.24 이다" \
+  "kubectl get deployment frontend -n app -o jsonpath='{.spec.template.spec.containers[0].image}'" \
+  "^nginx:1\.24$"
 
 check_output \
-  "secret-pod 가 Running 상태이다" \
-  "kubectl get pod secret-pod -n app -o jsonpath='{.status.phase}'" \
-  "^Running$"
+  "nginx:1.25 로 업데이트한 이력이 남아 있다 (이전 ReplicaSet 존재)" \
+  "kubectl get rs -n app -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].image}{\"\\n\"}{end}'" \
+  "^nginx:1\.25$"
 
-wait_ready secret-pod app || true
-
-check_output \
-  "secret-pod 안에서 DB_PASSWORD=supersecret 이 보인다 (실제 exec 검증)" \
-  "kubectl exec secret-pod -n app -- env 2>/dev/null" \
-  "^DB_PASSWORD=supersecret$"
-
-# DB_USER 는 주입되면 안 됨 — envFrom 으로 전체 주입했는지 판정
+REV=$(kubectl get deployment frontend -n app -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null || echo "0")
 TOTAL=$((TOTAL+1))
-SP_ENV=$(kubectl exec secret-pod -n app -- env 2>/dev/null || echo "")
-if echo "$SP_ENV" | grep -q "^DB_USER="; then
-  echo -e "  ${RED}[FAIL]${RESET} DB_PASSWORD 만 주입되고 DB_USER 는 주입되지 않았다  ${ORANGE}(DB_USER 가 보임 — envFrom 전체 주입은 오답, env + secretKeyRef 사용)${RESET}"
-  FAIL=$((FAIL+1))
-elif echo "$SP_ENV" | grep -q "^DB_PASSWORD="; then
-  echo -e "  ${GREEN}[PASS]${RESET} DB_PASSWORD 만 주입되고 DB_USER 는 주입되지 않았다 (필요한 키만 선택 주입)"
+if [[ -n "$REV" && "$REV" =~ ^[0-9]+$ && "$REV" -ge 3 ]]; then
+  echo -e "  ${GREEN}[PASS]${RESET} 생성 → 업데이트 → 롤백을 모두 거쳤다 (revision ${REV})"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}[FAIL]${RESET} DB_PASSWORD 만 주입되고 DB_USER 는 주입되지 않았다  ${ORANGE}(파드에서 환경변수를 읽을 수 없음)${RESET}"
+  echo -e "  ${RED}[FAIL]${RESET} 생성 → 업데이트 → 롤백을 모두 거쳤다  ${ORANGE}(현재 revision: ${REV:-0} — 3 이상이어야 함)${RESET}"
+  FAIL=$((FAIL+1))
+fi
+
+RUNNING_IMG=$(kubectl get pods -n app -l app=frontend -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}' 2>/dev/null | sort -u | tr '\n' ' ' | sed 's/ *$//')
+TOTAL=$((TOTAL+1))
+if [[ "$RUNNING_IMG" == "nginx:1.24" ]]; then
+  echo -e "  ${GREEN}[PASS]${RESET} 현재 실행 중인 파드가 모두 nginx:1.24 이다"
+  PASS=$((PASS+1))
+else
+  echo -e "  ${RED}[FAIL]${RESET} 현재 실행 중인 파드가 모두 nginx:1.24 이다  ${ORANGE}(실제: '${RUNNING_IMG:-없음}')${RESET}"
   FAIL=$((FAIL+1))
 fi
 
@@ -256,7 +251,7 @@ echo -e "  ${BOLD}채점 결과:  PASS ${PASS} / TOTAL ${TOTAL}${RESET}"
 echo ""
 
 if [[ $FAIL -eq 0 ]]; then
-  echo -e "  ${GREEN}${BOLD}전 항목 통과! 네임스페이스·ConfigMap·Secret 모두 정확합니다.${RESET}"
+  echo -e "  ${GREEN}${BOLD}전 항목 통과! 네임스페이스·ConfigMap·롤아웃 모두 정확합니다.${RESET}"
 else
   echo -e "  ${RED}${BOLD}실패 항목: ${FAIL}개${RESET}"
   echo -e "  위 [FAIL] 항목을 수정하고 다시 ${CYAN}bash verify.sh${RESET} 를 실행하세요."

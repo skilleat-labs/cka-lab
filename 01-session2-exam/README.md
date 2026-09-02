@@ -1,6 +1,6 @@
 # 2세션 시험 — 네임스페이스 · ConfigMap · Secret
 
-> 출제 범위: 네임스페이스 지정 · Service NodePort · ConfigMap · Secret
+> 출제 범위: 네임스페이스 지정 · Service NodePort · ConfigMap · Deployment 롤아웃/롤백
 > 1세션 개념(Pod / Deployment / Service)을 네임스페이스 위에서 다시 다루므로 복습을 겸한다.
 > 문제 형식은 실제 CKA 기출 스타일(`In namespace <ns>, create ...`)을 따랐다.
 
@@ -8,7 +8,7 @@
 
 ```bash
 bash exam-start.sh      # 시험 시작 (환경 초기화 + 문제 출제) — 권장 25분
-bash verify.sh          # 채점 (31항목)
+bash verify.sh          # 채점 (30항목)
 
 bash exam-start.sh --hints    # 정답 힌트 포함 — 시험 중에는 사용 금지
 ```
@@ -51,21 +51,24 @@ bash exam-start.sh --hints    # 정답 힌트 포함 — 시험 중에는 사용
 
 > 볼륨으로 마운트하면 **키 이름이 파일명, 값이 파일 내용**이 된다. env 방식과 volume 방식을 둘 다 시켜서 차이를 이해했는지 본다.
 
-## E3. Secret 을 만들고 필요한 키만 골라 주입
+## E3. Deployment 스케일 · 롤링 업데이트 · 롤백
 
 | 항목 | 값 |
 |------|-----|
 | namespace | `app` (E2 에서 만든 것 재사용) |
-| Secret | `db-secret` / generic / `DB_USER=admin` / `DB_PASSWORD=supersecret` |
-| Pod | `secret-pod` / `busybox:1.36` / `sleep 3600` |
-| 주입 | **`DB_PASSWORD` 만** 환경변수로 |
+| Deployment | `frontend` / 최초 `nginx:1.24` / replicas 2 |
+| 수행 순서 | (a) replicas 4 로 스케일 → (b) `nginx:1.25` 로 롤링 업데이트 → (c) 이전 리비전으로 롤백 |
+| 최종 상태 | 이미지 `nginx:1.24` / replicas 4 / 전부 Ready |
 
-**채점 포인트 (8항목)**
-- Secret 타입 Opaque, 값이 base64 디코딩해서 일치하는지
-- 파드 안에서 `DB_PASSWORD=supersecret` 이 보이는지 (`kubectl exec` 실검증)
-- **`DB_USER` 가 주입되지 않았는지** — `envFrom` 으로 통째로 넣으면 오답
+**채점 포인트 (7항목)**
+- replicas 4, 4개 모두 Ready
+- 롤백 후 최종 이미지가 `nginx:1.24`
+- **`nginx:1.25` 를 쓰는 ReplicaSet 이 남아 있는지** — 롤링 업데이트를 실제로 거쳤다는 증거
+- **revision 이 3 이상인지** — 생성 → 업데이트 → 롤백 세 단계를 모두 밟았는지
+- 현재 실행 중인 파드가 전부 `nginx:1.24` 인지 (스펙이 아니라 구동 상태 확인)
 
-> "필요한 키만 주입"이 기본이다. `envFrom`(전체)과 `env` + `secretKeyRef`(선택)의 차이를 아는지 가르는 문제다.
+> 처음부터 `nginx:1.24` 로 만들고 스케일만 하면 최종 상태는 같아 보이지만 revision 과 ReplicaSet 이력이 남지 않아 오답 처리된다.
+> 롤백은 이전 ReplicaSet 을 다시 살리는 동작이다. 업데이트 후에도 예전 RS 가 replicas 0 으로 남아 있고, 그게 롤백의 재료다.
 
 ---
 
@@ -85,9 +88,12 @@ kubectl create configmap app-config -n app \
 # config-pod 는 envFrom + volume 둘 다 필요 → YAML (exam-start.sh --hints 에 전문 있음)
 
 # E3
-kubectl create secret generic db-secret -n app \
-  --from-literal=DB_USER=admin --from-literal=DB_PASSWORD=supersecret
-# secret-pod 는 env + secretKeyRef 로 DB_PASSWORD 만 주입
+kubectl create deployment frontend --image=nginx:1.24 --replicas=2 -n app
+kubectl scale deployment frontend --replicas=4 -n app
+kubectl set image deployment/frontend nginx=nginx:1.25 -n app
+kubectl rollout status deployment/frontend -n app
+kubectl rollout undo deployment/frontend -n app
+kubectl rollout status deployment/frontend -n app
 ```
 
 ## 채점 총점
@@ -96,8 +102,8 @@ kubectl create secret generic db-secret -n app \
 |------|--------|
 | E1 네임스페이스 + NodePort | 13 |
 | E2 ConfigMap (env + volume) | 10 |
-| E3 Secret (선택 주입) | 8 |
-| **합계** | **31** |
+| E3 Deployment 롤아웃·롤백 | 7 |
+| **합계** | **30** |
 
 `verify.sh` 는 실패 개수를 종료 코드로 반환한다.
 

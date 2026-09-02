@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 2세션 시험 — 네임스페이스 지정 · NodePort · ConfigMap · Secret
+# CKA 2세션 시험 — 네임스페이스 지정 · NodePort · ConfigMap · 롤아웃/롤백
 # 사용법: bash exam-start.sh [--hints]
 set -euo pipefail
 
@@ -17,7 +17,7 @@ sep() { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━�
 echo ""
 sep
 echo -e "  ${BOLD}CKA 2세션 시험${RESET}"
-echo -e "  네임스페이스 지정 · Service NodePort · ConfigMap · Secret"
+echo -e "  네임스페이스 지정 · Service NodePort · ConfigMap · Deployment 롤아웃/롤백"
 echo -e "  ${CYAN}권장 제한 시간: 25분${RESET}"
 sep
 
@@ -142,56 +142,53 @@ fi
 sep
 
 # ════════════════════════════════════════════════════════════════
-# E3: Secret — 특정 키만 선택 주입
+# E3: Deployment 스케일 · 롤링 업데이트 · 롤백
 # ════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}${GREEN}[E3] Secret 을 만들고 필요한 키만 골라 주입${RESET}\n"
+echo -e "\n${BOLD}${GREEN}[E3] Deployment 스케일 · 롤링 업데이트 · 롤백${RESET}\n"
 echo -e "${BOLD}Task:${RESET}"
-echo -e "  In the ${BOLD}app${RESET} namespace, create a generic Secret named ${BOLD}db-secret${RESET}"
-echo -e "  with keys ${BOLD}DB_USER=admin${RESET} and ${BOLD}DB_PASSWORD=supersecret${RESET}."
-echo -e "  Then create a Pod named ${BOLD}secret-pod${RESET} (image ${BOLD}busybox:1.36${RESET}, command ${BOLD}sleep 3600${RESET})"
-echo -e "  that exposes ${BOLD}only the DB_PASSWORD key${RESET} as an environment variable named ${BOLD}DB_PASSWORD${RESET}."
-echo -e "  ${ORANGE}DB_USER must NOT be injected into the Pod.${RESET}"
+echo -e "  In the ${BOLD}app${RESET} namespace, create a Deployment named ${BOLD}frontend${RESET}"
+echo -e "  using image ${BOLD}nginx:1.24${RESET} with ${BOLD}2${RESET} replicas."
+echo -e "  Then perform the following operations in order:"
+echo -e "    (a) scale the Deployment to ${BOLD}4${RESET} replicas"
+echo -e "    (b) perform a rolling update to image ${BOLD}nginx:1.25${RESET} and wait until it completes"
+echo -e "    (c) ${BOLD}roll back${RESET} to the previous revision"
+echo -e "  After the rollback, the Deployment must be running ${BOLD}nginx:1.24${RESET} with ${BOLD}4${RESET} replicas."
 echo ""
 echo -e "${BOLD}조건 정리:${RESET}"
 echo -e "  · namespace: app            (E2 에서 만든 것 재사용)"
-echo -e "  · Secret: db-secret / generic / DB_USER=admin / DB_PASSWORD=supersecret"
-echo -e "  · Pod: secret-pod / busybox:1.36 / sleep 3600"
-echo -e "  · 주입: ${BOLD}DB_PASSWORD 만${RESET} 환경변수로 (envFrom 전체 주입은 오답)"
+echo -e "  · Deployment: frontend / 최초 nginx:1.24 / replicas 2"
+echo -e "  · (a) replicas 4 로 스케일  →  (b) nginx:1.25 로 롤링 업데이트  →  (c) 롤백"
+echo -e "  · 최종 상태: 이미지 ${BOLD}nginx:1.24${RESET} / replicas ${BOLD}4${RESET} / 전부 Ready"
+echo -e "  · ${ORANGE}세 단계를 실제로 거쳐야 한다 — 처음부터 1.24 로 두고 스케일만 하면 오답${RESET}"
 echo ""
 echo -e "${BOLD}검증 명령:${RESET}"
-echo -e "  kubectl get secret db-secret -n app -o jsonpath='{.data.DB_PASSWORD}' | base64 -d"
-echo -e "  kubectl exec secret-pod -n app -- env | grep DB_"
-echo -e "  # DB_PASSWORD=supersecret 만 나와야 하고 DB_USER 는 없어야 한다"
+echo -e "  kubectl get deployment frontend -n app"
+echo -e "  kubectl rollout history deployment/frontend -n app   # 리비전 3개 이상"
+echo -e "  kubectl get rs -n app                                # 이전 RS 가 남아 있어야 함"
 
 if $HINTS; then
   echo ""
   echo -e "${ORANGE}[HINT E3]${RESET}"
-  echo -e "  kubectl create secret generic db-secret -n app \\"
-  echo -e "    --from-literal=DB_USER=admin --from-literal=DB_PASSWORD=supersecret"
+  echo -e "  # 생성"
+  echo -e "  kubectl create deployment frontend --image=nginx:1.24 --replicas=2 -n app"
   echo ""
-  echo -e "  # 특정 키만 주입 → envFrom 이 아니라 env + secretKeyRef"
-  echo -e "  cat <<'EOF' | kubectl apply -f -"
-  echo -e "  apiVersion: v1"
-  echo -e "  kind: Pod"
-  echo -e "  metadata:"
-  echo -e "    name: secret-pod"
-  echo -e "    namespace: app"
-  echo -e "  spec:"
-  echo -e "    containers:"
-  echo -e "    - name: secret-pod"
-  echo -e "      image: busybox:1.36"
-  echo -e "      command: [\"sleep\", \"3600\"]"
-  echo -e "      env:"
-  echo -e "      - name: DB_PASSWORD"
-  echo -e "        valueFrom:"
-  echo -e "          secretKeyRef:"
-  echo -e "            name: db-secret"
-  echo -e "            key: DB_PASSWORD"
-  echo -e "  EOF"
+  echo -e "  # (a) 스케일"
+  echo -e "  kubectl scale deployment frontend --replicas=4 -n app"
   echo ""
-  echo -e "  ${BOLD}포인트:${RESET} create secret 은 값을 자동으로 base64 인코딩한다."
-  echo -e "  직접 YAML 의 data 필드에 쓸 때는 본인이 인코딩해야 하고, stringData 를 쓰면 자동 인코딩된다."
-  echo -e "  base64 는 암호화가 아니다 — 누구나 디코딩할 수 있다."
+  echo -e "  # (b) 롤링 업데이트 — 컨테이너 이름은 describe 로 확인 (create deployment 는 이미지명과 동일)"
+  echo -e "  kubectl set image deployment/frontend nginx=nginx:1.25 -n app"
+  echo -e "  kubectl rollout status deployment/frontend -n app"
+  echo ""
+  echo -e "  # (c) 롤백"
+  echo -e "  kubectl rollout undo deployment/frontend -n app"
+  echo -e "  kubectl rollout status deployment/frontend -n app"
+  echo ""
+  echo -e "  # 이력 확인 / 특정 리비전으로 롤백"
+  echo -e "  kubectl rollout history deployment/frontend -n app"
+  echo -e "  kubectl rollout undo deployment/frontend --to-revision=1 -n app"
+  echo ""
+  echo -e "  ${BOLD}포인트:${RESET} 롤백은 이전 ReplicaSet 을 다시 살리는 것이다."
+  echo -e "  그래서 업데이트 후에도 예전 RS 가 replicas 0 인 채로 남아 있고, 이게 롤백의 재료다."
 fi
 
 sep
