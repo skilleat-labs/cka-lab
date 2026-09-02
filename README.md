@@ -35,6 +35,8 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 
 ## 실습 목록
 
+> 각 폴더에 어떤 문제가 들어 있는지 자세한 내용은 [PROBLEMS.md](PROBLEMS.md) 참고.
+
 | 폴더 | 주제 | 핵심 |
 |------|------|------|
 | `00-session-check` | 1세션 점검 | kubectl run / label / create deployment / scale / expose |
