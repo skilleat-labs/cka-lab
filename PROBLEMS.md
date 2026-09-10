@@ -10,6 +10,7 @@
 |------|------|--------|----------|------|
 | `00-session-check` | 세션 점검 | 3 | 24 | Pod · Deployment · Service(ClusterIP) |
 | `01-session2-exam` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
+| `02-session3-exam` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
 | `02-cluster-setup` | 강의 실습 | 2 | 5 | kubeadm join · crictl |
 | `03-workloads` | 강의 실습 | 4 | 20 | Deployment · ConfigMap · CronJob · DaemonSet |
 | `04-scheduling` | 강의 실습 | 4 | 21 | Requests/Limits · Affinity · Taint · HPA |
@@ -51,6 +52,22 @@
 | E3 | `frontend` Deployment 생성 → replicas 4 스케일 → nginx:1.25 롤링 업데이트 → 이전 리비전으로 롤백 |
 
 **특징**: `default` 네임스페이스에 잘못 만들었는지 검사한다. ConfigMap 은 `kubectl exec` 로 파드 내부 환경변수·파일을 실제 확인한다. E3 는 revision 과 ReplicaSet 이력으로 세 단계를 실제로 거쳤는지 판정한다.
+
+---
+
+## 02-session3-exam — 3세션 시험 (32항목)
+
+환경(네임스페이스 · StorageClass · PV · Gateway API 컨트롤러)은 `exam-start.sh` 가 전부 준비한다.
+
+| 문제 | 내용 |
+|------|------|
+| Q1 | `shop` 네임스페이스에 `shop-web` Deployment (nginx:1.24 / replicas 2 / port 80) + `shop-svc` ClusterIP 연결 |
+| Q2 | 주어진 StorageClass `exam-storage` 로 `shop-data` PVC(1Gi/RWO) 생성 후 Deployment 에 `/data` 마운트 |
+| Q3 | Gateway `shop-gw` + HTTPRoute `shop-route` 작성 후 nodePort **30081** 로 외부 노출 |
+
+**특징**: hostPath 기반 StorageClass 와 NGINX Gateway Fabric(NodePort 배포판)을 스크립트가 자동 설치한다.
+Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 20항목으로 채점된다.
+모든 리소스가 `shop` 네임스페이스에 격리되어 다른 세트의 답안을 지우지 않는다.
 
 ---
 
