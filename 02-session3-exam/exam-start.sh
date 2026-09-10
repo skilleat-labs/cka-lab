@@ -160,6 +160,62 @@ else
   fi
 fi
 
+# ── 데이터 플레인을 DaemonSet 으로 전환 ────────────────────────────
+# 기본값은 Deployment(파드 1개)라 externalTrafficPolicy: Local 과 맞물려
+# 그 파드가 뜬 노드로만 접속된다. 모든 노드에서 접속되도록 DaemonSet 으로 바꾸고
+# control-plane taint 를 허용해 컨트롤플레인에도 뜨게 한다.
+if [[ "$GW_MODE" == "full" ]]; then
+  echo -e "${CYAN}  게이트웨이 데이터 플레인을 DaemonSet 으로 전환 중...${RESET}"
+
+  DS_PATCH='{"spec":{"kubernetes":{"deployment":null,"daemonSet":{"patches":[{"type":"StrategicMerge","value":{"spec":{"template":{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}}]}}}}'
+
+  GC_PARAM_NAME=$(kubectl get gatewayclass nginx -o jsonpath='{.spec.parametersRef.name}' 2>/dev/null || echo "")
+  GC_PARAM_NS=$(kubectl get gatewayclass nginx -o jsonpath='{.spec.parametersRef.namespace}' 2>/dev/null || echo "")
+
+  DS_OK=false
+  if [[ -n "$GC_PARAM_NAME" && -n "$GC_PARAM_NS" ]]; then
+    # GatewayClass 에 이미 붙어 있는 NginxProxy 를 수정
+    if kubectl patch nginxproxy "$GC_PARAM_NAME" -n "$GC_PARAM_NS" \
+         --type=merge -p "$DS_PATCH" &>/dev/null; then
+      DS_OK=true
+    fi
+  else
+    # 없으면 새로 만들고 GatewayClass 에 연결
+    if kubectl apply -f - &>/dev/null <<'PROXYEOF'
+apiVersion: gateway.nginx.org/v1alpha2
+kind: NginxProxy
+metadata:
+  name: exam-proxy-config
+  namespace: nginx-gateway
+spec:
+  kubernetes:
+    daemonSet:
+      patches:
+      - type: StrategicMerge
+        value:
+          spec:
+            template:
+              spec:
+                tolerations:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+                  effect: NoSchedule
+PROXYEOF
+    then
+      kubectl patch gatewayclass nginx --type=merge \
+        -p '{"spec":{"parametersRef":{"group":"gateway.nginx.org","kind":"NginxProxy","name":"exam-proxy-config","namespace":"nginx-gateway"}}}' &>/dev/null \
+        && DS_OK=true
+    fi
+  fi
+
+  if $DS_OK; then
+    echo -e "${GREEN}       완료 — Gateway 를 만들면 모든 노드에 게이트웨이 파드가 뜹니다.${RESET}"
+  else
+    echo -e "${ORANGE}       DaemonSet 전환 실패 (기본 Deployment 로 동작).${RESET}"
+    echo -e "${ORANGE}       파드가 뜬 노드의 IP 로만 접속될 수 있습니다 — 채점에는 지장 없습니다.${RESET}"
+  fi
+fi
+
 echo "$GW_MODE" > "$MODE_FILE"
 
 case "$GW_MODE" in
@@ -284,8 +340,8 @@ else
   echo -e "  · 외부 노출: Gateway 가 만든 Service 를 ${BOLD}NodePort 30081${RESET} 로 변경"
   echo -e "  · ${ORANGE}힌트: Gateway 를 만들면 컨트롤러가 shop 네임스페이스에 Service 를 자동 생성한다.${RESET}"
   echo -e "    ${ORANGE}kubectl get svc -n shop 으로 찾아서 nodePort 를 30081 로 바꾸면 된다.${RESET}"
-  echo -e "  · ${ORANGE}접속이 안 되면 externalTrafficPolicy 를 확인할 것 — Local 이면 게이트웨이${RESET}"
-  echo -e "    ${ORANGE}파드가 떠 있는 노드의 IP 로만 응답한다 (kubectl get pods -n shop -o wide).${RESET}"
+  echo -e "  · ${ORANGE}게이트웨이 파드는 DaemonSet 으로 모든 노드에 뜨도록 환경이 설정되어 있다.${RESET}"
+  echo -e "    ${ORANGE}따라서 아무 노드 IP 로나 접속된다 (kubectl get pods -n shop -o wide 로 확인).${RESET}"
   echo ""
   echo -e "${BOLD}검증 명령:${RESET}"
   echo -e "  kubectl get gateway,httproute -n shop"

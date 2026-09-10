@@ -21,6 +21,7 @@ bash exam-start.sh --skip-gateway   # Gateway API 설치 없이 Q1·Q2만 준비
 | StorageClass | `exam-storage` (hostPath 기반, `no-provisioner`, Immediate 바인딩) |
 | PersistentVolume | `exam-pv-1~3` — 각 2Gi, hostPath `/mnt/exam-data-N`, `DirectoryOrCreate` |
 | Gateway API | Gateway API CRD + NGINX Gateway Fabric v2.7.0 (NodePort 배포판), GatewayClass `nginx` |
+| 게이트웨이 데이터 플레인 | **DaemonSet** 으로 전환 (control-plane taint 허용) — 모든 노드에서 접속 가능 |
 
 **전제 조건**
 - kubeadm 클러스터에서 `kubectl get nodes` 가 Ready
@@ -80,7 +81,11 @@ bash exam-start.sh --skip-gateway   # Gateway API 설치 없이 Q1·Q2만 준비
 >
 > Service 이름은 `<게이트웨이이름>-nginx` 형태로 만들어진다 (이 문제에서는 `shop-gw-nginx`). 이미 NodePort 타입이지만 포트가 랜덤 배정되므로 30081 로 바꾸면 된다. 채점 스크립트는 이름이 아니라 **nodePort 값 30081** 로 찾는다.
 >
-> **접속이 안 될 때**: 이 Service 는 `externalTrafficPolicy: Local` 인 경우가 있다. 그러면 게이트웨이 파드가 떠 있는 노드의 IP 로만 응답하고, 다른 노드 IP 로는 연결되지 않는다. `kubectl get pods -n shop -o wide` 로 파드가 있는 노드를 확인해서 그 IP 로 접속하거나, `externalTrafficPolicy` 를 `Cluster` 로 바꾼다. 채점 스크립트는 모든 노드 IP 를 순회하므로 어느 쪽이든 통과한다.
+> **게이트웨이 파드는 모든 노드에 뜬다.** NGF 의 기본값은 Deployment(파드 1개)인데, 이 경우 Service 의 `externalTrafficPolicy: Local` 과 맞물려 파드가 떠 있는 노드의 IP 로만 접속된다. 그래서 `exam-start.sh` 가 GatewayClass 에 붙은 `NginxProxy` 를 수정해 **DaemonSet + control-plane toleration** 으로 바꿔둔다. 덕분에 어느 노드 IP 로 접속하든 응답한다.
+>
+> 확인: `kubectl get pods -n shop -o wide` — Gateway 를 만들면 노드 수만큼 게이트웨이 파드가 뜬다.
+>
+> 만약 DaemonSet 전환이 실패했다는 메시지가 나왔다면 파드가 1개만 뜬다. 그때는 파드가 있는 노드 IP 로 접속하거나 `externalTrafficPolicy` 를 `Cluster` 로 바꾸면 된다. 채점 스크립트는 모든 노드 IP 를 순회하므로 어느 쪽이든 통과한다.
 
 ---
 
