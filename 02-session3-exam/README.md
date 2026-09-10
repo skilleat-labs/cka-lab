@@ -2,6 +2,8 @@
 
 > 출제 범위: Deployment + Service 연결 · 주어진 StorageClass 로 PVC 생성 후 마운트 · Gateway API 외부 노출
 > 모든 환경은 `exam-start.sh` 가 자동으로 준비한다. 수강생은 문제만 풀면 된다.
+>
+> **문제만 보려면 [QUESTIONS.md](QUESTIONS.md) 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
 
 ## 사용법
 
