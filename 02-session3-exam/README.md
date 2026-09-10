@@ -78,7 +78,9 @@ bash exam-start.sh --skip-gateway   # Gateway API 설치 없이 Q1·Q2만 준비
 
 > VirtualBox 환경에는 LoadBalancer 가 없으므로 NodePort 로 노출한다. NGINX Gateway Fabric 은 NodePort 배포판으로 설치되어 있고, Gateway 를 만들면 컨트롤러가 `shop` 네임스페이스에 Service 를 자동 생성한다. 그 Service 의 nodePort 를 30081 로 바꾸면 된다.
 >
-> Service 이름은 환경에 따라 다를 수 있으므로 `kubectl get svc -n shop` 으로 찾는다. 채점 스크립트도 이름이 아니라 **nodePort 값 30081** 로 찾는다.
+> Service 이름은 `<게이트웨이이름>-nginx` 형태로 만들어진다 (이 문제에서는 `shop-gw-nginx`). 이미 NodePort 타입이지만 포트가 랜덤 배정되므로 30081 로 바꾸면 된다. 채점 스크립트는 이름이 아니라 **nodePort 값 30081** 로 찾는다.
+>
+> **접속이 안 될 때**: 이 Service 는 `externalTrafficPolicy: Local` 인 경우가 있다. 그러면 게이트웨이 파드가 떠 있는 노드의 IP 로만 응답하고, 다른 노드 IP 로는 연결되지 않는다. `kubectl get pods -n shop -o wide` 로 파드가 있는 노드를 확인해서 그 IP 로 접속하거나, `externalTrafficPolicy` 를 `Cluster` 로 바꾼다. 채점 스크립트는 모든 노드 IP 를 순회하므로 어느 쪽이든 통과한다.
 
 ---
 

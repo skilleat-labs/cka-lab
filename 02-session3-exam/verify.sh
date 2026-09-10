@@ -255,24 +255,32 @@ else
       FAIL=$((FAIL+1))
     fi
 
-    # 실제 외부 접속 검증
+    # 실제 외부 접속 검증 — externalTrafficPolicy: Local 인 경우 게이트웨이 파드가 있는
+    # 노드로만 응답하므로 모든 노드 IP 를 순회한다.
     TOTAL=$((TOTAL+1))
-    NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | awk '{print $1}')
-    GW_RESP=""
-    if [[ -n "$NODE_IP" ]]; then
+    NODE_IPS=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null)
+    GW_RESP=""; HIT_IP=""
+    for ip in $NODE_IPS; do
+      [[ -z "$ip" ]] && continue
       if command -v curl &>/dev/null; then
-        GW_RESP=$(curl -s --max-time 8 "http://${NODE_IP}:30081" 2>/dev/null || echo "")
+        GW_RESP=$(curl -s --max-time 5 "http://${ip}:30081" 2>/dev/null || echo "")
       else
-        GW_RESP=$(wget -qO- --timeout=8 "http://${NODE_IP}:30081" 2>/dev/null || echo "")
+        GW_RESP=$(wget -qO- --timeout=5 "http://${ip}:30081" 2>/dev/null || echo "")
       fi
-    fi
-    if echo "$GW_RESP" | grep -qi "nginx"; then
-      echo -e "  ${GREEN}[PASS]${RESET} 외부에서 http://${NODE_IP}:30081 접속 성공 (실제 트래픽 검증)"
+      if echo "$GW_RESP" | grep -qi "nginx"; then HIT_IP="$ip"; break; fi
+    done
+    if [[ -n "$HIT_IP" ]]; then
+      echo -e "  ${GREEN}[PASS]${RESET} 외부에서 http://${HIT_IP}:30081 접속 성공 (실제 트래픽 검증)"
       PASS=$((PASS+1))
+      ETP=$(kubectl get svc -n shop -o jsonpath='{range .items[*]}{.spec.externalTrafficPolicy}{"\n"}{end}' 2>/dev/null | grep -c "Local" || true)
+      if [[ "${ETP:-0}" -gt 0 ]]; then
+        echo -e "         ${CYAN}참고: externalTrafficPolicy=Local 이라 게이트웨이 파드가 있는 노드로만 응답합니다.${RESET}"
+      fi
     else
-      echo -e "  ${RED}[FAIL]${RESET} 외부에서 http://${NODE_IP:-NodeIP}:30081 접속 실패"
-      echo -e "         ${ORANGE}→ kubectl describe gateway shop-gw -n shop 로 Programmed 상태 확인${RESET}"
-      echo -e "         ${ORANGE}→ kubectl get pods -n shop 로 게이트웨이 파드 기동 확인${RESET}"
+      echo -e "  ${RED}[FAIL]${RESET} 외부에서 http://<NodeIP>:30081 접속 실패 (모든 노드 시도함)"
+      echo -e "         ${ORANGE}→ kubectl get svc -n shop  (nodePort 가 30081 인지)${RESET}"
+      echo -e "         ${ORANGE}→ kubectl describe gateway shop-gw -n shop  (Programmed 상태)${RESET}"
+      echo -e "         ${ORANGE}→ externalTrafficPolicy 가 Local 이면 파드가 있는 노드로만 접속됩니다${RESET}"
       FAIL=$((FAIL+1))
     fi
   else
