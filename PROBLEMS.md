@@ -12,6 +12,7 @@
 | `00-session-check` | 세션 점검 | 3 | 24 | Pod · Deployment · Service(ClusterIP) |
 | `01-session2-exam` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
 | `02-session3-exam` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
+| `03-session4-exam` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
 | `02-cluster-setup` | 강의 실습 | 2 | 5 | kubeadm join · crictl |
 | `03-workloads` | 강의 실습 | 4 | 20 | Deployment · ConfigMap · CronJob · DaemonSet |
 | `04-scheduling` | 강의 실습 | 4 | 21 | Requests/Limits · Affinity · Taint · HPA |
@@ -69,6 +70,20 @@
 **특징**: hostPath 기반 StorageClass 와 NGINX Gateway Fabric(NodePort 배포판)을 스크립트가 자동 설치한다.
 Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 20항목으로 채점된다.
 모든 리소스가 `shop` 네임스페이스에 격리되어 다른 세트의 답안을 지우지 않는다.
+
+---
+
+## 03-session4-exam — 4세션 시험 (33항목)
+
+환경(네임스페이스 · StorageClass · PV · Q2용 Deployment)은 `exam-start.sh` 가 준비한다. 외부 설치가 없어 오프라인에서도 동작한다.
+
+| 문제 | 내용 |
+|------|------|
+| Q1 | `api-storage` 로 PVC `api-data` 생성 후 Deployment `api-server` YAML 에 **처음부터** 볼륨 포함해 생성 (`/var/www/data`) |
+| Q2 | 미리 만들어진 `api-worker` Deployment 에 requests(100m/128Mi) · limits(200m/256Mi) 추가 |
+| Q3 | Pod `health-pod` 에 조건대로 livenessProbe · readinessProbe 작성 |
+
+**특징**: Q1 은 Deployment revision 이 1 인지 확인해 "만든 뒤 수정"을 오답 처리한다. Q2 는 실행 중인 파드에 반영됐는지와 QoS 클래스(Burstable)를 본다. Q3 는 파드가 Ready 이고 재시작 0 인지로 probe 가 실제로 통과 중인지 본다.
 
 ---
 

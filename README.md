@@ -42,6 +42,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | `00-session-check` | 1세션 점검 | kubectl run / label / create deployment / scale / expose |
 | `01-session2-exam` | 2세션 시험 | 네임스페이스 지정 / NodePort / ConfigMap / 롤아웃·롤백 |
 | `02-session3-exam` | 3세션 시험 | Deployment+Service / StorageClass·PVC / Gateway API |
+| `03-session4-exam` | 4세션 시험 | PVC를 Deployment YAML에서 바로 연결 / Requests·Limits / Probe |
 | `02-cluster-setup` | 클러스터 구축 | kubeadm join, crictl |
 | `03-workloads` | 워크로드 | Deployment, ConfigMap, CronJob, DaemonSet |
 | `04-scheduling` | 스케줄링 | Requests/Limits, Affinity, Taint/Toleration |
