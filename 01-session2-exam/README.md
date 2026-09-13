@@ -1,6 +1,6 @@
 # 2세션 시험 — 네임스페이스 · ConfigMap · Secret
 
-> **문제만 보려면 [QUESTIONS.md](QUESTIONS.md) 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
+> **문제만 보려면 `QUESTIONS.txt` 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
 >
 > 출제 범위: 네임스페이스 지정 · Service NodePort · ConfigMap · Deployment 롤아웃/롤백
 > 1세션 개념(Pod / Deployment / Service)을 네임스페이스 위에서 다시 다루므로 복습을 겸한다.

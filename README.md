@@ -32,6 +32,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 - `exam-start.sh` 는 실행할 때마다 이전 실습 리소스를 **정리**합니다. 처음부터 다시 풀고 싶으면 그냥 다시 실행하세요.
 - `verify.sh` 는 실패 개수를 종료 코드로 반환하므로 반복 실행하며 0이 될 때까지 고치면 됩니다.
 - `work/` 는 개인 작업 공간입니다. `.gitignore` 처리되어 커밋되지 않습니다.
+- 문제만 따로 보려면 각 폴더의 `QUESTIONS.txt` 를 엽니다 — `cat QUESTIONS.txt` 또는 `less QUESTIONS.txt`
 
 ## 실습 목록
 

@@ -1,6 +1,6 @@
 # 4세션 시험 — PVC/Deployment YAML · Requests/Limits · Probe
 
-> **문제만 보려면 [QUESTIONS.md](QUESTIONS.md) 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
+> **문제만 보려면 `QUESTIONS.txt` 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
 >
 > 출제 범위: StorageClass 로 PVC 생성 후 Deployment YAML 에서 바로 연결 · Requests/Limits · Liveness/Readiness Probe
 > 모든 환경은 `exam-start.sh` 가 자동으로 준비한다. 외부 설치가 없어 **인터넷 없이도 동작**한다.

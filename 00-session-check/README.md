@@ -1,6 +1,6 @@
 # 1세션 확인 실습 — 명령어로 만들 수 있는가
 
-> **문제만 보려면 [QUESTIONS.md](QUESTIONS.md) 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
+> **문제만 보려면 `QUESTIONS.txt` 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
 >
 > 목적: 첫 세션 종료 시점에 **imperative 명령어(kubectl run / label / create deployment / scale / expose)** 만으로
 > Pod → Deployment → Service를 조건에 맞게 만들 수 있는지 판정한다.

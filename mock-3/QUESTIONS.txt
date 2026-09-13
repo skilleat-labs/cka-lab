@@ -1,0 +1,174 @@
+================================================================
+  CKA Mock Exam 3 — 자동화 · 권한 · 트러블슈팅
+  7문항 · 100점 · 목표 시간 50분
+================================================================
+
+  환경 준비 :  bash exam-start.sh
+               (Q5용 broken-deploy/broken-svc, Q6용 crash-pod 가 생성된다)
+  채점      :  bash verify.sh
+
+  모든 문제는 default 네임스페이스 기준이다.
+
+
+----------------------------------------------------------------
+ Q1. HPA 설정                               [Workloads · 10점]
+----------------------------------------------------------------
+
+  다음 조건으로 Deployment 와 HPA 를 생성하시오.
+
+  Deployment
+    이름          web-app
+    이미지        nginx:1.24
+    복제본        2
+    네임스페이스  default
+
+  HPA (Horizontal Pod Autoscaler)
+    대상          deployment/web-app
+    최소 복제본   2
+    최대 복제본   5
+    CPU 임계값    70%
+
+  [확인]
+    kubectl get deployment web-app
+    kubectl get hpa web-app
+
+
+----------------------------------------------------------------
+ Q2. StorageClass + PVC                       [Storage · 15점]
+----------------------------------------------------------------
+
+  다음 조건으로 StorageClass 와 PVC 를 생성하시오.
+
+  StorageClass
+    이름          fast-ssd
+    provisioner   docker.io/hostpath
+    reclaimPolicy Delete
+
+  PVC
+    이름              fast-pvc
+    용량              1Gi
+    accessMode        ReadWriteOnce
+    storageClassName  fast-ssd
+    네임스페이스      default
+
+  [확인]
+    kubectl get storageclass fast-ssd
+    kubectl get pvc fast-pvc
+      (프로비저너가 없는 환경에서는 Pending 이 정상)
+
+
+----------------------------------------------------------------
+ Q3. RBAC ClusterRole                    [Architecture · 20점]
+----------------------------------------------------------------
+
+  다음 세 가지 RBAC 리소스를 생성하시오.
+
+  ServiceAccount
+    이름          reader-sa
+    네임스페이스  default
+
+  ClusterRole
+    이름          cluster-reader
+    리소스        pods, nodes, services
+    동사          get, list, watch
+
+  ClusterRoleBinding
+    이름          cluster-reader-crb
+    ClusterRole   cluster-reader
+    Subject       ServiceAccount default:reader-sa
+
+  [확인]
+    kubectl auth can-i list nodes \
+      --as=system:serviceaccount:default:reader-sa     → yes
+    kubectl auth can-i list pods \
+      --as=system:serviceaccount:default:reader-sa     → yes
+
+
+----------------------------------------------------------------
+ Q4. DaemonSet 생성                         [Workloads · 15점]
+----------------------------------------------------------------
+
+  다음 조건으로 DaemonSet 을 생성하시오.
+
+    이름          log-collector
+    네임스페이스  default
+    이미지        busybox
+    command       ["sh", "-c", "while true; do echo $(date); sleep 60; done"]
+    레이블        app=log-collector  (selector 와 template 모두)
+
+  참고: DaemonSet 은 kubectl create 명령이 없다 → YAML 작성 필요
+        kubectl explain daemonset.spec
+
+  [확인]
+    kubectl get daemonset log-collector
+      → DESIRED 와 CURRENT 가 노드 수와 일치
+    kubectl get pods -l app=log-collector
+
+
+----------------------------------------------------------------
+ Q5. Service Endpoint 수정              [Troubleshooting · 20점]
+----------------------------------------------------------------
+
+  현재 broken-svc 의 Endpoints 가 비어 있다.
+  broken-deploy 는 정상 실행 중(파드 2개)이다.
+
+  원인을 진단하고 broken-svc 가 broken-deploy 의 파드로
+  트래픽을 보내도록 수정하시오.
+
+  진단에 쓸 명령
+    kubectl get endpoints broken-svc
+    kubectl get svc broken-svc -o yaml
+    kubectl get pod -l app=broken-deploy --show-labels
+
+  [확인]
+    kubectl get endpoints broken-svc         → Pod IP 2개 이상
+
+
+----------------------------------------------------------------
+ Q6. CrashLoopBackOff 수정              [Troubleshooting · 10점]
+----------------------------------------------------------------
+
+  crash-pod 가 CrashLoopBackOff 상태다.
+  원인을 파악하고 Pod 가 Running 이 되도록 수정하시오.
+
+  진단에 쓸 명령
+    kubectl logs crash-pod --previous
+    kubectl describe pod crash-pod
+
+  [확인]
+    kubectl get pod crash-pod                → Running
+
+  ※ Pod 의 command 는 실행 중 수정할 수 없다. 삭제 후 재생성한다.
+
+
+----------------------------------------------------------------
+ Q7. 클러스터 업그레이드 계획            [Architecture · 10점]
+----------------------------------------------------------------
+
+  kubeadm 으로 클러스터 업그레이드 계획을 확인하고
+  결과를 /tmp/upgrade-plan.txt 파일에 저장하시오.
+
+  - 컨트롤플레인 노드에서 실행해야 한다.
+  - 현재 클러스터 버전과 업그레이드 가능한 버전이 출력된다.
+  - 표준 출력과 표준 에러를 모두 파일에 담는다.
+
+  [확인]
+    cat /tmp/upgrade-plan.txt
+      → 쿠버네티스 버전 정보가 포함되어야 함
+
+
+================================================================
+  배점
+================================================================
+
+    Q1  HPA 설정              Workloads          10
+    Q2  StorageClass + PVC    Storage            15
+    Q3  RBAC ClusterRole      Architecture       20
+    Q4  DaemonSet             Workloads          15
+    Q5  Service Endpoint      Troubleshooting    20
+    Q6  CrashLoopBackOff      Troubleshooting    10
+    Q7  업그레이드 계획       Architecture       10
+    ------------------------------------------------
+    합계                                         100
+
+  힌트는 bash exam-start.sh 실행 시 터미널 출력에 포함되어 있다.
