@@ -1,0 +1,28 @@
+# AND 조건: team=frontend 네임스페이스 안의 app=web 파드에서만 8080 으로 받는다
+#
+# namespaceSelector 와 podSelector 가 "같은 항목" 안에 있으면 AND
+# 각각 앞에 '-' 를 붙여 별도 항목으로 나누면 OR
+#
+# 네임스페이스 레이블 필요:  kubectl label namespace frontend team=frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-ns-web-only
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          team: frontend
+      podSelector:               # '-' 없음 → 위 namespaceSelector 와 AND
+        matchLabels:
+          app: web
+    ports:
+    - protocol: TCP
+      port: 8080

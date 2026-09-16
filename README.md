@@ -58,6 +58,14 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 
 > 폴더 번호는 실습 세트 번호이며 강의 회차와 일대일로 맞지 않습니다. 담당 강사의 안내를 따르세요.
 
+## 개념 문서
+
+| 문서 | 내용 |
+|------|------|
+| [docs/NETWORKPOLICY.md](docs/NETWORKPOLICY.md) | NetworkPolicy — 아키텍처(CNI 가 집행), 동작 원칙 5가지, 셀렉터 AND/OR, 3계층 격리 시나리오, 예제 YAML 9개, CKA 함정 |
+
+예제 YAML 은 `docs/networkpolicy-examples/` 에 파일로 있어 바로 `kubectl apply -f` 할 수 있다.
+
 ## 참고
 
 - `02-cluster-setup` 실습은 worker 노드 IP 가 `192.168.56.12` 로 지정되어 있습니다. 다른 IP 로 VM 을 구성했다면 스크립트를 수정하세요.

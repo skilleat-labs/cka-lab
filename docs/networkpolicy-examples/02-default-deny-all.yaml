@@ -1,0 +1,12 @@
+# 들어오는 것과 나가는 것 전부 차단
+# 주의: Egress 를 막으면 DNS 도 막힌다 → 06 예제처럼 53 포트를 열어줘야 한다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress

@@ -1,0 +1,12 @@
+# 네임스페이스의 모든 파드에 대해 들어오는 트래픽 전부 차단
+# 이걸 먼저 깔고, 필요한 경로만 다른 정책으로 연다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: prod
+spec:
+  podSelector: {}          # {} = 이 네임스페이스의 모든 파드
+  policyTypes:
+  - Ingress
+  # ingress 필드가 없음 = 허용 목록이 비어 있음 = 전부 차단

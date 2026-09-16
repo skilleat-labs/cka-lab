@@ -1,0 +1,35 @@
+# Egress 정책 — app=api 파드는 DNS 와 db 파드로만 나갈 수 있다
+# Egress 를 제한할 때는 반드시 (1) DNS 를 열어야 서비스 이름 해석이 된다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+  - Egress
+  egress:
+  # (1) DNS — kube-system 의 CoreDNS 로 53 포트 (UDP + TCP)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # (2) db 파드로 3306
+  - to:
+    - podSelector:
+        matchLabels:
+          app: db
+    ports:
+    - protocol: TCP
+      port: 3306

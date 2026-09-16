@@ -1,0 +1,17 @@
+# app=web 파드는 어디서든 받는다 (기본 거부 정책이 깔린 상태에서 특정 파드만 해제)
+#
+#   ingress: []      → 전부 차단
+#   ingress: - {}    → 전부 허용   ← 이 파일
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-allow-all
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+  - Ingress
+  ingress:
+  - {}

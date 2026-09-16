@@ -1,0 +1,22 @@
+# ipBlock — CIDR 대역에서 허용하되 특정 IP 는 제외
+# 주로 클러스터 밖 IP 용. 파드는 podSelector 로 고른다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-office
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 192.168.56.0/24
+        except:
+        - 192.168.56.100/32
+    ports:
+    - protocol: TCP
+      port: 80
