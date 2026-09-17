@@ -25,6 +25,7 @@
 | `10-helm` | 강의 실습 | 4 | 11 | Helm 설치/업그레이드/롤백 · Kustomize |
 | `11-troubleshooting` | 강의 실습 | 4 | 8 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
 | `mock-1` | 모의고사 | 7 | 100점 | 전 범위 (목표 40분) |
+| `mock-1-1` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
 | `mock-2` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
 | `mock-3` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
 
@@ -191,6 +192,20 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q5 | RBAC | Architecture | 15 |
 | Q6 | 노드 drain | Architecture | 10 |
 | Q7 | Pod 트러블슈팅 | Troubleshooting | 25 |
+
+### mock-1-1 — mock-1 변형판 (목표 40분)
+
+같은 7유형이지만 `retail` 네임스페이스에서 이름·값·조건이 전부 다르다. mock-1 답을 붙여넣으면 틀린다.
+
+| 문제 | 내용 | 도메인 | 배점 |
+|------|------|--------|------|
+| Q1 | Deployment `store-front` (nginx:1.25, replicas 4, port 80) | Workloads | 15 |
+| Q2 | Service `store-svc` ClusterIP **8080 → 80** | Networking | 10 |
+| Q3 | ConfigMap `store-config` → `store-cfg` envFrom | Workloads | 10 |
+| Q4 | PV `report-pv` **1Gi RWX** sc `local-manual` → PVC | Storage | 15 |
+| Q5 | RBAC — `deploy-reader` **deployments** get/list/watch, pods 는 불가 | Architecture | 15 |
+| Q6 | **worker-2** drain / uncordon | Architecture | 10 |
+| Q7 | `web-broken`(`nginz:1.24` 오타) → **nginx:1.24** 로 수정 | Troubleshooting | 25 |
 
 ### mock-2 — 목표 45분
 

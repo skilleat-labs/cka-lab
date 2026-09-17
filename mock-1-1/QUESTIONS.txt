@@ -1,0 +1,161 @@
+================================================================
+  CKA Mock Exam 1-1 — 기초 워크로드 (변형판)
+  7문항 · 100점 · 목표 시간 40분
+================================================================
+
+  환경 준비 :  bash exam-start.sh
+               (retail 네임스페이스와 Q7용 고장난 파드가 생성된다)
+  채점      :  bash verify.sh
+
+  mock-1 과 같은 유형이지만 이름·값·조건이 전부 다르다.
+  모든 문제는 retail 네임스페이스 기준이다.
+
+
+----------------------------------------------------------------
+ Q1. Deployment 생성                        [Workloads · 15점]
+----------------------------------------------------------------
+
+  retail 네임스페이스에 다음 조건으로 Deployment 를 생성하시오.
+
+    이름            store-front
+    이미지          nginx:1.25
+    복제본          4
+    컨테이너 포트   80
+
+  [확인]
+    kubectl get deployment store-front -n retail   → READY 4/4
+
+
+----------------------------------------------------------------
+ Q2. Service 생성                          [Networking · 10점]
+----------------------------------------------------------------
+
+  Q1 의 Deployment 를 노출하는 Service 를 생성하시오.
+
+    이름            store-svc
+    타입            ClusterIP
+    port            8080  →  targetPort 80   (포트가 다르다)
+    셀렉터          app=store-front
+    네임스페이스    retail
+
+  [확인]
+    kubectl get svc store-svc -n retail          → 8080/TCP
+    kubectl get endpoints store-svc -n retail    → Pod IP 4개
+
+
+----------------------------------------------------------------
+ Q3. ConfigMap + Pod                        [Workloads · 10점]
+----------------------------------------------------------------
+
+  retail 네임스페이스에서 다음 두 가지 작업을 수행하시오.
+
+  (1) ConfigMap 생성
+    이름            store-config
+    데이터          APP_MODE=staging
+                    APP_PORT=9090
+
+  (2) Pod 생성
+    이름            store-cfg
+    이미지          busybox:1.36
+    명령            sleep 7200
+    주입            store-config 전체를 envFrom 으로
+
+  [확인]
+    kubectl exec store-cfg -n retail -- printenv APP_MODE   → staging
+    kubectl exec store-cfg -n retail -- printenv APP_PORT   → 9090
+
+
+----------------------------------------------------------------
+ Q4. PersistentVolume + PVC                   [Storage · 15점]
+----------------------------------------------------------------
+
+  다음 조건으로 PV 와 PVC 를 생성하고 Bound 시키시오.
+
+  PersistentVolume
+    이름              report-pv
+    용량              1Gi
+    접근 모드         ReadWriteMany
+    타입              hostPath, path=/tmp/report-data
+    storageClassName  local-manual
+
+  PersistentVolumeClaim
+    이름              report-pvc
+    네임스페이스      retail
+    용량 요청         1Gi
+    접근 모드         ReadWriteMany
+    storageClassName  local-manual
+
+  [확인]
+    kubectl get pv report-pv                     → Bound
+    kubectl get pvc report-pvc -n retail         → Bound
+
+
+----------------------------------------------------------------
+ Q5. RBAC                                [Architecture · 15점]
+----------------------------------------------------------------
+
+  retail 네임스페이스에 다음 세 가지 RBAC 리소스를 생성하시오.
+
+  ServiceAccount
+    이름            deploy-sa
+
+  Role
+    이름            deploy-reader
+    리소스          deployments   (apps API 그룹)
+    동사            get, list, watch
+
+  RoleBinding
+    이름            deploy-reader-rb
+    Role            deploy-reader
+    Subject         ServiceAccount deploy-sa
+
+  [확인]
+    kubectl auth can-i list deployments \
+      --as=system:serviceaccount:retail:deploy-sa -n retail   → yes
+    kubectl auth can-i list pods \
+      --as=system:serviceaccount:retail:deploy-sa -n retail   → no
+
+
+----------------------------------------------------------------
+ Q6. 노드 drain                          [Architecture · 10점]
+----------------------------------------------------------------
+
+  다음 순서로 노드 유지보수 작업을 수행하시오.
+
+  (1) worker-2 노드를 drain 한다.
+      - DaemonSet Pod 는 무시
+      - emptyDir 데이터는 삭제 허용
+
+  (2) 유지보수 완료 후 worker-2 를 다시 스케줄 가능 상태로 전환한다.
+
+  [확인]
+    kubectl get nodes   → worker-2 가 Ready, SchedulingDisabled 아님
+
+
+----------------------------------------------------------------
+ Q7. Pod 트러블슈팅                     [Troubleshooting · 25점]
+----------------------------------------------------------------
+
+  retail 네임스페이스의 web-broken Pod 가 ErrImagePull /
+  ImagePullBackOff 상태다.
+
+  원인을 파악하고, 이미지를 nginx:1.24 로 수정하여
+  Pod 가 Running 상태가 되도록 하시오.
+
+  [확인]
+    kubectl get pod web-broken -n retail         → Running
+
+
+================================================================
+  배점
+================================================================
+
+    Q1  Deployment            Workloads          15
+    Q2  Service               Networking         10
+    Q3  ConfigMap + Pod       Workloads          10
+    Q4  PV + PVC              Storage            15
+    Q5  RBAC                  Architecture       15
+    Q6  노드 drain            Architecture       10
+    Q7  Pod 트러블슈팅        Troubleshooting    25
+    ------------------------------------------------
+    합계                                         100
