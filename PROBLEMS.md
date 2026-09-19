@@ -4,6 +4,7 @@
 > 각 폴더 사용법은 동일하다 — `bash exam-start.sh` 로 출제, `bash verify.sh` 로 채점.
 > 세션 시험 세트(`00`~`03`)와 모의고사(`mock-1~3`)는 정답이 없는 문제지 `QUESTIONS.txt` 를 따로 두었다.
 > 터미널에서 `cat QUESTIONS.txt` 로 바로 볼 수 있다.
+> 세션 시험과 모의고사는 **한 문제씩 풀고 채점하는 `exam.sh`** 도 있다 — `bash exam.sh start` / `check`.
 > 마지막 갱신: 2026-09-02
 
 ## 요약

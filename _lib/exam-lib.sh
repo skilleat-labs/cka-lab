@@ -50,36 +50,55 @@ fmt_dur() {
 }
 
 # ── 채점 헬퍼 (qN_grade 안에서만 사용) ───────────────────────────
+#   배점 없이 쓰면 항목 1개 = 1점, 마지막 인자로 배점을 주면 그 점수로 계산
+#   check        desc cmd            [pts]
+#   check_output desc cmd pattern    [pts]
+#   check_result desc ok(0/1) [note] [pts]
 Q_PASS=0; Q_TOTAL=0; Q_FAILS=()
+EXAM_UNIT="${EXAM_UNIT:-항목}"   # 세트에서 EXAM_UNIT="점" 으로 바꾸면 리포트 단위가 바뀜
+_pass() { local pts="$1"; Q_PASS=$((Q_PASS+pts)); }
+_pts_label() { [[ "${EXAM_UNIT}" == "점" ]] && printf '[+%s점] ' "$1" || true; }
+_zero_label() { [[ "${EXAM_UNIT}" == "점" ]] && printf '[ 0점] ' || true; }
 check() {
-  local desc="$1" cmd="$2"
-  Q_TOTAL=$((Q_TOTAL+1))
+  local desc="$1" cmd="$2" pts="${3:-1}"
+  Q_TOTAL=$((Q_TOTAL+pts))
   if eval "$cmd" &>/dev/null; then
-    echo -e "  ${GREEN}[PASS]${RESET} $desc"; Q_PASS=$((Q_PASS+1))
+    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"
   else
-    echo -e "  ${RED}[FAIL]${RESET} $desc"; Q_FAILS+=("$desc")
+    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc"; Q_FAILS+=("$desc")
   fi
 }
 check_output() {
-  local desc="$1" cmd="$2" pattern="$3" out
-  Q_TOTAL=$((Q_TOTAL+1))
+  local desc="$1" cmd="$2" pattern="$3" pts="${4:-1}" out
+  Q_TOTAL=$((Q_TOTAL+pts))
   out=$(eval "$cmd" 2>/dev/null || echo "")
   if echo "$out" | grep -qE "$pattern"; then
-    echo -e "  ${GREEN}[PASS]${RESET} $desc"; Q_PASS=$((Q_PASS+1))
+    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"
   else
-    echo -e "  ${RED}[FAIL]${RESET} $desc  ${ORANGE}(기대: $pattern / 실제: '${out}')${RESET}"
+    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc  ${ORANGE}(기대: $pattern / 실제: '${out}')${RESET}"
     Q_FAILS+=("$desc")
   fi
 }
 # 직접 판정한 결과를 기록할 때 (복잡한 검사용)
 check_result() {
-  local desc="$1" ok="$2" note="${3:-}"
-  Q_TOTAL=$((Q_TOTAL+1))
+  local desc="$1" ok="$2" note="${3:-}" pts="${4:-1}"
+  Q_TOTAL=$((Q_TOTAL+pts))
   if [[ "$ok" == "0" ]]; then
-    echo -e "  ${GREEN}[PASS]${RESET} $desc"; Q_PASS=$((Q_PASS+1))
+    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"
   else
-    echo -e "  ${RED}[FAIL]${RESET} $desc${note:+  ${ORANGE}($note)${RESET}}"; Q_FAILS+=("$desc")
+    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc${note:+  ${ORANGE}($note)${RESET}}"; Q_FAILS+=("$desc")
   fi
+}
+# 파드 Ready 대기 (최대 40초) — 채점 전 안정화용. 파드가 없으면 즉시 반환
+wait_ready() {
+  local sel="$1" ns="${2:-default}" i
+  [[ -z "$(kubectl get pods -n "$ns" $sel -o name 2>/dev/null)" ]] && return 1
+  for i in $(seq 1 20); do
+    local r; r=$(kubectl get pods -n "$ns" $sel -o jsonpath='{range .items[*]}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null | sort -u | tr -d '\n')
+    [[ "$r" == "true" ]] && return 0
+    sleep 2
+  done
+  return 1
 }
 
 # ── 진행바 ───────────────────────────────────────────────────────
@@ -248,7 +267,7 @@ cmd_status() {
     fi
   done
   thin
-  echo -e "  누적 ${BOLD}${sumP}${RESET} 항목 통과"
+  echo -e "  누적 ${BOLD}${sumP}${RESET} ${EXAM_UNIT} 통과"
   echo ""
 }
 
@@ -273,7 +292,7 @@ cmd_finish() {
   done
   thin
   local pct=0; (( sumT > 0 )) && pct=$(( sumP * 100 / sumT ))
-  echo -e "  ${BOLD}합계 ${sumP} / ${sumT}  (${pct}%)${RESET}   총 소요 $(fmt_dur $tot)"
+  echo -e "  ${BOLD}합계 ${sumP} / ${sumT} ${EXAM_UNIT}  (${pct}%)${RESET}   총 소요 $(fmt_dur $tot)"
   (( slowQ > 0 )) && echo -e "  ${DIM}가장 오래 걸린 문제: Q${slowQ} ($(fmt_dur $slowest))${RESET}"
   if (( pct >= 66 )); then echo -e "  ${GREEN}${BOLD}합격선(66%) 통과${RESET}"; else echo -e "  ${RED}${BOLD}합격선(66%) 미달${RESET}"; fi
   sep

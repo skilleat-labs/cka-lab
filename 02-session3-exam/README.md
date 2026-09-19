@@ -1,5 +1,8 @@
 # 3세션 시험 — Deployment/Service · StorageClass/PVC · Gateway API
 
+> **한 문제씩 풀기:** `bash exam.sh start` → 풀고 → `bash exam.sh check` (만점이면 자동으로 다음 문제). 진행 현황 `bash exam.sh status`.
+>
+
 > 출제 범위: Deployment + Service 연결 · 주어진 StorageClass 로 PVC 생성 후 마운트 · Gateway API 외부 노출
 > 모든 환경은 `exam-start.sh` 가 자동으로 준비한다. 수강생은 문제만 풀면 된다.
 >

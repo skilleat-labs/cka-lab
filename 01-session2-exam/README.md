@@ -1,5 +1,8 @@
 # 2세션 시험 — 네임스페이스 · ConfigMap · Secret
 
+> **한 문제씩 풀기:** `bash exam.sh start` → 풀고 → `bash exam.sh check` (만점이면 자동으로 다음 문제). 진행 현황 `bash exam.sh status`.
+>
+
 > **문제만 보려면 `QUESTIONS.txt` 를 열면 된다.** 이 파일(README)에는 정답이 들어 있다.
 >
 > 출제 범위: 네임스페이스 지정 · Service NodePort · ConfigMap · Deployment 롤아웃/롤백

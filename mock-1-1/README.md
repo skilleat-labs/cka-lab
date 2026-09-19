@@ -1,5 +1,8 @@
 # Mock Exam 1-1 — mock-1 변형판 (강사용)
 
+> **한 문제씩 풀기:** `bash exam.sh start` → 풀고 → `bash exam.sh check` (만점이면 자동으로 다음 문제). 진행 현황 `bash exam.sh status`.
+>
+
 > **문제만 보려면 `QUESTIONS.txt`.** 이 파일에는 정답이 들어 있다.
 
 mock-1 과 **같은 7가지 유형**이지만 이름·이미지·포트·접근모드·네임스페이스가 전부 다르다.
