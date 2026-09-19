@@ -6,7 +6,42 @@
 > Pod → Deployment → Service를 조건에 맞게 만들 수 있는지 판정한다.
 > CKA 시험은 2시간에 15~20문제이므로 YAML을 처음부터 손으로 쓰면 시간이 부족하다. 명령어 숙련도가 곧 점수다.
 
-## 사용법
+## 사용법 — 두 가지 방식
+
+### 방식 A. 한 문제씩 풀고 채점 (권장)
+
+```bash
+bash exam.sh start     # 환경 준비 + Q1 출제
+# ... 풀고 ...
+bash exam.sh check     # Q1 채점 → 만점이면 Q2 자동 출제
+# ... 풀고 ...
+bash exam.sh check     # ...
+```
+
+| 명령 | 동작 |
+|------|------|
+| `bash exam.sh start` | 환경 준비, 진행 기록 초기화, Q1 출제 |
+| `bash exam.sh check` | 현재 문제 채점. 만점이면 다음 문제로, 아니면 FAIL 항목 표시 후 대기 |
+| `bash exam.sh show` | 현재 문제 다시 보기 |
+| `bash exam.sh skip` | 현재 점수로 확정하고 다음으로 (기록에 남음) |
+| `bash exam.sh hint` | 힌트 (기록에 남음) |
+| `bash exam.sh status` | 문제별 점수·소요 시간·skip/hint 여부 |
+| `bash exam.sh finish` | 최종 리포트 (마지막 문제 통과 시 자동) |
+| `bash exam.sh reset` | 진행 기록 삭제 |
+
+진행 상태는 `work/.progress` 에, 지나온 문제는 `work/questions-so-far.txt` 에 쌓인다.
+문제별 소요 시간과 시도 횟수가 리포트에 나오므로 어느 유형에서 막히는지 바로 보인다.
+
+### 방식 B. 한꺼번에 출제 · 채점 (기존)
+
+```bash
+bash exam-start.sh     # 3문제 전부 출력
+bash verify.sh         # 24항목 일괄 채점
+```
+
+두 방식은 같은 채점 기준을 쓴다. 채점 항목은 `exam.sh` 의 `qN_grade()` 와 `verify.sh` 에 동일하게 들어 있다.
+
+## 원래 사용법
 
 ```bash
 # 1) 환경 초기화 + 문제 출력

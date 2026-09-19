@@ -16,6 +16,20 @@ cd practice
 
 ## 실습 진행 방법
 
+### 한 문제씩 풀기 (`exam.sh` 가 있는 세트)
+
+```bash
+cd 00-session-check
+bash exam.sh start      # 환경 준비 + 1번 문제
+bash exam.sh check      # 채점 → 만점이면 자동으로 다음 문제
+bash exam.sh status     # 진행 현황 (점수·소요 시간)
+```
+
+막히면 `bash exam.sh hint`, 넘어가려면 `bash exam.sh skip`. 마지막 문제를 통과하면 최종 리포트가 나온다.
+현재 `00-session-check` 에 적용되어 있고 다른 세트로 확대 중이다.
+
+### 한꺼번에 풀기 (모든 세트)
+
 모든 폴더가 동일한 방식입니다.
 
 ```bash

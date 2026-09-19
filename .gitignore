@@ -22,3 +22,7 @@ etcd-backup*
 # 미완성 실습 세트 (exam-start.sh / verify.sh 없음) — 수강생 배포 제외
 07-ingress-gateway/
 10-helm-kustomize/
+
+# 순차 진행형 시험 상태 (work/ 아래라 이미 무시되지만 명시)
+**/work/.progress
+**/work/questions-so-far.txt
