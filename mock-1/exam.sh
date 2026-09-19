@@ -8,7 +8,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA Mock Exam 1 — 기초 워크로드 (100점 · 목표 40분)"
 EXAM_NQ=7
 
-exam_setup() {
+exam_cleanup() {
   kubectl delete deployment nginx-deploy --ignore-not-found &>/dev/null || true
   kubectl delete svc nginx-svc --ignore-not-found &>/dev/null || true
   kubectl delete configmap app-config --ignore-not-found &>/dev/null || true
@@ -19,7 +19,10 @@ exam_setup() {
   kubectl delete role app-role --ignore-not-found &>/dev/null || true
   kubectl delete serviceaccount app-sa --ignore-not-found &>/dev/null || true
   kubectl uncordon worker-1 &>/dev/null || true
-  echo "  이전 리소스 정리"
+  echo "  nginx-deploy · nginx-svc · app-config · config-pod · task-pv/pvc · RBAC · broken-app 삭제, worker-1 uncordon"
+}
+
+exam_setup() {
   kubectl run broken-app --image=nginx:broken --restart=Never &>/dev/null || true
   echo "  Q7 용 broken-app 파드 생성 (ImagePullBackOff)"
 }

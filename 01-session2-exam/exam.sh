@@ -7,7 +7,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA 2세션 시험 — 네임스페이스 · NodePort · ConfigMap · 롤아웃"
 EXAM_NQ=3
 
-exam_setup() {
+exam_cleanup() {
   for ns in ops app; do
     if kubectl get namespace "$ns" &>/dev/null; then
       echo "  네임스페이스 $ns 삭제 중... (수십 초 걸릴 수 있음)"
@@ -15,8 +15,9 @@ exam_setup() {
     fi
   done
   kubectl delete deployment cache-app -n default --ignore-not-found &>/dev/null || true
-  echo "  이전 시험 리소스 정리"
+  echo "  ops / app 네임스페이스 삭제"
 }
+exam_setup() { echo "  (네임스페이스는 학생이 직접 만든다)"; }
 
 # ══════════════════════════════════════════════════════════════
 q1_title() { echo "네임스페이스 지정 · Deployment · NodePort"; }

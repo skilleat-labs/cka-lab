@@ -13,13 +13,13 @@ EXAM_NQ=3
 # ══════════════════════════════════════════════════════════════
 # 환경 준비
 # ══════════════════════════════════════════════════════════════
-exam_setup() {
-  kubectl delete pod web-pod -n default --ignore-not-found &>/dev/null || true
+exam_cleanup() {
+  kubectl delete pod web-pod svc-check -n default --ignore-not-found &>/dev/null || true
   kubectl delete deployment web-app -n default --ignore-not-found &>/dev/null || true
   kubectl delete service web-svc -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pod svc-check -n default --ignore-not-found &>/dev/null || true
-  echo "  이전 실습 리소스(web-pod / web-app / web-svc) 정리"
+  echo "  web-pod / web-app / web-svc 삭제"
 }
+exam_setup() { echo "  (미리 만들어둘 것 없음)"; }
 
 # ══════════════════════════════════════════════════════════════
 # Q1 — Pod 생성 + 레이블

@@ -27,7 +27,8 @@ bash exam.sh check     # ...
 | `bash exam.sh hint` | 힌트 (기록에 남음) |
 | `bash exam.sh status` | 문제별 점수·소요 시간·skip/hint 여부 |
 | `bash exam.sh finish` | 최종 리포트 (마지막 문제 통과 시 자동) |
-| `bash exam.sh reset` | 진행 기록 삭제 |
+| `bash exam.sh clean` | **클러스터의 시험 리소스 전부 삭제 + 진행 기록 삭제** (원상복구) |
+| `bash exam.sh reset` | 진행 기록만 삭제 (리소스는 남김) |
 
 진행 상태는 `work/.progress` 에, 지나온 문제는 `work/questions-so-far.txt` 에 쌓인다.
 문제별 소요 시간과 시도 횟수가 리포트에 나오므로 어느 유형에서 막히는지 바로 보인다.

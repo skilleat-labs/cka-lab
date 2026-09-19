@@ -8,7 +8,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA Mock Exam 2 — 스케줄링·네트워킹·운영 (100점 · 목표 45분)"
 EXAM_NQ=7
 
-exam_setup() {
+exam_cleanup() {
   kubectl delete pod affinity-pod toleration-pod shop-backend api-backend --ignore-not-found --force --grace-period=0 &>/dev/null || true
   kubectl delete svc shop-svc api-svc mysql-headless --ignore-not-found &>/dev/null || true
   kubectl delete networkpolicy deny-all allow-web --ignore-not-found &>/dev/null || true
@@ -17,8 +17,16 @@ exam_setup() {
   kubectl delete pvc -l app=mysql-sts --ignore-not-found &>/dev/null || true
   kubectl delete pvc data-mysql-sts-0 data-mysql-sts-1 --ignore-not-found &>/dev/null || true
   rm -f /tmp/mock2-etcd.db
-  echo "  이전 리소스 정리"
+  kubectl label node worker-1 disktype- &>/dev/null || true
+  # worker-2 kubelet 복구 (시험 중단 시 NotReady 로 남지 않도록)
+  if kubectl get node worker-2 &>/dev/null; then
+    ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl start kubelet; systemctl enable kubelet' &>/dev/null \
+      && echo "  worker-2 kubelet 복구" || echo "  worker-2 kubelet 은 직접 확인 필요 (ssh 불가)"
+  fi
+  echo "  affinity/toleration 파드 · NetworkPolicy · Ingress · StatefulSet · 백엔드 · etcd 스냅샷 삭제, worker-1 레이블 제거"
+}
 
+exam_setup() {
   # Q1: worker-1 에 disktype=ssd 레이블 (파드가 실제로 배치되도록)
   kubectl label node worker-1 disktype=ssd --overwrite &>/dev/null && echo "  worker-1 에 disktype=ssd 레이블" || true
   # Q4: Ingress 백엔드

@@ -8,7 +8,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA Mock Exam 3 — 자동화·권한·트러블슈팅 (100점 · 목표 50분)"
 EXAM_NQ=7
 
-exam_setup() {
+exam_cleanup() {
   kubectl delete deployment web-app broken-deploy --ignore-not-found &>/dev/null || true
   kubectl delete hpa web-app --ignore-not-found &>/dev/null || true
   kubectl delete svc broken-svc --ignore-not-found &>/dev/null || true
@@ -21,8 +21,10 @@ exam_setup() {
   kubectl delete daemonset log-collector --ignore-not-found &>/dev/null || true
   kubectl delete pod crash-pod --ignore-not-found --force --grace-period=0 &>/dev/null || true
   rm -f /tmp/upgrade-plan.txt
-  echo "  이전 리소스 정리"
+  echo "  web-app/HPA · fast-ssd/pv/pvc · RBAC · DaemonSet · broken-deploy/svc · crash-pod · upgrade-plan 삭제"
+}
 
+exam_setup() {
   # Q2: PVC 가 실제로 Bound 되도록 hostPath PV 준비 (StorageClass 는 학생이 만든다)
   kubectl apply -f - &>/dev/null <<'EOF'
 apiVersion: v1

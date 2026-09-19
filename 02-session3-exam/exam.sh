@@ -15,15 +15,19 @@ NGF_DEPLOY="https://raw.githubusercontent.com/nginx/nginx-gateway-fabric/${NGF_V
 MODE_FILE="$WORK_DIR/.gateway-mode"
 gw_mode() { cat "$MODE_FILE" 2>/dev/null || echo none; }
 
-exam_setup() {
-  # 1) 정리
+exam_cleanup() {
   if kubectl get namespace shop &>/dev/null; then
     echo "  네임스페이스 shop 삭제 중... (수십 초 걸릴 수 있음)"
     kubectl delete namespace shop --wait=true &>/dev/null || true
   fi
   for i in 1 2 3; do kubectl delete pv "exam-pv-${i}" --ignore-not-found &>/dev/null || true; done
   kubectl delete storageclass exam-storage --ignore-not-found &>/dev/null || true
+  rm -f "$MODE_FILE"
+  echo "  shop 네임스페이스 · exam-storage · exam-pv-1~3 삭제"
+  echo "  (Gateway API 컨트롤러는 남겨둠 — 완전 제거: kubectl delete ns nginx-gateway)"
+}
 
+exam_setup() {
   # 2) 네임스페이스
   kubectl create namespace shop &>/dev/null || true
   echo "  shop 네임스페이스 생성"

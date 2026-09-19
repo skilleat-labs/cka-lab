@@ -26,6 +26,7 @@ bash exam.sh status     # 진행 현황 (점수·소요 시간)
 ```
 
 막히면 `bash exam.sh hint`, 넘어가려면 `bash exam.sh skip`. 마지막 문제를 통과하면 최종 리포트가 나온다.
+끝나고 클러스터를 원래대로 돌리려면 `bash exam.sh clean` — 시험에서 만든 리소스(네임스페이스·PV·노드 레이블 등)를 전부 지운다.
 적용된 세트: `00-session-check` · `01-session2-exam` · `02-session3-exam` · `03-session4-exam` · `mock-1` · `mock-1-1` · `mock-2` · `mock-3`
 모의고사는 100점 배점, 세션 시험은 항목 수로 채점된다. 강의 실습(02-cluster-setup ~ 11)은 아직 한꺼번에 방식만 있다.
 

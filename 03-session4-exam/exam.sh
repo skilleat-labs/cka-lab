@@ -7,13 +7,17 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA 4세션 시험 — PVC/Deployment YAML · Requests/Limits · Probe"
 EXAM_NQ=3
 
-exam_setup() {
+exam_cleanup() {
   if kubectl get namespace api &>/dev/null; then
     echo "  네임스페이스 api 삭제 중... (수십 초 걸릴 수 있음)"
     kubectl delete namespace api --wait=true &>/dev/null || true
   fi
   for i in 1 2 3; do kubectl delete pv "api-pv-${i}" --ignore-not-found &>/dev/null || true; done
   kubectl delete storageclass api-storage --ignore-not-found &>/dev/null || true
+  echo "  api 네임스페이스 · api-storage · api-pv-1~3 삭제"
+}
+
+exam_setup() {
   kubectl create namespace api &>/dev/null || true
   echo "  api 네임스페이스 생성"
   kubectl apply -f - &>/dev/null <<'EOF'

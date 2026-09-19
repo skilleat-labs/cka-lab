@@ -9,13 +9,17 @@ EXAM_TITLE="CKA Mock Exam 1-1 — 기초 워크로드 변형판 (100점 · 목�
 EXAM_NQ=7
 NS=retail
 
-exam_setup() {
+exam_cleanup() {
   if kubectl get namespace retail &>/dev/null; then
     echo "  네임스페이스 retail 삭제 중..."
     kubectl delete namespace retail --wait=true &>/dev/null || true
   fi
   kubectl delete pv report-pv --ignore-not-found &>/dev/null || true
   kubectl uncordon worker-2 &>/dev/null || true
+  echo "  retail 네임스페이스 · report-pv 삭제, worker-2 uncordon"
+}
+
+exam_setup() {
   kubectl create namespace retail &>/dev/null || true
   echo "  retail 네임스페이스 생성"
   kubectl run web-broken --image=nginz:1.24 --restart=Never -n retail &>/dev/null || true

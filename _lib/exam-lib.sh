@@ -7,6 +7,7 @@
 #
 #   EXAM_TITLE="..."          시험 제목
 #   EXAM_NQ=3                 문제 수
+#   exam_cleanup()            시험 리소스 전부 삭제 (원상복구)
 #   exam_setup()              환경 준비 (네임스페이스, 고장 파드 등)
 #   qN_title()                문제 제목 한 줄  (echo)
 #   qN_text()                 문제 본문        (cat <<'EOF' ...)
@@ -21,7 +22,8 @@
 #   bash exam.sh hint     힌트 보기 (기록에 남음)
 #   bash exam.sh status   진행 현황
 #   bash exam.sh finish   최종 리포트
-#   bash exam.sh reset    진행 기록 삭제
+#   bash exam.sh clean    클러스터의 시험 리소스 삭제 + 진행 기록 삭제 (원상복구)
+#   bash exam.sh reset    진행 기록만 삭제
 # ============================================================
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; ORANGE='\033[0;33m'
@@ -176,6 +178,8 @@ cmd_start() {
   rm -f "$STATE" "$QLOG"
   kubectl get nodes &>/dev/null || {
     echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"; exit 1; }
+  echo -e "\n${CYAN}[CLEAN] 이전 시험 리소스를 정리합니다...${RESET}"
+  exam_cleanup
   echo -e "\n${CYAN}[SETUP] 환경을 준비합니다...${RESET}"
   exam_setup
   echo -e "${GREEN}[SETUP] 완료${RESET}"
@@ -296,12 +300,26 @@ cmd_finish() {
   (( slowQ > 0 )) && echo -e "  ${DIM}가장 오래 걸린 문제: Q${slowQ} ($(fmt_dur $slowest))${RESET}"
   if (( pct >= 66 )); then echo -e "  ${GREEN}${BOLD}합격선(66%) 통과${RESET}"; else echo -e "  ${RED}${BOLD}합격선(66%) 미달${RESET}"; fi
   sep
-  echo -e "  ${DIM}지나온 문제 전체: cat work/questions-so-far.txt${RESET}"
+  echo -e "  ${DIM}지나온 문제 전체: cat work/questions-so-far.txt   ·   리소스 정리: bash exam.sh clean${RESET}"
   echo ""
   state_set finished "$(now)"
 }
 
 cmd_reset() { rm -f "$STATE" "$QLOG"; echo -e "${GREEN}진행 기록을 지웠습니다.${RESET}"; }
+
+cmd_clean() {
+  echo ""
+  sep
+  echo -e "  ${BOLD}${EXAM_TITLE} — 원상복구${RESET}"
+  sep
+  kubectl get nodes &>/dev/null || {
+    echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다.${RESET}"; exit 1; }
+  echo -e "\n${CYAN}[CLEAN] 클러스터의 시험 리소스를 삭제합니다...${RESET}"
+  exam_cleanup
+  rm -f "$STATE" "$QLOG"
+  echo -e "${GREEN}[CLEAN] 완료 — 진행 기록도 지웠습니다.${RESET}"
+  echo ""
+}
 
 exam_main() {
   case "${1:-}" in
@@ -312,6 +330,7 @@ exam_main() {
     hint)   cmd_hint ;;
     status) cmd_status ;;
     finish) cmd_finish ;;
+    clean)  cmd_clean ;;
     reset)  cmd_reset ;;
     *)
       echo ""
@@ -324,7 +343,8 @@ exam_main() {
       echo -e "  ${CYAN}bash exam.sh hint${RESET}     힌트 (사용 기록이 남음)"
       echo -e "  ${CYAN}bash exam.sh status${RESET}   진행 현황"
       echo -e "  ${CYAN}bash exam.sh finish${RESET}   최종 리포트"
-      echo -e "  ${CYAN}bash exam.sh reset${RESET}    진행 기록 삭제"
+      echo -e "  ${CYAN}bash exam.sh clean${RESET}    시험 리소스 전부 삭제 + 진행 기록 삭제 (원상복구)"
+      echo -e "  ${CYAN}bash exam.sh reset${RESET}    진행 기록만 삭제"
       echo ""
       ;;
   esac
