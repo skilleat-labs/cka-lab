@@ -9,8 +9,9 @@
 #   EXAM_NQ=3                 문제 수
 #   exam_cleanup()            시험 리소스 전부 삭제 (원상복구)
 #   exam_setup()              환경 준비 (네임스페이스, 고장 파드 등)
-#   qN_title()                문제 제목 한 줄  (echo)
-#   qN_text()                 문제 본문        (cat <<'EOF' ...)
+#   qN_title()                문제 제목 한 줄 — 영어  (echo)
+#   qN_text()                 문제 본문      — 영어  (cat <<'EOF' ...)
+#   qN_title_ko() / qN_text_ko()   같은 내용의 한글판 (선택. 없으면 영어가 나온다)
 #   qN_grade()                채점 — check / check_output 만 호출
 #   qN_hint()                 (선택) 힌트
 #
@@ -46,6 +47,22 @@ state_set() {
   echo "$k=$v" >> "$STATE.tmp"; mv "$STATE.tmp" "$STATE"
 }
 now() { date +%s; }
+
+# ── 지문 언어 — 기본 영어(실제 시험과 같게), ko 로 바꾸면 한글 ────
+#   우선순위: EXAM_LANG 환경변수 > work/.progress 의 lang > en
+exam_lang() {
+  local l="${EXAM_LANG:-}"
+  [[ -z "$l" ]] && l=$(state_get lang)
+  [[ "$l" == "ko" ]] && echo ko || echo en
+}
+q_title() {   # q_title <n> [lang]
+  local n="$1" l="${2:-$(exam_lang)}"
+  if [[ "$l" == "ko" && "$(type -t "q${n}_title_ko")" == "function" ]]; then "q${n}_title_ko"; else "q${n}_title"; fi
+}
+q_text() {    # q_text <n> [lang]
+  local n="$1" l="${2:-$(exam_lang)}"
+  if [[ "$l" == "ko" && "$(type -t "q${n}_text_ko")" == "function" ]]; then "q${n}_text_ko"; else "q${n}_text"; fi
+}
 fmt_dur() {
   local s="$1"; [[ -z "$s" || "$s" -lt 0 ]] && s=0
   printf '%d분 %02d초' $((s/60)) $((s%60))
@@ -132,13 +149,13 @@ progress_bar() {
 # ── 문제 출력 ────────────────────────────────────────────────────
 show_question() {
   local n="$1" title
-  title=$("q${n}_title")
+  title=$(q_title "$n")
   echo ""
   sep
   echo -e "  ${BOLD}[Q${n}/${EXAM_NQ}]  ${title}${RESET}"
   sep
   echo ""
-  "q${n}_text" | sed 's/^/  /'
+  q_text "$n" | sed 's/^/  /'
   echo ""
   thin
   echo -e "  풀고 나서:  ${CYAN}bash exam.sh check${RESET}      다시 보기: ${CYAN}bash exam.sh show${RESET}"
@@ -148,7 +165,7 @@ show_question() {
   echo ""
   # 지나온 문제는 파일에 쌓아서 다시 볼 수 있게
   if ! grep -q "^\[Q${n}\]" "$QLOG" 2>/dev/null; then
-    { echo "[Q${n}] ${title}"; echo; "q${n}_text"; echo; echo "────────────────────────────────────"; echo; } >> "$QLOG"
+    { echo "[Q${n}] ${title}"; echo; q_text "$n"; echo; echo "────────────────────────────────────"; echo; } >> "$QLOG"
   fi
 }
 
@@ -214,7 +231,7 @@ cmd_check() {
   (( cur > EXAM_NQ )) && { echo -e "${GREEN}모든 문제를 마쳤습니다.  bash exam.sh finish${RESET}"; exit 0; }
   echo ""
   sep
-  echo -e "  ${BOLD}[Q${cur}] 채점${RESET}  $("q${cur}_title")"
+  echo -e "  ${BOLD}[Q${cur}] 채점${RESET}  $(q_title "$cur")"
   sep
   run_grade "$cur"
   local st; st=$(state_get "q${cur}_start"); local el=$(( $(now) - ${st:-$(now)} ))
@@ -269,7 +286,7 @@ cmd_status() {
   sep
   local i sumP=0 sumT=0
   for ((i=1;i<=EXAM_NQ;i++)); do
-    local rec; rec=$(state_get "q$i"); local title; title=$("q${i}_title")
+    local rec; rec=$(state_get "q$i"); local title; title=$(q_title "$i")
     if [[ -n "$rec" ]]; then
       local p="${rec%%/*}"; local rest="${rec#*/}"; local t="${rest%%:*}"; local el="${rest#*:}"
       sumP=$((sumP+p)); sumT=$((sumT+t))
@@ -294,7 +311,7 @@ cmd_finish() {
   echo -e "  ${BOLD}${EXAM_TITLE} — 최종 리포트${RESET}"
   sep
   for ((i=1;i<=EXAM_NQ;i++)); do
-    local rec; rec=$(state_get "q$i"); local title; title=$("q${i}_title")
+    local rec; rec=$(state_get "q$i"); local title; title=$(q_title "$i")
     if [[ -z "$rec" ]]; then
       run_grade "$i" >/dev/null; record_q "$i" "$Q_PASS" "$Q_TOTAL"; rec=$(state_get "q$i")
     fi
@@ -334,11 +351,11 @@ cmd_clean() {
 }
 
 # ── web UI 전용 (사람이 직접 쓸 일은 없다) ──────────────────────
-cmd_qtext() {   # 장식·ANSI 없는 문제 원문
-  local n="${1:-$(state_get current)}"
+cmd_qtext() {   # 장식·ANSI 없는 문제 원문.  cmd_qtext <n> [en|ko]
+  local n="${1:-$(state_get current)}" lang="${2:-$(exam_lang)}"
   [[ -z "$n" ]] && n=1
   (( n > EXAM_NQ )) && return 0
-  "q${n}_title"; echo "---8<---"; "q${n}_text"
+  q_title "$n" "$lang"; echo "---8<---"; q_text "$n" "$lang"
 }
 cmd_hinttext() { # 장식 없는 힌트 (기록도 남긴다)
   local n; n=$(state_get current); [[ -z "$n" ]] && exit 1
@@ -346,13 +363,24 @@ cmd_hinttext() { # 장식 없는 힌트 (기록도 남긴다)
   state_set "q${n}_hint" 1
   "q${n}_hint"
 }
+cmd_lang() {    # 지문 언어 바꾸기 — bash exam.sh lang ko
+  local l="$1"
+  if [[ "$l" != "ko" && "$l" != "en" ]]; then
+    echo "현재 지문 언어: $(exam_lang)   (바꾸려면: bash exam.sh lang en|ko)"; return 0
+  fi
+  state_set lang "$l"
+  echo -e "${GREEN}지문 언어를 ${l} 로 바꿨습니다.${RESET}  다시 보기: bash exam.sh show"
+}
 cmd_meta() {    # key=value 로 세트 정보 출력
   echo "title=$EXAM_TITLE"
   echo "nq=$EXAM_NQ"
   echo "unit=$EXAM_UNIT"
   local i
+  echo "lang=$(exam_lang)"
   for ((i=1;i<=EXAM_NQ;i++)); do
-    echo "q${i}_title=$("q${i}_title")"
+    echo "q${i}_title=$(q_title "$i" en)"
+    echo "q${i}_titleKo=$(q_title "$i" ko)"
+    [[ "$(type -t "q${i}_text_ko")" == "function" ]] && echo "q${i}_hasKo=1"
     [[ "$(type -t "q${i}_hint")" == "function" ]] && echo "q${i}_hasHint=1"
   done
 }
@@ -368,7 +396,8 @@ exam_main() {
     finish) cmd_finish ;;
     clean)  cmd_clean ;;
     reset)  cmd_reset ;;
-    qtext)    cmd_qtext "${2:-}" ;;
+    qtext)    cmd_qtext "${2:-}" "${3:-}" ;;
+    lang)     cmd_lang "${2:-}" ;;
     hinttext) cmd_hinttext ;;
     meta)     cmd_meta ;;
     *)
@@ -384,6 +413,7 @@ exam_main() {
       echo -e "  ${CYAN}bash exam.sh finish${RESET}   최종 리포트"
       echo -e "  ${CYAN}bash exam.sh clean${RESET}    시험 리소스 전부 삭제 + 진행 기록 삭제 (원상복구)"
       echo -e "  ${CYAN}bash exam.sh reset${RESET}    진행 기록만 삭제"
+      echo -e "  ${CYAN}bash exam.sh lang ko${RESET}  지문을 한글로 (기본은 영어 — 실제 시험과 같게)"
       echo ""
       ;;
   esac

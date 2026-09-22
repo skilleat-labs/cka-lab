@@ -24,6 +24,10 @@
   .spacer{flex:1}
   .timer{font-family:var(--mono);font-size:14px;color:var(--muted);white-space:nowrap}
   .dots{display:flex;gap:6px;align-items:center}
+  .langsw{display:flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden}
+  .langsw button{border:0;border-radius:0;padding:5px 11px;font-size:12.5px;font-weight:700;color:var(--muted);background:var(--white)}
+  .langsw button.on{background:var(--bluetint);color:var(--blue)}
+  .langsw button:disabled{opacity:.35}
   .dot{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--hair);background:var(--white)}
   .dot.full{background:var(--blue);border-color:var(--blue)}
   .dot.part{background:var(--bluetint);border-color:var(--blue)}
@@ -90,6 +94,7 @@
   <select id="sets"></select>
   <span class="sub" id="setSub"></span>
   <span class="spacer"></span>
+  <span class="langsw" id="langsw"></span>
   <span class="dots" id="dots"></span>
   <span class="timer" id="timer"></span>
 </header>
@@ -118,6 +123,7 @@ const $ = s => document.querySelector(s);
 let SET = localStorage.getItem('cka.set') || '';
 let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text}
 let CFG = {shell:true};
+let LANG = localStorage.getItem('cka.lang') || 'en';
 
 const fmt = s => { s = Math.max(0, s|0); return `${(s/60)|0}분 ${String(s%60).padStart(2,'0')}초`; };
 const esc = s => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -185,7 +191,7 @@ async function loadSets(){
 }
 
 async function refresh(){
-  ST = await api('/api/state?set=' + encodeURIComponent(SET));
+  ST = await api('/api/state?set=' + encodeURIComponent(SET) + '&lang=' + LANG);
   render();
 }
 
@@ -211,9 +217,19 @@ function renderTimer(){
   if(!base) TICK = setInterval(draw, 1000);
 }
 
+function renderLang(){
+  const koOff = ST.current && !ST.done && !ST.hasKo;
+  $('#langsw').innerHTML =
+    `<button data-lang="en" class="${LANG==='en'?'on':''}">EN</button>` +
+    `<button data-lang="ko" class="${LANG==='ko'?'on':''}" ${koOff?'disabled title="이 문제는 한글판이 아직 없습니다"':''}>KO</button>`;
+  $('#langsw').querySelectorAll('button').forEach(b => b.onclick = async () => {
+    LANG = b.dataset.lang; localStorage.setItem('cka.lang', LANG); await refresh();
+  });
+}
+
 function render(){
   $('#setSub').textContent = ST.nq ? `${ST.nq}문제 · ${ST.unit}` : '';
-  renderDots(); renderTimer();
+  renderDots(); renderTimer(); renderLang();
   $('#left').innerHTML = leftHTML();
   $('#actions').innerHTML = actionsHTML();
   bind();
@@ -231,7 +247,8 @@ function leftHTML(){
     return `<div class="card">
       <h2>아직 시작하지 않았습니다</h2>
       <div class="banner">시험을 시작하면 이전 시험 리소스를 정리하고 환경을 준비한 뒤 1번 문제가 나옵니다.
-        문제는 여기에서 읽고 <b>kubectl 은 오른쪽 터미널</b>에서 칩니다. 다 풀었으면 채점을 누르세요.</div>
+        문제는 여기에서 읽고 <b>kubectl 은 오른쪽 터미널</b>에서 칩니다. 다 풀었으면 채점을 누르세요.
+        지문은 실제 시험처럼 <b>영어</b>가 기본입니다 — 막히면 오른쪽 위 <b>KO</b> 로 한글을 봅니다.</div>
       <div class="bar"><button class="primary" data-cmd="start">시험 시작</button></div></div>`;
   }
   if(ST.done) return reportHTML();

@@ -27,8 +27,23 @@ exam_setup() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q1_title() { echo "조건대로 Pod 생성 [15점]"; }
+q1_title() { echo "Create a Pod to spec [15 pts]"; }
 q1_text() { cat <<'EOF'
+In the store namespace, create a Pod with the following spec.
+
+  name            edge-cache
+  image           nginx:1.25
+  container port  80
+  environment     CACHE_MODE=lru
+  labels          app=edge, tier=cache
+
+Verify:
+  kubectl get pod edge-cache -n store --show-labels
+  kubectl exec edge-cache -n store -- printenv CACHE_MODE
+EOF
+}
+q1_title_ko() { echo "조건대로 Pod 생성 [15점]"; }
+q1_text_ko() { cat <<'EOF'
 store 네임스페이스에 다음 조건의 Pod 를 생성하시오.
 
   이름            edge-cache
@@ -55,8 +70,30 @@ q1_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q2_title() { echo "Deployment + NodePort Service [15점]"; }
+q2_title() { echo "Deployment with a NodePort Service [15 pts]"; }
 q2_text() { cat <<'EOF'
+In the store namespace, create a Deployment and expose it with a NodePort
+Service.
+
+Deployment
+  name            catalog
+  image           nginx:1.24
+  replicas        3
+  container port  80
+
+Service
+  name            catalog-svc
+  type            NodePort
+  port            80 -> targetPort 80
+  nodePort        30095
+
+Verify:
+  kubectl get deploy,svc,endpoints -n store
+  curl http://<NodeIP>:30095
+EOF
+}
+q2_title_ko() { echo "Deployment + NodePort Service [15점]"; }
+q2_text_ko() { cat <<'EOF'
 store 네임스페이스에 Deployment 를 만들고 NodePort 로 노출하시오.
 
 Deployment
@@ -94,8 +131,32 @@ q2_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "Secret 은 환경변수로, ConfigMap 은 볼륨으로 [15점]"; }
+q3_title() { echo "Secret as env, ConfigMap as volume [15 pts]"; }
 q3_text() { cat <<'EOF'
+Perform the following in the store namespace.
+
+(1) Create a generic Secret
+  name            db-cred
+  data            user=admin, pass=s3cret
+
+(2) Create a ConfigMap
+  name            app-cfg
+  data            key config.properties with the value "mode=prod"
+
+(3) Create a Pod
+  name            worker
+  image           busybox:1.36
+  command         sleep 3600
+  environment     DB_USER from key user of Secret db-cred
+  volume mount    ConfigMap app-cfg mounted at /etc/app
+
+Verify:
+  kubectl exec worker -n store -- printenv DB_USER          -> admin
+  kubectl exec worker -n store -- cat /etc/app/config.properties   -> mode=prod
+EOF
+}
+q3_title_ko() { echo "Secret 은 환경변수로, ConfigMap 은 볼륨으로 [15점]"; }
+q3_text_ko() { cat <<'EOF'
 store 네임스페이스에서 다음을 수행하시오.
 
 (1) Secret 생성 (generic)
@@ -136,8 +197,26 @@ q3_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q4_title() { echo "스케일 · 롤링 업데이트 · 롤백 [15점]"; }
+q4_title() { echo "Scale, rolling update and rollback [15 pts]"; }
 q4_text() { cat <<'EOF'
+In the store namespace, create a Deployment named orders (nginx:1.24,
+replicas 2), then perform the following in order.
+
+  (a) scale to 3 replicas
+  (b) rolling update to nginx:1.25 and wait until it completes
+  (c) roll back to the previous revision
+
+Final state: nginx:1.24 / replicas 3 / all Ready.
+You must actually go through all three steps (creating it with 1.24 and
+only scaling does not count).
+
+Verify:
+  kubectl rollout history deployment/orders -n store   -> at least three revisions
+  kubectl get rs -n store
+EOF
+}
+q4_title_ko() { echo "스케일 · 롤링 업데이트 · 롤백 [15점]"; }
+q4_text_ko() { cat <<'EOF'
 store 네임스페이스에 Deployment orders (nginx:1.24, replicas 2) 를 만든 뒤
 순서대로 수행하시오.
 
@@ -173,8 +252,35 @@ q4_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q5_title() { echo "PV 직접 생성 → PVC Bound → 파드 마운트 [20점]"; }
+q5_title() { echo "Create a PV, bind a PVC, mount it [20 pts]"; }
 q5_text() { cat <<'EOF'
+Create a PV with the following spec, bind it with a PVC, then mount it in
+a Pod.
+
+PersistentVolume
+  name              logs-pv
+  capacity          1Gi
+  access mode       ReadWriteOnce
+  type              hostPath, path=/mnt/logs
+  storageClassName  local-logs
+
+PersistentVolumeClaim
+  name              logs-pvc  (store namespace)
+  request           500Mi
+  access mode       ReadWriteOnce
+  storageClassName  local-logs
+
+Pod
+  name              log-writer / busybox:1.36 / sleep 3600
+  mount             logs-pvc at /var/log/app
+
+Verify:
+  kubectl get pv logs-pv ; kubectl get pvc logs-pvc -n store   -> both Bound
+  kubectl exec log-writer -n store -- touch /var/log/app/ok
+EOF
+}
+q5_title_ko() { echo "PV 직접 생성 → PVC Bound → 파드 마운트 [20점]"; }
+q5_text_ko() { cat <<'EOF'
 다음 조건으로 PV 를 만들고, PVC 로 Bound 시킨 뒤, 파드에 마운트하시오.
 
 PersistentVolume
@@ -216,8 +322,28 @@ q5_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q6_title() { echo "NetworkPolicy — tier=cache 에서만 catalog 로 [20점]"; }
+q6_title() { echo "NetworkPolicy — only tier=cache may reach catalog [20 pts]"; }
 q6_text() { cat <<'EOF'
+Create two NetworkPolicies in the store namespace.
+
+(1) deny-all
+    - block all ingress for every Pod  (podSelector: {} / policyTypes: [Ingress])
+
+(2) allow-cache-to-catalog
+    - target: Pods labelled app=catalog
+    - allow: TCP 80 only from Pods labelled tier=cache
+
+Result: from a tier=cache Pod (edge-cache from task 1) catalog-svc must
+answer, and from a Pod without that label it must time out.
+
+Verify:
+  kubectl describe networkpolicy -n store
+  kubectl exec edge-cache -n store -- curl -s --max-time 3 http://catalog-svc      -> answers
+  kubectl run t -n store --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- --timeout=3 http://catalog-svc   -> timeout
+EOF
+}
+q6_title_ko() { echo "NetworkPolicy — tier=cache 에서만 catalog 로 [20점]"; }
+q6_text_ko() { cat <<'EOF'
 store 네임스페이스에 NetworkPolicy 두 개를 만드시오.
 
 (1) deny-all

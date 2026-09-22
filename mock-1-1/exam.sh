@@ -26,8 +26,21 @@ exam_setup() {
   echo "  Q7 용 web-broken 파드 생성 (이미지 저장소 오타)"
 }
 
-q1_title() { echo "Deployment 생성 [15점]"; }
+q1_title() { echo "Create a Deployment [15 pts]"; }
 q1_text() { cat <<'EOF'
+In the retail namespace, create a Deployment with the following spec.
+
+  name            store-front
+  image           nginx:1.25
+  replicas        4
+  container port  80
+
+Verify:
+  kubectl get deployment store-front -n retail   -> READY 4/4
+EOF
+}
+q1_title_ko() { echo "Deployment 생성 [15점]"; }
+q1_text_ko() { cat <<'EOF'
 retail 네임스페이스에 다음 조건으로 Deployment 를 생성하시오.
 
   이름            store-front
@@ -51,8 +64,23 @@ q1_grade() {
     "kubectl get deployment store-front -n $NS -o jsonpath='{.status.readyReplicas}'" "^4$" 5
 }
 
-q2_title() { echo "Service 생성 — 8080 → 80 [10점]"; }
+q2_title() { echo "Create a Service — 8080 to 80 [10 pts]"; }
 q2_text() { cat <<'EOF'
+Create a Service that exposes the Deployment from the previous task.
+
+  name            store-svc
+  type            ClusterIP
+  port            8080  ->  targetPort 80   (the ports differ)
+  selector        app=store-front
+  namespace       retail
+
+Verify:
+  kubectl get svc store-svc -n retail          -> 8080/TCP
+  kubectl get endpoints store-svc -n retail    -> four Pod IPs
+EOF
+}
+q2_title_ko() { echo "Service 생성 — 8080 → 80 [10점]"; }
+q2_text_ko() { cat <<'EOF'
 Q1 의 Deployment 를 노출하는 Service 를 생성하시오.
 
   이름            store-svc
@@ -76,8 +104,28 @@ q2_grade() {
   check_result "Endpoints 에 Pod IP 4개 등록" "$([[ "$ep" == "4" ]] && echo 0 || echo 1)" "실제 ${ep}개" 3
 }
 
-q3_title() { echo "ConfigMap + Pod [10점]"; }
+q3_title() { echo "ConfigMap and Pod [10 pts]"; }
 q3_text() { cat <<'EOF'
+Perform both tasks in the retail namespace.
+
+(1) Create a ConfigMap
+  name            store-config
+  data            APP_MODE=staging
+                  APP_PORT=9090
+
+(2) Create a Pod
+  name            store-cfg
+  image           busybox:1.36
+  command         sleep 7200
+  injection       all keys of store-config through envFrom
+
+Verify:
+  kubectl exec store-cfg -n retail -- printenv APP_MODE   -> staging
+  kubectl exec store-cfg -n retail -- printenv APP_PORT   -> 9090
+EOF
+}
+q3_title_ko() { echo "ConfigMap + Pod [10점]"; }
+q3_text_ko() { cat <<'EOF'
 retail 네임스페이스에서 다음 두 가지 작업을 수행하시오.
 
 (1) ConfigMap 생성
@@ -112,8 +160,31 @@ q3_grade() {
   check_output "store-cfg 내부 APP_PORT=9090 (실제 exec)" "kubectl exec store-cfg -n $NS -- printenv APP_PORT" "^9090$" 2
 }
 
-q4_title() { echo "PV + PVC — ReadWriteMany [15점]"; }
+q4_title() { echo "PV and PVC — ReadWriteMany [15 pts]"; }
 q4_text() { cat <<'EOF'
+Create a PV and a PVC with the following spec and make them Bound.
+
+PersistentVolume
+  name              report-pv
+  capacity          1Gi
+  access mode       ReadWriteMany
+  type              hostPath, path=/tmp/report-data
+  storageClassName  local-manual
+
+PersistentVolumeClaim
+  name              report-pvc
+  namespace         retail
+  request           1Gi
+  access mode       ReadWriteMany
+  storageClassName  local-manual
+
+Verify:
+  kubectl get pv report-pv                     -> Bound
+  kubectl get pvc report-pvc -n retail         -> Bound
+EOF
+}
+q4_title_ko() { echo "PV + PVC — ReadWriteMany [15점]"; }
+q4_text_ko() { cat <<'EOF'
 다음 조건으로 PV 와 PVC 를 생성하고 Bound 시키시오.
 
 PersistentVolume
@@ -144,8 +215,25 @@ q4_grade() {
   check_output "PVC report-pvc STATUS=Bound (retail)" "kubectl get pvc report-pvc -n $NS -o jsonpath='{.status.phase}'" "^Bound$" 5
 }
 
-q5_title() { echo "RBAC — deployments 만 [15점]"; }
+q5_title() { echo "RBAC — deployments only [15 pts]"; }
 q5_text() { cat <<'EOF'
+Create the following three RBAC resources in the retail namespace.
+
+ServiceAccount   name deploy-sa
+Role             name deploy-reader / resources deployments (apps group)
+                 verbs get, list, watch
+RoleBinding      name deploy-reader-rb / Role deploy-reader
+                 -> Subject ServiceAccount deploy-sa
+
+Verify:
+  kubectl auth can-i list deployments \
+    --as=system:serviceaccount:retail:deploy-sa -n retail   -> yes
+  kubectl auth can-i list pods \
+    --as=system:serviceaccount:retail:deploy-sa -n retail   -> no
+EOF
+}
+q5_title_ko() { echo "RBAC — deployments 만 [15점]"; }
+q5_text_ko() { cat <<'EOF'
 retail 네임스페이스에 다음 세 가지 RBAC 리소스를 생성하시오.
 
 ServiceAccount   이름 deploy-sa
@@ -186,8 +274,19 @@ q5_grade() {
   check_result "권한 검증: list pods = no (필요한 권한만)" "$([[ -n "$sa" && -n "$rb" && "$ap" == "no" ]] && echo 0 || echo 1)" "" 2
 }
 
-q6_title() { echo "노드 drain — worker-2 [10점]"; }
+q6_title() { echo "Drain a node — worker-2 [10 pts]"; }
 q6_text() { cat <<'EOF'
+(1) Drain the node worker-2.
+    - ignore DaemonSet pods
+    - allow deletion of emptyDir data
+(2) When the maintenance is done, make worker-2 schedulable again.
+
+Verify:
+  kubectl get nodes   -> worker-2 is Ready and not SchedulingDisabled
+EOF
+}
+q6_title_ko() { echo "노드 drain — worker-2 [10점]"; }
+q6_text_ko() { cat <<'EOF'
 (1) worker-2 노드를 drain 한다.
     - DaemonSet Pod 는 무시
     - emptyDir 데이터는 삭제 허용
@@ -210,8 +309,20 @@ q6_grade() {
   check_output "worker-2 Ready 상태" "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 5
 }
 
-q7_title() { echo "Pod 트러블슈팅 [25점]"; }
+q7_title() { echo "Troubleshoot a Pod [25 pts]"; }
 q7_text() { cat <<'EOF'
+The Pod web-broken in the retail namespace is in ErrImagePull /
+ImagePullBackOff state.
+
+Find the cause and fix the image to nginx:1.24 so that the Pod reaches
+Running state.
+
+Verify:
+  kubectl get pod web-broken -n retail         -> Running
+EOF
+}
+q7_title_ko() { echo "Pod 트러블슈팅 [25점]"; }
+q7_text_ko() { cat <<'EOF'
 retail 네임스페이스의 web-broken Pod 가 ErrImagePull / ImagePullBackOff
 상태다.
 

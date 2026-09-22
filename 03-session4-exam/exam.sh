@@ -61,8 +61,36 @@ EOF
 }
 
 # ══════════════════════════════════════════════════════════════
-q1_title() { echo "PVC 를 만들고 Deployment YAML 에서 바로 연결"; }
+q1_title() { echo "Create a Deployment with the PVC mounted from the start"; }
 q1_text() { cat <<'EOF'
+A StorageClass named api-storage already exists in the cluster.
+
+In the api namespace, create a PersistentVolumeClaim named api-data that
+requests 1Gi with access mode ReadWriteOnce using that StorageClass.
+
+Then create a Deployment named api-server (image nginx:1.24, 1 replica)
+whose manifest already includes the PVC as a volume, mounted at
+/var/www/data.
+
+The Deployment must be created with the volume from the start — do not
+add it afterwards.
+
+Conditions:
+  PVC             api-data / storageClassName api-storage / 1Gi / ReadWriteOnce
+  Deployment      api-server / nginx:1.24 / replicas 1
+  The Deployment manifest must contain volumes + volumeMounts at creation.
+  mountPath       /var/www/data
+  Careful: creating it first and adding the volume later does not count
+  (the Deployment must still be at revision 1).
+
+Verify:
+  kubectl get pvc api-data -n api
+  kubectl rollout history deployment/api-server -n api
+  kubectl exec -n api deploy/api-server -- df -h /var/www/data
+EOF
+}
+q1_title_ko() { echo "PVC 를 만들고 Deployment YAML 에서 바로 연결"; }
+q1_text_ko() { cat <<'EOF'
 A StorageClass named api-storage already exists in the cluster.
 
 In the api namespace, create a PersistentVolumeClaim named api-data that
@@ -123,8 +151,30 @@ q1_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q2_title() { echo "기존 Deployment 에 Requests / Limits 추가"; }
+q2_title() { echo "Add resource requests and limits to an existing Deployment"; }
 q2_text() { cat <<'EOF'
+A Deployment named api-worker already exists in the api namespace with 2
+replicas and no resource requests or limits.
+
+Update it so that its container (worker) has:
+  requests    cpu 100m, memory 128Mi
+  limits      cpu 200m, memory 256Mi
+
+All pods must be rolled out and Ready with the new resource settings.
+
+Conditions:
+  target          api-worker Deployment in the api namespace (already exists)
+  requests        cpu 100m / memory 128Mi
+  limits          cpu 200m / memory 256Mi
+  After the change both pods must be Ready with the new settings.
+
+Verify:
+  kubectl get deployment api-worker -n api -o jsonpath='{.spec.template.spec.containers[0].resources}'
+  kubectl get pods -n api -l app=api-worker -o jsonpath='{.items[*].status.qosClass}'
+EOF
+}
+q2_title_ko() { echo "기존 Deployment 에 Requests / Limits 추가"; }
+q2_text_ko() { cat <<'EOF'
 A Deployment named api-worker already exists in the api namespace with 2
 replicas and no resource requests or limits.
 
@@ -171,8 +221,25 @@ q2_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "Liveness / Readiness Probe 작성"; }
+q3_title() { echo "Configure liveness and readiness probes"; }
 q3_text() { cat <<'EOF'
+In the api namespace, create a Pod named health-pod using image nginx:1.24
+with the following probes configured on its container:
+
+  livenessProbe    HTTP GET on path / port 80
+                   initialDelaySeconds 5, periodSeconds 10, failureThreshold 3
+  readinessProbe   HTTP GET on path / port 80
+                   initialDelaySeconds 3, periodSeconds 5
+
+The Pod must become Ready and must not restart.
+
+Verify:
+  kubectl get pod health-pod -n api
+  kubectl describe pod health-pod -n api | grep -E 'Liveness|Readiness'
+EOF
+}
+q3_title_ko() { echo "Liveness / Readiness Probe 작성"; }
+q3_text_ko() { cat <<'EOF'
 In the api namespace, create a Pod named health-pod using image nginx:1.24
 with the following probes configured on its container:
 

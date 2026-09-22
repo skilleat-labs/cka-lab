@@ -27,8 +27,21 @@ exam_setup() {
   echo "  Q7 용 broken-app 파드 생성 (ImagePullBackOff)"
 }
 
-q1_title() { echo "Deployment 생성 [15점]"; }
+q1_title() { echo "Create a Deployment [15 pts]"; }
 q1_text() { cat <<'EOF'
+Create a Deployment with the following specification.
+
+  name            nginx-deploy
+  image           nginx:1.24
+  replicas        3
+  namespace       default
+
+Verify:
+  kubectl get deployment nginx-deploy -n default   -> READY 3/3
+EOF
+}
+q1_title_ko() { echo "Deployment 생성 [15점]"; }
+q1_text_ko() { cat <<'EOF'
 다음 조건으로 Deployment 를 생성하시오.
 
   이름          nginx-deploy
@@ -50,8 +63,23 @@ q1_grade() {
     "kubectl get deployment nginx-deploy -n default -o jsonpath='{.status.readyReplicas}'" "^3$" 5
 }
 
-q2_title() { echo "Service 생성 [10점]"; }
+q2_title() { echo "Create a Service [10 pts]"; }
 q2_text() { cat <<'EOF'
+Create a Service that exposes the Deployment from the previous task.
+
+  name            nginx-svc
+  type            ClusterIP
+  port            80
+  selector        app=nginx-deploy
+  namespace       default
+
+Verify:
+  kubectl get svc nginx-svc
+  kubectl get endpoints nginx-svc      -> three Pod IPs
+EOF
+}
+q2_title_ko() { echo "Service 생성 [10점]"; }
+q2_text_ko() { cat <<'EOF'
 Q1 의 Deployment 를 노출하는 Service 를 생성하시오.
 
   이름          nginx-svc
@@ -73,8 +101,26 @@ q2_grade() {
   check_result "Endpoints 에 Pod IP 등록됨" "$([[ "${ep:-0}" -ge 1 ]] && echo 0 || echo 1)" "실제 ${ep}개" 5
 }
 
-q3_title() { echo "ConfigMap + Pod [10점]"; }
+q3_title() { echo "ConfigMap and Pod [10 pts]"; }
 q3_text() { cat <<'EOF'
+(1) Create a ConfigMap
+  name            app-config
+  data            APP_ENV=prod
+                  APP_PORT=8080
+
+(2) Create a Pod
+  name            config-pod
+  image           busybox
+  command         sleep 3600
+  injection       all keys of app-config through envFrom
+
+Verify:
+  kubectl exec config-pod -- printenv APP_ENV      -> prod
+  kubectl exec config-pod -- printenv APP_PORT     -> 8080
+EOF
+}
+q3_title_ko() { echo "ConfigMap + Pod [10점]"; }
+q3_text_ko() { cat <<'EOF'
 (1) ConfigMap 생성
   이름          app-config
   데이터        APP_ENV=prod
@@ -108,8 +154,30 @@ q3_grade() {
     "kubectl exec config-pod -n default -- printenv APP_ENV" "^prod$" 2
 }
 
-q4_title() { echo "PersistentVolume + PVC [15점]"; }
+q4_title() { echo "PersistentVolume and PVC [15 pts]"; }
 q4_text() { cat <<'EOF'
+Create a PV and a PVC with the following specification and make them Bound.
+
+PersistentVolume
+  name              task-pv
+  capacity          500Mi
+  access mode       ReadWriteOnce
+  type              hostPath, path=/tmp/task-data
+  storageClassName  manual
+
+PersistentVolumeClaim
+  name              task-pvc
+  request           500Mi
+  access mode       ReadWriteOnce
+  storageClassName  manual
+
+Verify:
+  kubectl get pv task-pv       -> Bound
+  kubectl get pvc task-pvc     -> Bound
+EOF
+}
+q4_title_ko() { echo "PersistentVolume + PVC [15점]"; }
+q4_text_ko() { cat <<'EOF'
 다음 조건으로 PV 와 PVC 를 생성하고 Bound 시키시오.
 
 PersistentVolume
@@ -138,8 +206,21 @@ q4_grade() {
   check_output "PVC task-pvc STATUS=Bound" "kubectl get pvc task-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 6
 }
 
-q5_title() { echo "RBAC [15점]"; }
+q5_title() { echo "RBAC [15 pts]"; }
 q5_text() { cat <<'EOF'
+Create the following three RBAC resources in the default namespace.
+
+ServiceAccount   name app-sa
+Role             name app-role / resources pods / verbs get, list
+RoleBinding      name app-rb / Role app-role -> Subject ServiceAccount app-sa
+
+Verify:
+  kubectl auth can-i list pods \
+    --as=system:serviceaccount:default:app-sa -n default   -> yes
+EOF
+}
+q5_title_ko() { echo "RBAC [15점]"; }
+q5_text_ko() { cat <<'EOF'
 default 네임스페이스에 다음 세 가지 RBAC 리소스를 생성하시오.
 
 ServiceAccount   이름 app-sa
@@ -170,8 +251,19 @@ q5_grade() {
     "kubectl auth can-i list pods --as=system:serviceaccount:default:app-sa -n default" "^yes$" 3
 }
 
-q6_title() { echo "노드 drain [10점]"; }
+q6_title() { echo "Drain a node [10 pts]"; }
 q6_text() { cat <<'EOF'
+(1) Drain the node worker-1.
+    - ignore DaemonSet pods
+    - allow deletion of emptyDir data
+(2) When the maintenance is done, make worker-1 schedulable again.
+
+Verify:
+  kubectl get nodes   -> worker-1 is Ready and not SchedulingDisabled
+EOF
+}
+q6_title_ko() { echo "노드 drain [10점]"; }
+q6_text_ko() { cat <<'EOF'
 (1) worker-1 노드를 drain 한다.
     - DaemonSet Pod 는 무시
     - emptyDir 데이터는 삭제 허용
@@ -196,8 +288,19 @@ q6_grade() {
     "kubectl get node worker-1 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 5
 }
 
-q7_title() { echo "Pod 트러블슈팅 [25점]"; }
+q7_title() { echo "Troubleshoot a Pod [25 pts]"; }
 q7_text() { cat <<'EOF'
+The Pod broken-app is currently in ErrImagePull / ImagePullBackOff state.
+
+Find the cause and fix the image to nginx:latest so that the Pod reaches
+Running state.
+
+Verify:
+  kubectl get pod broken-app     -> Running
+EOF
+}
+q7_title_ko() { echo "Pod 트러블슈팅 [25점]"; }
+q7_text_ko() { cat <<'EOF'
 현재 broken-app Pod 가 ErrImagePull / ImagePullBackOff 상태다.
 
 원인을 파악하고, 이미지를 nginx:latest 로 수정하여 Pod 가 Running 상태가

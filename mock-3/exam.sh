@@ -63,8 +63,28 @@ EOF
   echo "  Q6 용 crash-pod (CrashLoopBackOff) 생성"
 }
 
-q1_title() { echo "HPA 설정 [10점]"; }
+q1_title() { echo "Configure an HPA [10 pts]"; }
 q1_text() { cat <<'EOF'
+Create a Deployment and an HPA with the following spec.
+
+Deployment
+  name          web-app
+  image         nginx:1.24
+  replicas      2
+
+HPA
+  target        deployment/web-app
+  min replicas  2
+  max replicas  5
+  CPU target    70%
+
+Verify:
+  kubectl get deployment web-app
+  kubectl get hpa web-app
+EOF
+}
+q1_title_ko() { echo "HPA 설정 [10점]"; }
+q1_text_ko() { cat <<'EOF'
 다음 조건으로 Deployment 와 HPA 를 생성하시오.
 
 Deployment
@@ -98,8 +118,30 @@ q1_grade() {
     "kubectl get hpa web-app -n default -o jsonpath='{.spec.metrics[0].resource.target.averageUtilization}'" "^70$" 2
 }
 
-q2_title() { echo "StorageClass + PVC [15점]"; }
+q2_title() { echo "StorageClass and PVC [15 pts]"; }
 q2_text() { cat <<'EOF'
+Create a StorageClass and a PVC with the following spec.
+(A PV for the fast-ssd class has already been prepared.)
+
+StorageClass
+  name          fast-ssd
+  provisioner   kubernetes.io/no-provisioner
+  reclaimPolicy Delete
+
+PVC
+  name              fast-pvc
+  capacity          1Gi
+  accessMode        ReadWriteOnce
+  storageClassName  fast-ssd
+  namespace         default
+
+Verify:
+  kubectl get storageclass fast-ssd
+  kubectl get pvc fast-pvc          -> Bound
+EOF
+}
+q2_title_ko() { echo "StorageClass + PVC [15점]"; }
+q2_text_ko() { cat <<'EOF'
 다음 조건으로 StorageClass 와 PVC 를 생성하시오.
 (fast-ssd 클래스용 PV 는 미리 준비되어 있다)
 
@@ -138,8 +180,23 @@ q2_grade() {
   check_output "PVC 가 Bound 상태" "kubectl get pvc fast-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 3
 }
 
-q3_title() { echo "RBAC ClusterRole [20점]"; }
+q3_title() { echo "RBAC with a ClusterRole [20 pts]"; }
 q3_text() { cat <<'EOF'
+Create the following three RBAC resources.
+
+ServiceAccount        reader-sa (default namespace)
+ClusterRole           cluster-reader
+                      resources pods, nodes, services / verbs get, list, watch
+ClusterRoleBinding    cluster-reader-crb
+                      ClusterRole cluster-reader -> ServiceAccount default:reader-sa
+
+Verify:
+  kubectl auth can-i list nodes --as=system:serviceaccount:default:reader-sa   -> yes
+  kubectl auth can-i list pods  --as=system:serviceaccount:default:reader-sa   -> yes
+EOF
+}
+q3_title_ko() { echo "RBAC ClusterRole [20점]"; }
+q3_text_ko() { cat <<'EOF'
 다음 세 가지 RBAC 리소스를 생성하시오.
 
 ServiceAccount        reader-sa (default 네임스페이스)
@@ -174,8 +231,24 @@ q3_grade() {
   check_output "권한: list pods = yes" "kubectl auth can-i list pods --as=system:serviceaccount:default:reader-sa" "^yes$" 2
 }
 
-q4_title() { echo "DaemonSet 생성 [15점]"; }
+q4_title() { echo "Create a DaemonSet [15 pts]"; }
 q4_text() { cat <<'EOF'
+Create a DaemonSet with the following spec.
+
+  name          log-collector
+  namespace     default
+  image         busybox:1.36
+  command       ["sh", "-c", "while true; do echo $(date); sleep 60; done"]
+  labels        app=log-collector  (in both selector and template)
+
+Note: there is no kubectl create command for a DaemonSet — write the YAML.
+
+Verify:
+  kubectl get daemonset log-collector    -> DESIRED == READY (number of worker nodes)
+EOF
+}
+q4_title_ko() { echo "DaemonSet 생성 [15점]"; }
+q4_text_ko() { cat <<'EOF'
 다음 조건으로 DaemonSet 을 생성하시오.
 
   이름          log-collector
@@ -205,8 +278,25 @@ q4_grade() {
   check_result "DESIRED(${d}) == READY(${r}) — 노드마다 1개씩 기동" "$([[ "$d" != "0" && "$d" == "$r" ]] && echo 0 || echo 1)" "" 5
 }
 
-q5_title() { echo "Service Endpoint 수정 [20점]"; }
+q5_title() { echo "Fix an empty Service endpoint [20 pts]"; }
 q5_text() { cat <<'EOF'
+The Endpoints of broken-svc are empty, while broken-deploy is running
+normally with two pods.
+
+Diagnose the cause and fix broken-svc so that it sends traffic to the pods
+of broken-deploy.
+
+Useful commands:
+  kubectl get endpoints broken-svc
+  kubectl get svc broken-svc -o yaml
+  kubectl get pod -l app=broken-deploy --show-labels
+
+Verify:
+  kubectl get endpoints broken-svc         -> two Pod IPs
+EOF
+}
+q5_title_ko() { echo "Service Endpoint 수정 [20점]"; }
+q5_text_ko() { cat <<'EOF'
 현재 broken-svc 의 Endpoints 가 비어 있다. broken-deploy 는 정상 실행 중
 (파드 2개)이다.
 
@@ -234,8 +324,23 @@ q5_grade() {
   check_result "http://broken-svc 로 실제 응답 (통신 검증)" "$(echo "$out" | grep -qi nginx && echo 0 || echo 1)" "" 6
 }
 
-q6_title() { echo "CrashLoopBackOff 수정 [10점]"; }
+q6_title() { echo "Fix a CrashLoopBackOff [10 pts]"; }
 q6_text() { cat <<'EOF'
+The Pod crash-pod is in CrashLoopBackOff state.
+Find the cause and make the Pod reach Running state. Keep the same image.
+
+Useful commands:
+  kubectl logs crash-pod --previous
+  kubectl describe pod crash-pod
+
+Verify:
+  kubectl get pod crash-pod                -> Running, no further restarts
+
+Note: the command of a running Pod cannot be edited — delete and recreate it.
+EOF
+}
+q6_title_ko() { echo "CrashLoopBackOff 수정 [10점]"; }
+q6_text_ko() { cat <<'EOF'
 crash-pod 가 CrashLoopBackOff 상태다.
 원인을 파악하고 Pod 가 Running 이 되도록 수정하시오. (이미지는 그대로)
 
@@ -262,8 +367,20 @@ q6_grade() {
   check_result "command 가 wrongcmd 가 아님" "$(kubectl get pod crash-pod -n default &>/dev/null && ! echo "$cmd" | grep -q wrongcmd && echo 0 || echo 1)" "" 3
 }
 
-q7_title() { echo "클러스터 업그레이드 계획 [10점]"; }
+q7_title() { echo "Cluster upgrade plan [10 pts]"; }
 q7_text() { cat <<'EOF'
+Check the kubeadm cluster upgrade plan and save the output to the file
+/tmp/upgrade-plan.txt.
+
+  - it must be run on the control plane node
+  - capture both standard output and standard error into the file
+
+Verify:
+  cat /tmp/upgrade-plan.txt     -> contains the Kubernetes version information
+EOF
+}
+q7_title_ko() { echo "클러스터 업그레이드 계획 [10점]"; }
+q7_text_ko() { cat <<'EOF'
 kubeadm 으로 클러스터 업그레이드 계획을 확인하고 결과를
 /tmp/upgrade-plan.txt 파일에 저장하시오.
 

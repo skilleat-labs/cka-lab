@@ -78,7 +78,8 @@ def meta(set_id):
     if hit and hit[0] == stamp:
         return hit[1]
     rc, out = run_exam(set_id, "meta", timeout=30)
-    m = {"id": set_id, "title": set_id, "nq": 0, "unit": "항목", "titles": {}, "hasHint": {}}
+    m = {"id": set_id, "title": set_id, "nq": 0, "unit": "항목",
+         "titles": {}, "titlesKo": {}, "hasHint": {}, "hasKo": {}}
     for line in out.splitlines():
         if "=" not in line:
             continue
@@ -91,6 +92,10 @@ def meta(set_id):
             m["unit"] = v
         elif k.endswith("_title") and k.startswith("q"):
             m["titles"][k[1:-6]] = v
+        elif k.endswith("_titleKo") and k.startswith("q"):
+            m["titlesKo"][k[1:-8]] = v
+        elif k.endswith("_hasKo"):
+            m["hasKo"][k[1:-6]] = True
         elif k.endswith("_hasHint"):
             m["hasHint"][k[1:-8]] = True
     _meta_cache[set_id] = (stamp, m)
@@ -129,7 +134,8 @@ def last_items(set_id):
     return qn, items
 
 
-def state(set_id):
+def state(set_id, lang="en"):
+    lang = "ko" if lang == "ko" else "en"
     m = meta(set_id)
     pr = progress(set_id)
     nq = m["nq"]
@@ -138,7 +144,9 @@ def state(set_id):
     for i in range(1, nq + 1):
         rec = pr.get(f"q{i}")
         row = {
-            "n": i, "title": m["titles"].get(str(i), ""),
+            "n": i,
+            "title": (m["titlesKo"] if lang == "ko" else m["titles"]).get(str(i))
+                     or m["titles"].get(str(i), ""),
             "pass": None, "total": None, "elapsed": None,
             "tries": int(pr.get(f"q{i}_tries") or 0),
             "skipped": bool(pr.get(f"q{i}_skipped")),
@@ -162,10 +170,12 @@ def state(set_id):
         "done": bool(cur and cur > nq),
         "hasHint": bool(m["hasHint"].get(str(cur))),
         "items": items if items_q == cur else [],   # 지난 문제의 결과는 보여주지 않는다
+        "lang": lang,
+        "hasKo": bool(m["hasKo"].get(str(cur))),
         "now": int(time.time()),
     }
     if cur and cur <= nq:
-        rc, out = run_exam(set_id, "qtext", str(cur), timeout=30)
+        rc, out = run_exam(set_id, "qtext", str(cur), lang, timeout=30)
         title, _, body = out.partition("---8<---")
         st["question"] = {"n": cur, "title": title.strip(), "body": body.strip("\n")}
     return st
@@ -278,9 +288,11 @@ def serve_shell(handler, cwd):
         except Exception:  # noqa: BLE001
             pass
         os.environ["TERM"] = "xterm-256color"
-        shell = os.environ.get("SHELL") or "/bin/bash"
+        rc = os.path.join(ROOT, "_lib", "exam-shellrc.sh")   # 자동완성·alias k·$do
         try:
-            os.execvp(shell, [shell, "-l"])
+            if os.path.isfile(rc):
+                os.execvp("bash", ["bash", "--rcfile", rc, "-i"])
+            os.execvp("bash", ["bash", "-l"])
         except Exception:  # noqa: BLE001
             os.execvp("/bin/sh", ["/bin/sh"])
         os._exit(1)
@@ -405,7 +417,7 @@ class Handler(BaseHTTPRequestHandler):
                 s = self._set_param(q)
                 if not s:
                     return self._json({"error": "알 수 없는 세트"}, 404)
-                return self._json(state(s))
+                return self._json(state(s, (q.get("lang") or ["en"])[0]))
             if u.path == "/api/job":
                 jid = int((q.get("id") or ["0"])[0])
                 j = _jobs.get(jid)

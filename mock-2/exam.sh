@@ -46,8 +46,24 @@ exam_setup() {
   fi
 }
 
-q1_title() { echo "Node Affinity Pod [15점]"; }
+q1_title() { echo "Node affinity Pod [15 pts]"; }
 q1_text() { cat <<'EOF'
+Create a Pod with the following spec.
+
+  name            affinity-pod
+  image           nginx:1.24
+  namespace       default
+  scheduling      must be placed on a node labelled disktype=ssd using
+                  requiredDuringSchedulingIgnoredDuringExecution
+
+Hint: kubectl explain pod.spec.affinity.nodeAffinity
+
+Verify:
+  kubectl get pod affinity-pod -o wide    -> Running on the disktype=ssd node
+EOF
+}
+q1_title_ko() { echo "Node Affinity Pod [15점]"; }
+q1_text_ko() { cat <<'EOF'
 다음 조건의 Pod 를 생성하시오.
 
   이름          affinity-pod
@@ -83,8 +99,24 @@ q1_grade() {
   check_result "disktype=ssd 노드에 실제로 배치됨 (${node:-미배치})" "$([[ "$lbl" == "ssd" ]] && echo 0 || echo 1)" "" 4
 }
 
-q2_title() { echo "Taint + Toleration [15점]"; }
+q2_title() { echo "Taint and toleration [15 pts]"; }
 q2_text() { cat <<'EOF'
+Create a Pod with the following spec.
+
+  name            toleration-pod
+  image           busybox:1.36
+  command         sleep 3600
+  namespace       default
+  toleration      key: dedicated / value: gpu / effect: NoSchedule / operator: Equal
+
+Hint: kubectl explain pod.spec.tolerations
+
+Verify:
+  kubectl get pod toleration-pod -o yaml | grep -A10 tolerations
+EOF
+}
+q2_title_ko() { echo "Taint + Toleration [15점]"; }
+q2_text_ko() { cat <<'EOF'
 다음 조건의 Pod 를 생성하시오.
 
   이름          toleration-pod
@@ -115,8 +147,27 @@ q2_grade() {
   check_output "toleration-pod Running" "kubectl get pod toleration-pod -n default -o jsonpath='{.status.phase}'" "^Running$" 3
 }
 
-q3_title() { echo "NetworkPolicy — deny-all + allow-web [20점]"; }
+q3_title() { echo "NetworkPolicy — deny-all and allow-web [20 pts]"; }
 q3_text() { cat <<'EOF'
+Create the following two NetworkPolicies in the default namespace.
+
+(1) deny-all
+    - block all ingress traffic for every Pod
+    - podSelector: {}   (empty selector = applies to all)
+    - policyTypes: [Ingress]
+
+(2) allow-web
+    - applies to Pods labelled app=db
+    - allow only port 3306/TCP from Pods labelled app=web
+    - policyTypes: [Ingress]
+
+Verify:
+  kubectl describe networkpolicy deny-all
+  kubectl describe networkpolicy allow-web
+EOF
+}
+q3_title_ko() { echo "NetworkPolicy — deny-all + allow-web [20점]"; }
+q3_text_ko() { cat <<'EOF'
 default 네임스페이스에 다음 두 가지 NetworkPolicy 를 생성하시오.
 
 (1) deny-all
@@ -161,8 +212,23 @@ q3_grade() {
     "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.ingress[0].ports[0].port}'" "^3306$" 3
 }
 
-q4_title() { echo "Ingress 생성 [15점]"; }
+q4_title() { echo "Create an Ingress [15 pts]"; }
 q4_text() { cat <<'EOF'
+Create an Ingress with the following spec. The backends shop-svc and
+api-svc already exist.
+
+  name            shop-ingress
+  namespace       default
+  pathType        Prefix
+  routing         /shop  ->  shop-svc : 80
+                  /api   ->  api-svc  : 8080
+
+Verify:
+  kubectl describe ingress shop-ingress
+EOF
+}
+q4_title_ko() { echo "Ingress 생성 [15점]"; }
+q4_text_ko() { cat <<'EOF'
 다음 조건으로 Ingress 를 생성하시오. (백엔드 shop-svc, api-svc 는 이미 있다)
 
   이름          shop-ingress
@@ -185,8 +251,29 @@ q4_grade() {
   check_result "/api → api-svc:8080" "$(echo "$paths" | grep -q "('/api', 'Prefix', 'api-svc', 8080)" && echo 0 || echo 1)" "" 6
 }
 
-q5_title() { echo "StatefulSet + headless Service [15점]"; }
+q5_title() { echo "StatefulSet with a headless Service [15 pts]"; }
 q5_text() { cat <<'EOF'
+Create a StatefulSet and a headless Service with the following spec.
+
+StatefulSet
+  name            mysql-sts
+  image           mysql:8.0
+  replicas        2
+  environment     MYSQL_ROOT_PASSWORD=rootpass
+  serviceName     mysql-headless
+  volumeClaimTemplates   name data / 1Gi / ReadWriteOnce / mountPath /var/lib/mysql
+
+headless Service (clusterIP: None)
+  name            mysql-headless
+  port            3306
+
+Verify:
+  kubectl get statefulset mysql-sts
+  kubectl get pvc          -> data-mysql-sts-0, data-mysql-sts-1
+EOF
+}
+q5_title_ko() { echo "StatefulSet + headless Service [15점]"; }
+q5_text_ko() { cat <<'EOF'
 다음 조건으로 StatefulSet 과 headless Service 를 생성하시오.
 
 StatefulSet
@@ -219,8 +306,22 @@ q5_grade() {
     "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.clusterIP}'" "^None$" 3
 }
 
-q6_title() { echo "etcd 백업 [10점]"; }
+q6_title() { echo "etcd snapshot [10 pts]"; }
 q6_text() { cat <<'EOF'
+Save an etcd snapshot to /tmp/mock2-etcd.db.
+
+  endpoint      https://127.0.0.1:2379
+  CA cert       /etc/kubernetes/pki/etcd/ca.crt
+  cert          /etc/kubernetes/pki/etcd/server.crt
+  key           /etc/kubernetes/pki/etcd/server.key
+
+Verify:
+  ls -lh /tmp/mock2-etcd.db
+  ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db
+EOF
+}
+q6_title_ko() { echo "etcd 백업 [10점]"; }
+q6_text_ko() { cat <<'EOF'
 etcd 스냅샷을 /tmp/mock2-etcd.db 에 저장하시오.
 
   endpoint      https://127.0.0.1:2379
@@ -252,8 +353,23 @@ q6_grade() {
   check_result "스냅샷이 유효하다 (snapshot status)" "$st" "" 3
 }
 
-q7_title() { echo "Node NotReady 복구 [10점]"; }
+q7_title() { echo "Recover a NotReady node [10 pts]"; }
 q7_text() { cat <<'EOF'
+The node worker-2 is in NotReady state. Find the cause and fix it.
+After the fix, make sure kubelet starts automatically after a reboot.
+
+Suggested order:
+  kubectl describe node worker-2     -> Conditions
+  ssh worker-2
+  systemctl status kubelet
+  journalctl -u kubelet -n 50
+
+Verify:
+  kubectl get nodes                  -> worker-2 is Ready
+EOF
+}
+q7_title_ko() { echo "Node NotReady 복구 [10점]"; }
+q7_text_ko() { cat <<'EOF'
 worker-2 노드가 NotReady 상태다. 원인을 파악하고 복구하시오.
 복구 후 재부팅에도 kubelet 이 자동으로 뜨도록 설정하시오.
 

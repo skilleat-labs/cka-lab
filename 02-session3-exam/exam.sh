@@ -116,8 +116,27 @@ EOF
 }
 
 # ══════════════════════════════════════════════════════════════
-q1_title() { echo "Deployment 를 만들고 Service 로 연결"; }
+q1_title() { echo "Deployment and Service in the shop namespace"; }
 q1_text() { cat <<'EOF'
+In the shop namespace, create a Deployment named shop-web using image
+nginx:1.24 with 2 replicas, exposing container port 80.
+
+Expose it with a ClusterIP Service named shop-svc on port 80 -> targetPort 80.
+The Service must actually route traffic to both pods.
+
+Conditions:
+  namespace       shop  (already created)
+  Deployment      shop-web / nginx:1.24 / replicas 2 / port 80
+  Service         shop-svc / ClusterIP / 80 -> 80
+  Both Pod IPs must be registered in the Endpoints.
+
+Verify:
+  kubectl get deployment,svc,endpoints -n shop
+  kubectl run tmp -n shop --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- http://shop-svc
+EOF
+}
+q1_title_ko() { echo "Deployment 를 만들고 Service 로 연결"; }
+q1_text_ko() { cat <<'EOF'
 In the shop namespace, create a Deployment named shop-web using image
 nginx:1.24 with 2 replicas, exposing container port 80.
 
@@ -167,8 +186,30 @@ q1_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q2_title() { echo "StorageClass 로 PVC 만들어 Deployment 에 연결"; }
+q2_title() { echo "PVC from a StorageClass, mounted into the Deployment"; }
 q2_text() { cat <<'EOF'
+A StorageClass named exam-storage already exists in the cluster.
+
+In the shop namespace, create a PersistentVolumeClaim named shop-data that
+requests 1Gi with access mode ReadWriteOnce using that StorageClass.
+
+Then mount it into the shop-web Deployment at /data.
+The PVC must reach Bound state and the pods must be running with the volume
+mounted.
+
+Conditions:
+  PVC             shop-data / storageClassName exam-storage / 1Gi / ReadWriteOnce
+  mount           into the shop-web Deployment at mountPath /data
+  Careful: mount at /data, not at /usr/share/nginx/html.
+
+Verify:
+  kubectl get sc,pv,pvc -n shop
+  kubectl describe pvc shop-data -n shop
+  kubectl exec -n shop deploy/shop-web -- df -h /data
+EOF
+}
+q2_title_ko() { echo "StorageClass 로 PVC 만들어 Deployment 에 연결"; }
+q2_text_ko() { cat <<'EOF'
 A StorageClass named exam-storage already exists in the cluster.
 
 In the shop namespace, create a PersistentVolumeClaim named shop-data that
@@ -226,8 +267,34 @@ q2_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "Gateway API 로 외부에 노출"; }
+q3_title() { echo "Expose the application with Gateway API"; }
 q3_text() { cat <<'EOF'
+The GatewayClass nginx is already installed in the cluster.
+
+In the shop namespace, create a Gateway named shop-gw using that
+GatewayClass, with a listener named http on port 80 (protocol HTTP).
+
+Create an HTTPRoute named shop-route attached to that Gateway, routing all
+traffic (path prefix /) to the shop-svc Service on port 80.
+
+Finally, expose the Gateway outside the cluster on nodePort 30081 so that
+curl http://<NodeIP>:30081 returns the nginx page.
+
+Conditions:
+  Gateway         shop-gw / gatewayClassName nginx / listener http, port 80, HTTP
+  HTTPRoute       shop-route / parentRef shop-gw / backendRef shop-svc:80
+  external access change the Service created by the Gateway (shop-gw-nginx)
+                  to nodePort 30081
+
+Verify:
+  kubectl get gateway,httproute -n shop
+  kubectl describe gateway shop-gw -n shop
+  kubectl get svc -n shop
+  curl http://<NodeIP>:30081
+EOF
+}
+q3_title_ko() { echo "Gateway API 로 외부에 노출"; }
+q3_text_ko() { cat <<'EOF'
 The GatewayClass nginx is already installed in the cluster.
 
 In the shop namespace, create a Gateway named shop-gw using that

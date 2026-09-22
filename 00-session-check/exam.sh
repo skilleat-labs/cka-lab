@@ -24,8 +24,32 @@ exam_setup() { echo "  (미리 만들어둘 것 없음)"; }
 # ══════════════════════════════════════════════════════════════
 # Q1 — Pod 생성 + 레이블
 # ══════════════════════════════════════════════════════════════
-q1_title() { echo "명령어로 Pod 생성 + 레이블 부착"; }
+q1_title() { echo "Create a Pod and label it — imperative only"; }
 q1_text() { cat <<'EOF'
+Create a Pod named web-pod in the default namespace using the imperative
+kubectl run command only. Do not write a YAML file.
+
+  image             nginx:1.24
+  container port    80
+  environment       APP_ENV=prod
+
+After the Pod has been created, add the following two labels with
+kubectl label:
+
+  tier=frontend
+  env=production
+
+Finally, list only the Pods that carry the label env=production.
+
+Verify:
+  kubectl get pod web-pod --show-labels
+  kubectl get pods -l env=production
+
+Note: the run=web-pod label that kubectl run adds automatically must remain.
+EOF
+}
+q1_title_ko() { echo "명령어로 Pod 생성 + 레이블 부착"; }
+q1_text_ko() { cat <<'EOF'
 (1) web-pod Pod 를 kubectl run 명령어로 default 네임스페이스에 생성한다.
 
       이미지          nginx:1.24
@@ -81,8 +105,26 @@ q1_grade() {
 # ══════════════════════════════════════════════════════════════
 # Q2 — Deployment 생성 + 스케일
 # ══════════════════════════════════════════════════════════════
-q2_title() { echo "명령어로 Deployment 생성 + 스케일"; }
+q2_title() { echo "Create a Deployment and scale it — imperative only"; }
 q2_text() { cat <<'EOF'
+Create a Deployment named web-app in the default namespace using
+kubectl create deployment.
+
+  image             nginx:1.24
+  replicas          3
+  container port    80
+
+Then scale the Deployment to 4 replicas with kubectl scale and wait until
+the rollout is complete and every Pod is Ready.
+
+Verify:
+  kubectl get deployment web-app
+  kubectl rollout status deployment/web-app
+  kubectl get pods -l app=web-app
+EOF
+}
+q2_title_ko() { echo "명령어로 Deployment 생성 + 스케일"; }
+q2_text_ko() { cat <<'EOF'
 (1) web-app Deployment 를 kubectl create deployment 명령어로 생성한다.
 
       네임스페이스    default
@@ -128,8 +170,30 @@ q2_grade() {
 # ══════════════════════════════════════════════════════════════
 # Q3 — Service 연결
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "Deployment 에 명령어로 Service 붙이기"; }
+q3_title() { echo "Expose the Deployment with a Service"; }
 q3_text() { cat <<'EOF'
+Expose the web-app Deployment from the previous task using kubectl expose.
+
+  service name      web-svc
+  type              ClusterIP
+  port              80  ->  targetPort 80
+  selector          must match the Deployment labels (app=web-app)
+
+Confirm that all four Pod IPs are registered in the Service Endpoints, then
+verify from a temporary Pod that the Service name resolves and answers over
+HTTP.
+
+Verify:
+  kubectl get svc web-svc
+  kubectl get endpoints web-svc
+  kubectl run tmp --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- web-svc
+
+Note: grading starts a temporary Pod and performs a real HTTP request
+(this takes a few seconds).
+EOF
+}
+q3_title_ko() { echo "Deployment 에 명령어로 Service 붙이기"; }
+q3_text_ko() { cat <<'EOF'
 (1) Q2 에서 만든 web-app Deployment 를 kubectl expose 명령어로 노출한다.
 
       Service 이름    web-svc

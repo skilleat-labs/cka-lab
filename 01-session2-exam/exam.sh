@@ -20,8 +20,30 @@ exam_cleanup() {
 exam_setup() { echo "  (네임스페이스는 학생이 직접 만든다)"; }
 
 # ══════════════════════════════════════════════════════════════
-q1_title() { echo "네임스페이스 지정 · Deployment · NodePort"; }
+q1_title() { echo "Namespace, Deployment and NodePort Service"; }
 q1_text() { cat <<'EOF'
+Create a namespace named ops.
+
+In the ops namespace, create a Deployment named cache-app using image
+nginx:1.24 with 2 replicas, exposing container port 80.
+
+Then expose it with a NodePort Service named cache-svc on port 80 ->
+targetPort 80, using nodePort 30090.
+
+Conditions:
+  namespace       ops  (you must create it)
+  Deployment      cache-app / nginx:1.24 / replicas 2 / port 80
+  Service         cache-svc / NodePort / 80 -> 80 / nodePort 30090
+  Every resource must live in ops, not in default.
+
+Verify:
+  kubectl get deployment,svc -n ops
+  kubectl get endpoints cache-svc -n ops
+  curl http://<NodeIP>:30090
+EOF
+}
+q1_title_ko() { echo "네임스페이스 지정 · Deployment · NodePort"; }
+q1_text_ko() { cat <<'EOF'
 Create a namespace named ops.
 
 In the ops namespace, create a Deployment named cache-app using image
@@ -81,8 +103,31 @@ q1_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q2_title() { echo "ConfigMap — env + 볼륨 마운트"; }
+q2_title() { echo "ConfigMap as environment variables and as a volume"; }
 q2_text() { cat <<'EOF'
+Create a namespace named app.
+
+In the app namespace, create a ConfigMap named app-config with keys
+APP_ENV=production and LOG_LEVEL=info.
+
+Then create a Pod named config-pod (image busybox:1.36, command sleep 3600)
+that consumes the ConfigMap in both ways:
+  (a) all keys injected as environment variables
+  (b) the same ConfigMap mounted as a volume at /etc/app-config
+
+Conditions:
+  namespace       app  (you must create it)
+  ConfigMap       app-config / APP_ENV=production / LOG_LEVEL=info
+  Pod             config-pod / busybox:1.36 / sleep 3600
+  injection       envFrom (all keys)  AND  volume mount at /etc/app-config
+
+Verify:
+  kubectl exec config-pod -n app -- env | grep -E 'APP_ENV|LOG_LEVEL'
+  kubectl exec config-pod -n app -- cat /etc/app-config/LOG_LEVEL
+EOF
+}
+q2_title_ko() { echo "ConfigMap — env + 볼륨 마운트"; }
+q2_text_ko() { cat <<'EOF'
 Create a namespace named app.
 
 In the app namespace, create a ConfigMap named app-config with keys
@@ -148,8 +193,34 @@ q2_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "Deployment 스케일 · 롤링 업데이트 · 롤백"; }
+q3_title() { echo "Scale, rolling update and rollback"; }
 q3_text() { cat <<'EOF'
+In the app namespace, create a Deployment named frontend using image
+nginx:1.24 with 2 replicas.
+
+Then perform the following operations in order:
+  (a) scale the Deployment to 4 replicas
+  (b) perform a rolling update to image nginx:1.25 and wait until it completes
+  (c) roll back to the previous revision
+
+After the rollback the Deployment must run nginx:1.24 with 4 replicas.
+
+Conditions:
+  namespace       app  (reuse the one from the previous task)
+  Deployment      frontend / initially nginx:1.24 / replicas 2
+  order           (a) replicas 4  ->  (b) nginx:1.25  ->  (c) rollback
+  final state     image nginx:1.24 / replicas 4 / all Ready
+  You must actually go through all three steps. Creating it with 1.24 and
+  only scaling does not count.
+
+Verify:
+  kubectl get deployment frontend -n app
+  kubectl rollout history deployment/frontend -n app
+  kubectl get rs -n app
+EOF
+}
+q3_title_ko() { echo "Deployment 스케일 · 롤링 업데이트 · 롤백"; }
+q3_text_ko() { cat <<'EOF'
 In the app namespace, create a Deployment named frontend using image
 nginx:1.24 with 2 replicas.
 
