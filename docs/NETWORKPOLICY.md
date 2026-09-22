@@ -49,44 +49,48 @@
 │ worker-1         │  │ worker-2         │  │ control-plane    │
 │                  │  │                  │  │                  │
 │ ┌──────────────┐ │  │ ┌──────────────┐ │  │ ┌──────────────┐ │
-│ │ calico-node  │ │  │ │ calico-node  │ │  │ │ calico-node  │ │
+│ │ cilium       │ │  │ │ cilium       │ │  │ │ cilium       │ │
 │ │ (DaemonSet)  │ │  │ │ (DaemonSet)  │ │  │ │ (DaemonSet)  │ │
 │ └──────┬───────┘ │  │ └──────┬───────┘ │  │ └──────┬───────┘ │
-│        │ 규칙을   │  │        │         │  │        │         │
-│        ▼ 번역     │  │        ▼         │  │        ▼         │
+│        │ 규칙을  │  │        │         │  │        │         │
+│        ▼ 번역    │  │        ▼         │  │        ▼         │
 │ ┌──────────────┐ │  │ ┌──────────────┐ │  │ ┌──────────────┐ │
-│ │ iptables /   │ │  │ │ iptables /   │ │  │ │ iptables /   │ │
 │ │ eBPF 규칙    │ │  │ │ eBPF 규칙    │ │  │ │ eBPF 규칙    │ │
+│ │ (커널)       │ │  │ │ (커널)       │ │  │ │ (커널)       │ │
 │ └──────┬───────┘ │  │ └──────┬───────┘ │  │ └──────┬───────┘ │
 │        │         │  │        │         │  │        │         │
 │   ┌────┴────┐    │  │   ┌────┴────┐    │  │        │         │
-│   │ pod A   │    │  │   │ pod C   │    │  │  (파드 없음)      │
+│   │ pod A   │    │  │   │ pod C   │    │  │  (파드 없음)     │
 │   │ pod B   │    │  │   │ pod D   │    │  │                  │
 │   └─────────┘    │  │   └─────────┘    │  │                  │
 └──────────────────┘  └──────────────────┘  └──────────────────┘
 
-  패킷이 파드로 들어오거나 나갈 때, 그 노드의 커널(iptables/eBPF)이
-  CNI 가 넣어둔 규칙으로 허용/차단을 결정한다.
+  패킷이 파드로 들어오거나 나갈 때, 그 노드의 커널이
+  CNI 가 넣어둔 규칙(Cilium 은 eBPF, Calico 는 주로 iptables)으로 허용/차단을 결정한다.
 ```
 
 **흐름 정리**
 
 1. `kubectl apply` → API 서버가 NetworkPolicy 오브젝트를 etcd 에 저장
-2. 각 노드의 CNI 에이전트(Calico 는 `calico-node` DaemonSet)가 API 서버를 watch 하다가 변경을 감지
-3. 에이전트가 정책을 **자기 노드의 iptables 또는 eBPF 규칙으로 번역**해서 커널에 넣음
+2. 각 노드의 CNI 에이전트(이 클러스터는 `cilium` DaemonSet, Calico 면 `calico-node`)가 API 서버를 watch 하다가 변경을 감지
+3. 에이전트가 정책을 **자기 노드의 커널 규칙으로 번역**해서 넣음 (Cilium 은 eBPF, Calico 는 주로 iptables)
 4. 이후 파드로 오가는 모든 패킷은 커널 레벨에서 검사됨 — 쿠버네티스 컴포넌트를 거치지 않는다
 
 **핵심 결론 두 가지**
 
 | | 의미 |
 |---|---|
-| **CNI 가 NetworkPolicy 를 지원해야 한다** | Calico, Cilium, Weave, Antrea 는 지원. **Flannel 은 미지원** — 정책을 만들어도 조용히 무시된다 |
+| **CNI 가 NetworkPolicy 를 지원해야 한다** | Cilium, Calico, Weave, Antrea 는 지원. **Flannel 은 미지원** — 정책을 만들어도 조용히 무시된다 |
 | **차단은 커널에서 일어난다** | apiserver 나 kube-proxy 가 죽어도 이미 적용된 정책은 계속 동작한다 |
 
 이 클러스터의 CNI 확인:
 
 ```bash
-kubectl get pods -n kube-system | grep -E 'calico|cilium|flannel|weave'
+kubectl get pods -n kube-system | grep -E 'cilium|calico|flannel|weave'
+
+# 이 클러스터는 Cilium — 상태와 실제 드롭을 직접 볼 수 있다
+kubectl exec -n kube-system ds/cilium -- cilium status --brief
+kubectl exec -n kube-system ds/cilium -- cilium monitor --type drop
 ```
 
 ---

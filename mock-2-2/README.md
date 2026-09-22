@@ -120,7 +120,7 @@ YAML
 | Q5 | 20 | PVC 가 logs-pv 에 Bound + 파드 안 실제 쓰기 |
 | Q6 | 20 | **tier=cache 파드 → 응답 / 레이블 없는 파드 → timeout** 둘 다 실제 통신 |
 
-Q6 통신 검증은 CNI 가 NetworkPolicy 를 지원해야 한다 (Calico OK, Flannel 은 항상 FAIL).
+Q6 통신 검증은 CNI 가 NetworkPolicy 를 지원해야 한다 (이 클러스터의 Cilium OK, Flannel 은 항상 FAIL).
 
 ## 정리
 
