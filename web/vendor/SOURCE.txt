@@ -1,0 +1,1 @@
+xterm.js 5.5.0 · addon-fit 0.10.0 — MIT. cdn.jsdelivr.net 에서 받아 저장소에 넣었다 (VM 이 인터넷 없이도 동작하게).

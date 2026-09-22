@@ -4,44 +4,54 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CKA 실습 시험</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
 <style>
   :root{
     --blue:#1D6FE0; --ink:#1A1A1A; --muted:#5C5C5C; --hair:#E2E2E2;
     --bluetint:#EAF2FD; --gray:#F6F6F6; --white:#fff;
     --mono:"D2Coding","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
     --sans:"NanumSquare","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    --head:58px;
   }
   *{box-sizing:border-box}
+  html,body{height:100%}
   body{margin:0;background:var(--white);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
-  a{color:var(--blue)}
-  header{border-bottom:1px solid var(--hair);padding:14px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--white);z-index:5}
-  header h1{font-size:16px;margin:0;font-weight:700}
-  header .sub{color:var(--muted);font-size:13px}
-  select{font-family:var(--sans);font-size:14px;padding:6px 8px;border:1px solid var(--hair);border-radius:6px;background:var(--white);color:var(--ink);max-width:min(46vw,420px)}
+  header{border-bottom:1px solid var(--hair);padding:10px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+    position:sticky;top:0;background:var(--white);z-index:5;height:var(--head)}
+  header h1{font-size:16px;margin:0;font-weight:700;white-space:nowrap}
+  header .sub{color:var(--muted);font-size:13px;white-space:nowrap}
+  select{font-family:var(--sans);font-size:14px;padding:6px 8px;border:1px solid var(--hair);border-radius:6px;background:var(--white);color:var(--ink);max-width:min(40vw,400px)}
   .spacer{flex:1}
-  .timer{font-family:var(--mono);font-size:14px;color:var(--muted)}
+  .timer{font-family:var(--mono);font-size:14px;color:var(--muted);white-space:nowrap}
   .dots{display:flex;gap:6px;align-items:center}
-  .dot{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--hair);background:var(--white)}
+  .dot{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--hair);background:var(--white)}
   .dot.full{background:var(--blue);border-color:var(--blue)}
   .dot.part{background:var(--bluetint);border-color:var(--blue)}
   .dot.cur{border-color:var(--blue);border-width:3px}
-  main{display:grid;grid-template-columns:1fr 420px;gap:20px;padding:20px;align-items:start;max-width:1500px}
-  @media (max-width:1000px){main{grid-template-columns:1fr}}
-  .card{border:1px solid var(--hair);border-radius:10px;padding:18px 20px;margin-bottom:16px;background:var(--white)}
-  .card h2{font-size:15px;margin:0 0 12px;font-weight:700}
+
+  main{display:grid;grid-template-columns:minmax(0,1fr) minmax(460px,42%);gap:18px;padding:18px;align-items:start}
+  .side{position:sticky;top:calc(var(--head) + 18px);height:calc(100vh - var(--head) - 36px);display:flex;flex-direction:column;gap:12px;min-width:0}
+  @media (max-width:1100px){
+    main{grid-template-columns:1fr}
+    .side{position:static;height:auto}
+    #termcard{height:58vh}
+  }
+
+  .card{border:1px solid var(--hair);border-radius:10px;padding:16px 18px;margin-bottom:14px;background:var(--white)}
+  .card h2{font-size:15px;margin:0 0 10px;font-weight:700}
   .card h2 .n{color:var(--blue);margin-right:8px}
-  pre.q{font-family:var(--mono);font-size:13.5px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;background:var(--gray);border-radius:8px;padding:16px}
-  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-  button{font-family:var(--sans);font-size:14px;font-weight:700;padding:9px 16px;border-radius:7px;border:1px solid var(--hair);background:var(--white);color:var(--ink);cursor:pointer}
+  pre.q{font-family:var(--mono);font-size:13.5px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;background:var(--gray);border-radius:8px;padding:15px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap}
+  button{font-family:var(--sans);font-size:14px;font-weight:700;padding:8px 15px;border-radius:7px;border:1px solid var(--hair);background:var(--white);color:var(--ink);cursor:pointer}
   button:hover:not(:disabled){border-color:var(--blue);color:var(--blue)}
   button.primary{background:var(--blue);border-color:var(--blue);color:var(--white)}
   button.primary:hover:not(:disabled){opacity:.9;color:var(--white)}
-  button.quiet{color:var(--muted);font-weight:400}
+  button.quiet{color:var(--muted);font-weight:400;font-size:13px;padding:6px 11px}
   button:disabled{opacity:.45;cursor:default}
   .score{font-family:var(--mono);font-size:22px;font-weight:700}
   .score .of{color:var(--muted);font-size:14px;font-weight:400}
   ul.items{list-style:none;margin:0;padding:0}
-  ul.items li{display:flex;gap:10px;padding:8px 10px;border-radius:6px;align-items:flex-start;font-size:13.5px}
+  ul.items li{display:flex;gap:10px;padding:7px 9px;border-radius:6px;align-items:flex-start;font-size:13.5px}
   ul.items li.fail{background:var(--gray);border-left:3px solid var(--ink)}
   ul.items li.pass{border-left:3px solid var(--bluetint)}
   .mark{font-weight:700;font-family:var(--mono);flex:none;width:18px;text-align:center}
@@ -54,15 +64,24 @@
   tr.cur td{background:var(--bluetint)}
   td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
   .tag{font-size:11px;color:var(--muted);border:1px solid var(--hair);border-radius:4px;padding:1px 5px;margin-left:4px}
-  .log{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--gray);border-radius:8px;padding:14px;max-height:320px;overflow:auto;margin:0}
+  .log{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--gray);border-radius:8px;padding:13px;max-height:300px;overflow:auto;margin:0}
   .muted{color:var(--muted)}
-  .empty{color:var(--muted);font-size:13.5px}
-  .banner{background:var(--bluetint);border-radius:8px;padding:12px 16px;font-size:13.5px;margin-bottom:16px}
-  details summary{cursor:pointer;color:var(--muted);font-size:13px}
+  .banner{background:var(--bluetint);border-radius:8px;padding:11px 15px;font-size:13.5px;margin-bottom:14px}
   .running{display:flex;gap:10px;align-items:center;color:var(--blue);font-size:14px;font-weight:700}
   .spin{width:14px;height:14px;border:2px solid var(--bluetint);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
-  kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--hair);border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--muted)}
+
+  /* 터미널 */
+  #actions{flex:none}
+  #actions .card{margin:0}
+  #termcard{flex:1;min-height:0;display:flex;flex-direction:column;padding:0;margin:0;border:1px solid var(--hair);border-radius:10px;overflow:hidden;background:var(--ink)}
+  .termhead{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid #2E2E2E;color:#CFCFCF;font-size:12px;font-family:var(--mono)}
+  .termhead button{background:transparent;border-color:#3A3A3A;color:#CFCFCF;font-size:12px;font-weight:400;padding:3px 9px}
+  .termhead button:hover{border-color:var(--blue);color:#fff}
+  .termhead .muted{color:#8A8A8A}
+  #term{flex:1;min-height:0;padding:6px 8px}
+  .xterm-viewport::-webkit-scrollbar{width:10px}
+  .xterm-viewport::-webkit-scrollbar-thumb{background:#3A3A3A;border-radius:5px}
 </style>
 </head>
 <body>
@@ -76,30 +95,92 @@
 </header>
 
 <main>
-  <div>
-    <div id="left"></div>
-  </div>
-  <div>
-    <div id="right"></div>
-  </div>
+  <div id="left"></div>
+  <aside class="side">
+    <div id="actions"></div>
+    <div class="card" id="termcard">
+      <div class="termhead">
+        <span id="termpath">터미널</span><span id="termstat" class="muted">연결 중…</span>
+        <span class="spacer"></span>
+        <button id="fontminus" title="글자 작게">A−</button>
+        <button id="fontplus" title="글자 크게">A+</button>
+        <button id="reconnect">재연결</button>
+      </div>
+      <div id="term"></div>
+    </div>
+  </aside>
 </main>
 
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 let SET = localStorage.getItem('cka.set') || '';
 let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text}
+let CFG = {shell:true};
 
 const fmt = s => { s = Math.max(0, s|0); return `${(s/60)|0}분 ${String(s%60).padStart(2,'0')}초`; };
 const esc = s => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-
 async function api(path, opts){ const r = await fetch(path, opts); return r.json(); }
+
+// ── 터미널 ──────────────────────────────────────────────────────────
+let term = null, fit = null, ws = null, TERMSET = '', fontSize = +(localStorage.getItem('cka.font') || 13);
+
+const termStat = t => { $('#termstat').textContent = t; };
+
+function initTerm(){
+  term = new Terminal({
+    fontFamily: '"D2Coding", ui-monospace, Menlo, Consolas, monospace',
+    fontSize, cursorBlink: true, scrollback: 5000,
+    theme: {background:'#1A1A1A', foreground:'#EDEDED', cursor:'#1D6FE0',
+            selectionBackground:'#1D6FE0', selectionForeground:'#FFFFFF'},
+  });
+  fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open($('#term'));
+  refit();
+  term.onData(d => { if(ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
+  new ResizeObserver(() => refit()).observe($('#term'));
+  $('#reconnect').onclick = () => { try{ ws && ws.close(); }catch(e){} connect(); };
+  $('#fontplus').onclick = () => setFont(fontSize + 1);
+  $('#fontminus').onclick = () => setFont(fontSize - 1);
+  connect();
+}
+
+function setFont(n){
+  fontSize = Math.min(22, Math.max(9, n));
+  localStorage.setItem('cka.font', fontSize);
+  term.options.fontSize = fontSize;
+  refit();
+}
+
+function refit(){
+  try{ fit.fit(); }catch(e){}
+  if(ws && ws.readyState === 1) ws.send(JSON.stringify({r: term.rows, c: term.cols}));
+}
+
+function connect(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  termStat('연결 중…');
+  ws = new WebSocket(`${proto}://${location.host}/ws?set=${encodeURIComponent(SET)}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { TERMSET = SET; $('#termpath').textContent = '~/cka-lab/' + SET; termStat(''); refit(); term.focus(); };
+  ws.onmessage = e => term.write(new Uint8Array(e.data));
+  ws.onerror = () => termStat('연결 실패');
+  ws.onclose = () => termStat('연결 끊김 — 재연결을 누르세요');
+}
+
+// ── 상태 ────────────────────────────────────────────────────────────
+function setOptions(sets){
+  $('#sets').innerHTML = sets.map(s =>
+    `<option value="${s.id}" ${s.id===SET?'selected':''}>${esc(s.id)} — ${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
+}
 
 async function loadSets(){
   const sets = await api('/api/sets');
   if(!sets.length){ $('#left').innerHTML = '<div class="card">exam.sh 가 있는 세트를 찾지 못했습니다.</div>'; return; }
   if(!sets.find(s => s.id === SET)) SET = sets[0].id;
-  $('#sets').innerHTML = sets.map(s =>
-    `<option value="${s.id}" ${s.id===SET?'selected':''}>${esc(s.id)} — ${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
+  setOptions(sets);
   await refresh();
 }
 
@@ -134,44 +215,68 @@ function render(){
   $('#setSub').textContent = ST.nq ? `${ST.nq}문제 · ${ST.unit}` : '';
   renderDots(); renderTimer();
   $('#left').innerHTML = leftHTML();
-  $('#right').innerHTML = rightHTML();
+  $('#actions').innerHTML = actionsHTML();
   bind();
 }
 
+// ── 왼쪽: 문제 · 힌트 · 채점 결과 · 진행 현황 ────────────────────────
 function leftHTML(){
   if(JOB && !JOB.done){
     return `<div class="card">
       <div class="running"><span class="spin"></span>${esc(cmdLabel(JOB.cmd))} 실행 중…</div>
-      <p class="muted" style="font-size:13px">채점은 클러스터에 실제로 요청을 보냅니다. 몇 초에서 1~2분 걸릴 수 있습니다.</p>
+      <p class="muted" style="font-size:13px">클러스터에 실제로 요청을 보냅니다. 몇 초에서 1~2분 걸릴 수 있습니다.</p>
       <pre class="log" id="joblog">${esc(JOB.output || '')}</pre></div>`;
   }
   if(!ST.current){
     return `<div class="card">
       <h2>아직 시작하지 않았습니다</h2>
       <div class="banner">시험을 시작하면 이전 시험 리소스를 정리하고 환경을 준비한 뒤 1번 문제가 나옵니다.
-        문제는 여기에서 읽고, <b>kubectl 은 평소처럼 터미널에서</b> 칩니다. 다 풀었으면 채점을 누르세요.</div>
+        문제는 여기에서 읽고 <b>kubectl 은 오른쪽 터미널</b>에서 칩니다. 다 풀었으면 채점을 누르세요.</div>
       <div class="bar"><button class="primary" data-cmd="start">시험 시작</button></div></div>`;
   }
   if(ST.done) return reportHTML();
+
   const q = ST.question || {};
   const hint = (HINT && HINT.q === ST.current)
     ? `<div class="card"><h2>힌트 <span class="muted" style="font-weight:400">— 리포트에 기록이 남습니다</span></h2>
        <pre class="q">${esc(HINT.text)}</pre></div>` : '';
   return `<div class="card">
-    <h2><span class="n">Q${q.n} / ${ST.nq}</span>${esc(q.title)}</h2>
-    <pre class="q">${esc(q.body)}</pre></div>` + hint;
+      <h2><span class="n">Q${q.n} / ${ST.nq}</span>${esc(q.title)}</h2>
+      <pre class="q">${esc(q.body)}</pre></div>`
+    + hint + resultHTML() + statusHTML();
+}
+
+function resultHTML(){
+  const items = ST.items || [];
+  if(!items.length) return '';
+  const p = items.filter(i => i.ok).reduce((a,b) => a + (b.pts||1), 0);
+  const t = items.reduce((a,b) => a + (b.pts||1), 0);
+  return `<div class="card">
+    <h2>채점 결과 <span class="muted" style="font-weight:400">${p}/${t} ${esc(ST.unit)}</span></h2>
+    <ul class="items">${items.map(i => `<li class="${i.ok?'pass':'fail'}">
+      <span class="mark">${i.ok?'✓':'✕'}</span>
+      <span>${esc(i.desc)}${i.note ? `<span class="note">${esc(i.note)}</span>` : ''}</span></li>`).join('')}</ul>
+    ${items.some(i => !i.ok) ? '<p class="muted" style="font-size:13px;margin-bottom:0">✕ 항목을 고치고 다시 채점하세요.</p>' : ''}
+  </div>`;
+}
+
+function statusHTML(){
+  return `<div class="card"><h2>진행 현황</h2>${tableHTML()}
+    <div class="bar" style="margin-top:12px">
+      <button class="quiet" data-cmd="finish">리포트 보기</button>
+      <button class="quiet" data-cmd="clean" data-confirm="클러스터의 이 시험 리소스를 전부 삭제하고 진행 기록도 지웁니다. 계속할까요?">원상복구</button>
+    </div></div>`;
 }
 
 function reportHTML(){
   const pct = ST.total ? Math.round(ST.sum*100/ST.total) : 0;
-  const ok = pct >= 66;
   return `<div class="card">
     <h2>최종 리포트 — ${esc(ST.title)}</h2>
     <div class="score">${ST.sum} <span class="of">/ ${ST.total} ${esc(ST.unit)} · ${pct}%</span></div>
-    <div class="banner" style="margin-top:12px">${ok ? '합격선(66%) 통과' : '합격선(66%) 미달'}
+    <div class="banner" style="margin-top:10px">${pct >= 66 ? '합격선(66%) 통과' : '합격선(66%) 미달'}
       · 총 소요 ${fmt((ST.finished || ST.now) - ST.started)}</div>
     ${tableHTML()}
-    <div class="bar" style="margin-top:16px">
+    <div class="bar" style="margin-top:14px">
       <button data-cmd="start" data-confirm="처음부터 다시 시작합니다. 진행 기록이 지워집니다. 계속할까요?">다시 시작</button>
       <button class="quiet" data-cmd="clean" data-confirm="클러스터의 이 시험 리소스를 전부 삭제하고 진행 기록도 지웁니다. 계속할까요?">원상복구</button>
     </div></div>`;
@@ -187,47 +292,25 @@ function tableHTML(){
   </tbody></table>`;
 }
 
-function cmdLabel(c){
-  return {start:'시험 시작', check:'채점', skip:'넘어가기', hint:'힌트', finish:'리포트', clean:'원상복구', reset:'기록 삭제'}[c] || c;
-}
-
-function rightHTML(){
+// ── 오른쪽 위: 버튼 바 ──────────────────────────────────────────────
+function actionsHTML(){
   const busy = JOB && !JOB.done;
-  const inQ = ST.current && !ST.done;
-  const items = ST.items || [];
-  const p = items.filter(i => i.ok).reduce((a,b) => a + (b.pts||1), 0);
-  const t = items.reduce((a,b) => a + (b.pts||1), 0);
-
-  const actions = !inQ ? '' : `<div class="card">
-    <div class="bar">
-      <button class="primary" data-cmd="check" ${busy?'disabled':''}>채점 <kbd>C</kbd></button>
+  if(!ST.current || ST.done){
+    return `<div class="card"><p class="muted" style="margin:0;font-size:13px">
+      ${ST.done ? '시험을 마쳤습니다. 리포트는 왼쪽에 있습니다.' : '왼쪽에서 시험을 시작하세요.'}
+      터미널은 언제든 쓸 수 있습니다.</p></div>`;
+  }
+  return `<div class="card"><div class="bar">
+      <button class="primary" data-cmd="check" ${busy?'disabled':''}>채점</button>
       ${ST.hasHint ? `<button data-cmd="hint" ${busy?'disabled':''}>힌트</button>` : ''}
       <button data-cmd="skip" ${busy?'disabled':''}>넘어가기</button>
-    </div>
-    <p class="muted" style="margin:0;font-size:13px">채점이 만점이면 다음 문제로 자동으로 넘어갑니다.
-      힌트를 보면 리포트에 기록이 남습니다.</p></div>`;
-
-  const result = !items.length ? '' : `<div class="card">
-    <h2>채점 결과 <span class="muted" style="font-weight:400">${p}/${t} ${esc(ST.unit)}</span></h2>
-    <ul class="items">${items.map(i => `<li class="${i.ok?'pass':'fail'}">
-      <span class="mark">${i.ok?'✓':'✕'}</span>
-      <span>${esc(i.desc)}${i.note ? `<span class="note">${esc(i.note)}</span>` : ''}</span></li>`).join('')}</ul>
-    ${items.some(i => !i.ok) ? '<p class="muted" style="font-size:13px;margin-bottom:0">✕ 항목을 고치고 다시 채점하세요.</p>' : ''}
-  </div>`;
-
-  const status = (!ST.current || ST.done) ? '' : `<div class="card"><h2>진행 현황</h2>${tableHTML()}
-    <div class="bar" style="margin-top:14px;margin-bottom:0">
-      <button class="quiet" data-cmd="finish" ${busy?'disabled':''}>리포트 보기</button>
-      <button class="quiet" data-cmd="clean" data-confirm="클러스터의 이 시험 리소스를 전부 삭제하고 진행 기록도 지웁니다. 계속할까요?" ${busy?'disabled':''}>원상복구</button>
+      <span class="spacer"></span>
+      <span class="muted" style="font-size:12.5px;align-self:center">Q${ST.current} / ${ST.nq}</span>
     </div></div>`;
-
-  const help = `<div class="card"><h2>쓰는 법</h2>
-    <p class="muted" style="margin:0;font-size:13.5px">문제는 이 화면에서 읽고, <b>kubectl 은 터미널에서</b> 칩니다.
-    이 패널은 문제 출제·채점·기록만 담당합니다. 시험장도 같은 구조입니다 —
-    한쪽에 문제, 한쪽에 터미널.</p></div>`;
-
-  return actions + result + status + (items.length || ST.done ? '' : help);
 }
+
+const cmdLabel = c =>
+  ({start:'시험 시작', check:'채점', skip:'넘어가기', hint:'힌트', finish:'리포트', clean:'원상복구', reset:'기록 삭제'}[c] || c);
 
 function bind(){
   document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => run(b.dataset.cmd, b.dataset.confirm));
@@ -256,7 +339,7 @@ async function run(cmd, confirmMsg){
   await waitJob(r.job, true);
   JOB = null;
   await refresh();
-  await loadSetOptions();
+  setOptions(await api('/api/sets'));
 }
 
 async function waitJob(id, live){
@@ -268,19 +351,19 @@ async function waitJob(id, live){
   }
 }
 
-async function loadSetOptions(){
-  const sets = await api('/api/sets');
-  $('#sets').innerHTML = sets.map(s =>
-    `<option value="${s.id}" ${s.id===SET?'selected':''}>${esc(s.id)} — ${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
-}
+$('#sets').onchange = async e => {
+  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null;
+  await refresh();
+  if(term && TERMSET && TERMSET !== SET) termStat('터미널은 ' + TERMSET + ' 폴더 — 재연결하면 이동');
+};
 
-$('#sets').onchange = async e => { SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; await refresh(); };
-document.addEventListener('keydown', e => {
-  if(e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey) return;
-  if(e.key === 'c' || e.key === 'C'){ const b = document.querySelector('[data-cmd="check"]'); if(b && !b.disabled) b.click(); }
-});
-
-loadSets();
+(async () => {
+  try{ CFG = await api('/api/config'); }catch(e){}
+  if(CFG.shell) initTerm();
+  else $('#termcard').outerHTML = `<div class="card"><h2>터미널 꺼짐</h2>
+      <p class="muted" style="margin:0;font-size:13.5px">서버가 --no-shell 로 떠 있습니다. kubectl 은 VM 터미널에서 치세요.</p></div>`;
+  await loadSets();
+})();
 </script>
 </body>
 </html>
