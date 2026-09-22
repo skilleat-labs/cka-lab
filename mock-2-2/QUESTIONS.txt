@@ -1,0 +1,159 @@
+================================================================
+  CKA Mock Exam 2-2 — 30분 속도 점검
+  6문항 · 100점 · 목표 시간 30분
+================================================================
+
+  실행 :  bash exam.sh start      (한 문제씩 출제 · check 로 바로 채점)
+  채점 :  bash exam.sh check
+  현황 :  bash exam.sh status
+  정리 :  bash exam.sh clean
+
+  모든 문제는 store 네임스페이스 기준이다 (start 가 만들어 둔다).
+  문제는 순서대로 이어진다 — Q6 은 Q1·Q2 의 파드와 서비스를 사용한다.
+
+
+----------------------------------------------------------------
+ Q1. 조건대로 Pod 생성                          [W&S · 15점]
+----------------------------------------------------------------
+
+  store 네임스페이스에 다음 조건의 Pod 를 생성하시오.
+
+    이름            edge-cache
+    이미지          nginx:1.25
+    컨테이너 포트   80
+    환경변수        CACHE_MODE=lru
+    레이블          app=edge, tier=cache
+
+  [확인]
+    kubectl get pod edge-cache -n store --show-labels
+    kubectl exec edge-cache -n store -- printenv CACHE_MODE
+
+
+----------------------------------------------------------------
+ Q2. Deployment + NodePort Service              [NET · 15점]
+----------------------------------------------------------------
+
+  Deployment
+    이름            catalog
+    이미지          nginx:1.24
+    복제본          3
+    컨테이너 포트   80
+
+  Service
+    이름            catalog-svc
+    타입            NodePort
+    port            80 → targetPort 80
+    nodePort        30095
+
+  [확인]
+    kubectl get deploy,svc,endpoints -n store
+    curl http://<NodeIP>:30095
+
+
+----------------------------------------------------------------
+ Q3. Secret → 환경변수, ConfigMap → 볼륨         [W&S · 15점]
+----------------------------------------------------------------
+
+  (1) Secret (generic)
+    이름            db-cred
+    데이터          user=admin, pass=s3cret
+
+  (2) ConfigMap
+    이름            app-cfg
+    데이터          config.properties 키에 값 "mode=prod"
+
+  (3) Pod
+    이름            worker
+    이미지          busybox:1.36
+    명령            sleep 3600
+    환경변수        DB_USER ← Secret db-cred 의 user 키
+    볼륨 마운트     ConfigMap app-cfg 를 /etc/app 에
+
+  [확인]
+    kubectl exec worker -n store -- printenv DB_USER                → admin
+    kubectl exec worker -n store -- cat /etc/app/config.properties  → mode=prod
+
+
+----------------------------------------------------------------
+ Q4. 스케일 · 롤링 업데이트 · 롤백               [W&S · 15점]
+----------------------------------------------------------------
+
+  Deployment orders (nginx:1.24, replicas 2) 를 만든 뒤 순서대로:
+
+    (a) replicas 를 3 으로 스케일
+    (b) 이미지를 nginx:1.25 로 롤링 업데이트, 완료까지 대기
+    (c) 이전 리비전으로 롤백
+
+  최종 상태: nginx:1.24 / replicas 3 / 전부 Ready
+  세 단계를 실제로 거쳐야 한다. 처음부터 1.24 로 두고 스케일만 하면 오답.
+
+  [확인]
+    kubectl rollout history deployment/orders -n store   → 리비전 3개 이상
+    kubectl get rs -n store
+
+
+----------------------------------------------------------------
+ Q5. PV 직접 생성 → PVC Bound → 파드 마운트     [STORAGE · 20점]
+----------------------------------------------------------------
+
+  PersistentVolume
+    이름              logs-pv
+    용량              1Gi
+    접근 모드         ReadWriteOnce
+    타입              hostPath, path=/mnt/logs
+    storageClassName  local-logs
+
+  PersistentVolumeClaim (store 네임스페이스)
+    이름              logs-pvc
+    용량 요청         500Mi
+    접근 모드         ReadWriteOnce
+    storageClassName  local-logs
+
+  Pod
+    이름              log-writer / busybox:1.36 / sleep 3600
+    마운트            logs-pvc 를 /var/log/app 에
+
+  [확인]
+    kubectl get pv logs-pv ; kubectl get pvc logs-pvc -n store   → Bound
+    kubectl exec log-writer -n store -- touch /var/log/app/ok
+
+
+----------------------------------------------------------------
+ Q6. NetworkPolicy — tier=cache 에서만 catalog 로  [NET · 20점]
+----------------------------------------------------------------
+
+  store 네임스페이스에 NetworkPolicy 두 개를 만드시오.
+
+  (1) deny-all
+      - 모든 파드의 Ingress 전체 차단
+        (podSelector: {} / policyTypes: [Ingress])
+
+  (2) allow-cache-to-catalog
+      - 대상: app=catalog 파드
+      - 허용: tier=cache 레이블 파드에서 오는 TCP 80 만
+
+  결과: tier=cache 파드(Q1 의 edge-cache)에서는 catalog-svc 가 응답하고,
+        레이블 없는 파드에서는 timeout 이어야 한다.
+        채점 스크립트가 두 경로 모두 실제 통신으로 검증한다.
+
+  [확인]
+    kubectl describe networkpolicy -n store
+    kubectl exec edge-cache -n store -- curl -s --max-time 3 http://catalog-svc
+    kubectl run t -n store --rm -it --image=busybox:1.36 --restart=Never \
+      -- wget -qO- --timeout=3 http://catalog-svc                 → timeout
+
+
+================================================================
+  배점
+================================================================
+
+    Q1  Pod 생성                W&S        15
+    Q2  Deployment + NodePort   NET        15
+    Q3  Secret / ConfigMap      W&S        15
+    Q4  롤아웃 · 롤백           W&S        15
+    Q5  PV / PVC / 마운트       STORAGE    20
+    Q6  NetworkPolicy           NET        20
+    ------------------------------------------------
+    합계                                   100
+
+  30분 안에 66점 이상이 목표. 최종 리포트의 문제별 소요 시간을 본다.

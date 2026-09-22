@@ -27,6 +27,7 @@
 | `11-troubleshooting` | 강의 실습 | 4 | 8 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
 | `mock-1` | 모의고사 | 7 | 100점 | 전 범위 (목표 40분) |
 | `mock-1-1` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
+| `mock-2-2` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
 | `mock-2` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
 | `mock-3` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
 
@@ -207,6 +208,19 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q5 | RBAC — `deploy-reader` **deployments** get/list/watch, pods 는 불가 | Architecture | 15 |
 | Q6 | **worker-2** drain / uncordon | Architecture | 10 |
 | Q7 | `web-broken`(`nginz:1.24` 오타) → **nginx:1.24** 로 수정 | Troubleshooting | 25 |
+
+### mock-2-2 — 30분 속도 점검 (목표 30분)
+
+예상 출제 15선에서 기초~중급 6개를 골라 `store` 네임스페이스에서 순차 진행. **문제별 소요 시간**이 핵심 데이터.
+
+| 문제 | 내용 | 도메인 | 배점 |
+|------|------|--------|------|
+| Q1 | `edge-cache` Pod — 이미지·포트·env·레이블 조건 | W&S | 15 |
+| Q2 | `catalog` Deployment + `catalog-svc` NodePort 30095 | NET | 15 |
+| Q3 | Secret → env(secretKeyRef) + ConfigMap → 볼륨 | W&S | 15 |
+| Q4 | `orders` 스케일 → 롤링 업데이트 → 롤백 | W&S | 15 |
+| Q5 | PV `logs-pv` 직접 생성 → PVC Bound → 파드 마운트 | STORAGE | 20 |
+| Q6 | deny-all + allow-cache-to-catalog — **실제 통신으로 허용/차단 검증** | NET | 20 |
 
 ### mock-2 — 목표 45분
 
