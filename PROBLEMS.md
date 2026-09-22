@@ -1,11 +1,11 @@
 # 실습 문제 전체 목록
 
 > 이 저장소에 들어 있는 모든 실습 세트와 문제를 한눈에 보는 색인.
-> 각 폴더 사용법은 동일하다 — `bash exam-start.sh` 로 출제, `bash verify.sh` 로 채점.
-> 세션 시험 세트(`00`~`03`)와 모의고사(`mock-1~3`)는 정답이 없는 문제지 `QUESTIONS.txt` 를 따로 두었다.
-> 터미널에서 `cat QUESTIONS.txt` 로 바로 볼 수 있다.
-> 세션 시험과 모의고사는 **한 문제씩 풀고 채점하는 `exam.sh`** 도 있다 — `bash exam.sh start` / `check`.
-> 마지막 갱신: 2026-09-02
+> **19개 세트 전부** 한 문제씩 풀고 채점하는 `exam.sh` 를 쓴다 — `bash exam.sh start` / `check`.
+> 지문은 실제 시험처럼 **영어가 기본**, 막히면 `bash exam.sh lang ko` (웹 패널은 EN/KO 버튼).
+> 브라우저로 풀려면 `python3 web/server.py` — 문제·채점·터미널이 한 화면에 있다.
+> 예전 방식(`bash exam-start.sh` 출제 → `bash verify.sh` 일괄 채점)도 그대로 남아 있다.
+> 마지막 갱신: 2026-09-22
 
 ## 요약
 
@@ -15,23 +15,25 @@
 | `01-session2-exam` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
 | `02-session3-exam` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
 | `03-session4-exam` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
-| `02-cluster-setup` | 강의 실습 | 2 | 5 | kubeadm join · crictl |
-| `03-workloads` | 강의 실습 | 4 | 20 | Deployment · ConfigMap · CronJob · DaemonSet |
-| `04-scheduling` | 강의 실습 | 4 | 21 | Requests/Limits · Affinity · Taint · HPA |
-| `05-storage` | 강의 실습 | 4 | 23 | PV/PVC · StorageClass · StatefulSet · emptyDir |
-| `06-networking` | 강의 실습 | 4 | 27 | ClusterIP · NodePort · NetworkPolicy · DNS |
-| `07-ingress` | 강의 실습 | 4 | 23 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
+| `02-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
+| `03-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
+| `04-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
+| `05-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
+| `06-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
+| `07-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
 | `08-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
-| `09-maintenance` | 강의 실습 | 4 | 9 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
-| `10-helm` | 강의 실습 | 4 | 11 | Helm 설치/업그레이드/롤백 · Kustomize |
-| `11-troubleshooting` | 강의 실습 | 4 | 8 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
+| `09-maintenance` | 강의 실습 | 4 | 18 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
+| `10-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
+| `11-troubleshooting` | 강의 실습 | 4 | 19 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
 | `mock-1` | 모의고사 | 7 | 100점 | 전 범위 (목표 40분) |
 | `mock-1-1` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
 | `mock-2-2` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
 | `mock-2` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
 | `mock-3` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
 
-> 채점 항목 수는 `verify.sh` 가 검사하는 개별 체크 개수다. 모의고사만 100점 배점제를 쓴다.
+> 채점 항목 수는 `exam.sh` 가 검사하는 개별 체크 개수다. 모의고사만 100점 배점제를 쓴다.
+> 강의 실습 10개는 2026-09-22 에 `exam.sh` 순차 진행형으로 전환하면서 채점을 더 촘촘하게 고쳤다
+> (실제 통신 검증·권한 검증·값 일치 검사 추가).
 
 ---
 

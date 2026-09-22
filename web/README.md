@@ -33,6 +33,8 @@ python3 web/server.py --host 0.0.0.0     # 주소 자동 탐지가 실패할 때
 ```
 
 오른쪽은 **VM 의 실제 셸**이다 (PTY). `kubectl`·`vi`·`tmux` 다 된다.
+셸은 시험장과 같은 상태로 뜬다 — kubectl 자동완성, `alias k`, `$do`(--dry-run=client -o yaml),
+`$now`, vim 의 YAML 2칸 들여쓰기. (`_lib/exam-shellrc.sh`)
 브라우저를 닫으면 그 셸은 종료된다 — 오래 도는 작업은 ssh 터미널에서 하거나 tmux 를 쓴다.
 터미널은 페이지를 연 시점의 세트 폴더에서 시작한다. 세트를 바꿨으면 `재연결` 을 누르면 그 폴더로 다시 연다.
 글자 크기는 `A+` / `A−`. 터미널이 필요 없으면 서버를 `--no-shell` 로 띄운다.
@@ -47,6 +49,7 @@ python3 web/server.py --host 0.0.0.0     # 주소 자동 탐지가 실패할 때
 | 시험 시작 | 이전 리소스 정리 + 환경 준비 + 1번 문제 | `bash exam.sh start` |
 | 채점 | 현재 문제 채점. 만점이면 자동으로 다음 문제 | `bash exam.sh check` |
 | 힌트 | 힌트 표시 (리포트에 기록이 남는다) | `bash exam.sh hint` |
+| EN / KO | 지문 언어 전환 (기본 영어) | `bash exam.sh lang ko` |
 | 넘어가기 | 현재 점수로 확정하고 다음 문제 | `bash exam.sh skip` |
 | 리포트 보기 | 최종 리포트 | `bash exam.sh finish` |
 | 원상복구 | 클러스터의 시험 리소스 삭제 + 기록 삭제 | `bash exam.sh clean` |

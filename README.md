@@ -26,7 +26,21 @@ cd ~/cka-lab && python3 web/server.py
 
 ## 실습 진행 방법
 
-### 한 문제씩 풀기 (`exam.sh` 가 있는 세트)
+### 지문 언어 · 시험 환경 셸
+
+지문은 실제 CKA 처럼 **영어가 기본**이다. 막히면 한글로 바꾼다.
+
+```bash
+bash exam.sh lang ko      # 한글 지문 (웹 패널은 오른쪽 위 EN/KO 버튼)
+```
+
+터미널을 시험장과 같은 상태(kubectl 자동완성 · `alias k` · `$do` · vim YAML 2칸)로 맞추려면:
+
+```bash
+bash setup-shell.sh       # ~/.bashrc 에 한 줄 추가 — 웹 패널 터미널은 자동 적용
+```
+
+### 한 문제씩 풀기 (`exam.sh` — 19개 세트 전부)
 
 ```bash
 cd 00-session-check
@@ -37,7 +51,7 @@ bash exam.sh status     # 진행 현황 (점수·소요 시간)
 
 막히면 `bash exam.sh hint`, 넘어가려면 `bash exam.sh skip`. 마지막 문제를 통과하면 최종 리포트가 나온다.
 끝나고 클러스터를 원래대로 돌리려면 `bash exam.sh clean` — 시험에서 만든 리소스(네임스페이스·PV·노드 레이블 등)를 전부 지운다.
-적용된 세트: `00-session-check` · `01-session2-exam` · `02-session3-exam` · `03-session4-exam` · `mock-1` · `mock-1-1` · `mock-2` · `mock-3`
+세션 시험 4개 · 모의고사 5개 · 강의 실습 10개 — **전체 19세트 84문항**에 적용돼 있다.
 모의고사는 100점 배점, 세션 시험은 항목 수로 채점된다. 강의 실습(02-cluster-setup ~ 11)은 아직 한꺼번에 방식만 있다.
 
 ### 한꺼번에 풀기 (모든 세트)
