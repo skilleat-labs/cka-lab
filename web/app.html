@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CKA 실습 시험</title>
+<style>
+  :root{
+    --blue:#1D6FE0; --ink:#1A1A1A; --muted:#5C5C5C; --hair:#E2E2E2;
+    --bluetint:#EAF2FD; --gray:#F6F6F6; --white:#fff;
+    --mono:"D2Coding","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:"NanumSquare","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--white);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
+  a{color:var(--blue)}
+  header{border-bottom:1px solid var(--hair);padding:14px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--white);z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:700}
+  header .sub{color:var(--muted);font-size:13px}
+  select{font-family:var(--sans);font-size:14px;padding:6px 8px;border:1px solid var(--hair);border-radius:6px;background:var(--white);color:var(--ink);max-width:min(46vw,420px)}
+  .spacer{flex:1}
+  .timer{font-family:var(--mono);font-size:14px;color:var(--muted)}
+  .dots{display:flex;gap:6px;align-items:center}
+  .dot{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--hair);background:var(--white)}
+  .dot.full{background:var(--blue);border-color:var(--blue)}
+  .dot.part{background:var(--bluetint);border-color:var(--blue)}
+  .dot.cur{border-color:var(--blue);border-width:3px}
+  main{display:grid;grid-template-columns:1fr 420px;gap:20px;padding:20px;align-items:start;max-width:1500px}
+  @media (max-width:1000px){main{grid-template-columns:1fr}}
+  .card{border:1px solid var(--hair);border-radius:10px;padding:18px 20px;margin-bottom:16px;background:var(--white)}
+  .card h2{font-size:15px;margin:0 0 12px;font-weight:700}
+  .card h2 .n{color:var(--blue);margin-right:8px}
+  pre.q{font-family:var(--mono);font-size:13.5px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0;background:var(--gray);border-radius:8px;padding:16px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  button{font-family:var(--sans);font-size:14px;font-weight:700;padding:9px 16px;border-radius:7px;border:1px solid var(--hair);background:var(--white);color:var(--ink);cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--blue);color:var(--blue)}
+  button.primary{background:var(--blue);border-color:var(--blue);color:var(--white)}
+  button.primary:hover:not(:disabled){opacity:.9;color:var(--white)}
+  button.quiet{color:var(--muted);font-weight:400}
+  button:disabled{opacity:.45;cursor:default}
+  .score{font-family:var(--mono);font-size:22px;font-weight:700}
+  .score .of{color:var(--muted);font-size:14px;font-weight:400}
+  ul.items{list-style:none;margin:0;padding:0}
+  ul.items li{display:flex;gap:10px;padding:8px 10px;border-radius:6px;align-items:flex-start;font-size:13.5px}
+  ul.items li.fail{background:var(--gray);border-left:3px solid var(--ink)}
+  ul.items li.pass{border-left:3px solid var(--bluetint)}
+  .mark{font-weight:700;font-family:var(--mono);flex:none;width:18px;text-align:center}
+  li.pass .mark{color:var(--blue)}
+  li.fail .mark{color:var(--ink)}
+  .note{display:block;color:var(--muted);font-size:12px;font-family:var(--mono);margin-top:3px;word-break:break-all}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--hair)}
+  th{color:var(--blue);background:var(--bluetint);font-weight:700}
+  tr.cur td{background:var(--bluetint)}
+  td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .tag{font-size:11px;color:var(--muted);border:1px solid var(--hair);border-radius:4px;padding:1px 5px;margin-left:4px}
+  .log{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--gray);border-radius:8px;padding:14px;max-height:320px;overflow:auto;margin:0}
+  .muted{color:var(--muted)}
+  .empty{color:var(--muted);font-size:13.5px}
+  .banner{background:var(--bluetint);border-radius:8px;padding:12px 16px;font-size:13.5px;margin-bottom:16px}
+  details summary{cursor:pointer;color:var(--muted);font-size:13px}
+  .running{display:flex;gap:10px;align-items:center;color:var(--blue);font-size:14px;font-weight:700}
+  .spin{width:14px;height:14px;border:2px solid var(--bluetint);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--hair);border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>CKA 실습 시험</h1>
+  <select id="sets"></select>
+  <span class="sub" id="setSub"></span>
+  <span class="spacer"></span>
+  <span class="dots" id="dots"></span>
+  <span class="timer" id="timer"></span>
+</header>
+
+<main>
+  <div>
+    <div id="left"></div>
+  </div>
+  <div>
+    <div id="right"></div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let SET = localStorage.getItem('cka.set') || '';
+let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text}
+
+const fmt = s => { s = Math.max(0, s|0); return `${(s/60)|0}분 ${String(s%60).padStart(2,'0')}초`; };
+const esc = s => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function api(path, opts){ const r = await fetch(path, opts); return r.json(); }
+
+async function loadSets(){
+  const sets = await api('/api/sets');
+  if(!sets.length){ $('#left').innerHTML = '<div class="card">exam.sh 가 있는 세트를 찾지 못했습니다.</div>'; return; }
+  if(!sets.find(s => s.id === SET)) SET = sets[0].id;
+  $('#sets').innerHTML = sets.map(s =>
+    `<option value="${s.id}" ${s.id===SET?'selected':''}>${esc(s.id)} — ${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
+  await refresh();
+}
+
+async function refresh(){
+  ST = await api('/api/state?set=' + encodeURIComponent(SET));
+  render();
+}
+
+function renderDots(){
+  if(!ST || !ST.nq){ $('#dots').innerHTML=''; return; }
+  $('#dots').innerHTML = ST.rows.map(r => {
+    let c = 'dot';
+    if(r.pass !== null) c += (r.pass === r.total) ? ' full' : ' part';
+    if(r.current) c += ' cur';
+    return `<span class="${c}" title="Q${r.n} ${esc(r.title)}"></span>`;
+  }).join('');
+}
+
+function renderTimer(){
+  clearInterval(TICK);
+  if(!ST || !ST.started){ $('#timer').textContent = ''; return; }
+  const base = ST.finished || 0;
+  const draw = () => {
+    const end = base || Math.floor(Date.now()/1000);
+    $('#timer').textContent = (base ? '총 ' : '경과 ') + fmt(end - ST.started);
+  };
+  draw();
+  if(!base) TICK = setInterval(draw, 1000);
+}
+
+function render(){
+  $('#setSub').textContent = ST.nq ? `${ST.nq}문제 · ${ST.unit}` : '';
+  renderDots(); renderTimer();
+  $('#left').innerHTML = leftHTML();
+  $('#right').innerHTML = rightHTML();
+  bind();
+}
+
+function leftHTML(){
+  if(JOB && !JOB.done){
+    return `<div class="card">
+      <div class="running"><span class="spin"></span>${esc(cmdLabel(JOB.cmd))} 실행 중…</div>
+      <p class="muted" style="font-size:13px">채점은 클러스터에 실제로 요청을 보냅니다. 몇 초에서 1~2분 걸릴 수 있습니다.</p>
+      <pre class="log" id="joblog">${esc(JOB.output || '')}</pre></div>`;
+  }
+  if(!ST.current){
+    return `<div class="card">
+      <h2>아직 시작하지 않았습니다</h2>
+      <div class="banner">시험을 시작하면 이전 시험 리소스를 정리하고 환경을 준비한 뒤 1번 문제가 나옵니다.
+        문제는 여기에서 읽고, <b>kubectl 은 평소처럼 터미널에서</b> 칩니다. 다 풀었으면 채점을 누르세요.</div>
+      <div class="bar"><button class="primary" data-cmd="start">시험 시작</button></div></div>`;
+  }
+  if(ST.done) return reportHTML();
+  const q = ST.question || {};
+  const hint = (HINT && HINT.q === ST.current)
+    ? `<div class="card"><h2>힌트 <span class="muted" style="font-weight:400">— 리포트에 기록이 남습니다</span></h2>
+       <pre class="q">${esc(HINT.text)}</pre></div>` : '';
+  return `<div class="card">
+    <h2><span class="n">Q${q.n} / ${ST.nq}</span>${esc(q.title)}</h2>
+    <pre class="q">${esc(q.body)}</pre></div>` + hint;
+}
+
+function reportHTML(){
+  const pct = ST.total ? Math.round(ST.sum*100/ST.total) : 0;
+  const ok = pct >= 66;
+  return `<div class="card">
+    <h2>최종 리포트 — ${esc(ST.title)}</h2>
+    <div class="score">${ST.sum} <span class="of">/ ${ST.total} ${esc(ST.unit)} · ${pct}%</span></div>
+    <div class="banner" style="margin-top:12px">${ok ? '합격선(66%) 통과' : '합격선(66%) 미달'}
+      · 총 소요 ${fmt((ST.finished || ST.now) - ST.started)}</div>
+    ${tableHTML()}
+    <div class="bar" style="margin-top:16px">
+      <button data-cmd="start" data-confirm="처음부터 다시 시작합니다. 진행 기록이 지워집니다. 계속할까요?">다시 시작</button>
+      <button class="quiet" data-cmd="clean" data-confirm="클러스터의 이 시험 리소스를 전부 삭제하고 진행 기록도 지웁니다. 계속할까요?">원상복구</button>
+    </div></div>`;
+}
+
+function tableHTML(){
+  return `<table><thead><tr><th>문제</th><th style="text-align:right">점수</th><th style="text-align:right">시간</th></tr></thead><tbody>
+    ${ST.rows.map(r => `<tr class="${r.current?'cur':''}">
+      <td>Q${r.n} ${esc(r.title)}
+        ${r.skipped?'<span class="tag">skip</span>':''}${r.hint?'<span class="tag">hint</span>':''}${r.tries>1?`<span class="tag">${r.tries}회</span>`:''}</td>
+      <td class="num">${r.pass===null ? '<span class="muted">—</span>' : `${r.pass}/${r.total}`}</td>
+      <td class="num muted">${r.elapsed===null ? '' : fmt(r.elapsed)}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function cmdLabel(c){
+  return {start:'시험 시작', check:'채점', skip:'넘어가기', hint:'힌트', finish:'리포트', clean:'원상복구', reset:'기록 삭제'}[c] || c;
+}
+
+function rightHTML(){
+  const busy = JOB && !JOB.done;
+  const inQ = ST.current && !ST.done;
+  const items = ST.items || [];
+  const p = items.filter(i => i.ok).reduce((a,b) => a + (b.pts||1), 0);
+  const t = items.reduce((a,b) => a + (b.pts||1), 0);
+
+  const actions = !inQ ? '' : `<div class="card">
+    <div class="bar">
+      <button class="primary" data-cmd="check" ${busy?'disabled':''}>채점 <kbd>C</kbd></button>
+      ${ST.hasHint ? `<button data-cmd="hint" ${busy?'disabled':''}>힌트</button>` : ''}
+      <button data-cmd="skip" ${busy?'disabled':''}>넘어가기</button>
+    </div>
+    <p class="muted" style="margin:0;font-size:13px">채점이 만점이면 다음 문제로 자동으로 넘어갑니다.
+      힌트를 보면 리포트에 기록이 남습니다.</p></div>`;
+
+  const result = !items.length ? '' : `<div class="card">
+    <h2>채점 결과 <span class="muted" style="font-weight:400">${p}/${t} ${esc(ST.unit)}</span></h2>
+    <ul class="items">${items.map(i => `<li class="${i.ok?'pass':'fail'}">
+      <span class="mark">${i.ok?'✓':'✕'}</span>
+      <span>${esc(i.desc)}${i.note ? `<span class="note">${esc(i.note)}</span>` : ''}</span></li>`).join('')}</ul>
+    ${items.some(i => !i.ok) ? '<p class="muted" style="font-size:13px;margin-bottom:0">✕ 항목을 고치고 다시 채점하세요.</p>' : ''}
+  </div>`;
+
+  const status = (!ST.current || ST.done) ? '' : `<div class="card"><h2>진행 현황</h2>${tableHTML()}
+    <div class="bar" style="margin-top:14px;margin-bottom:0">
+      <button class="quiet" data-cmd="finish" ${busy?'disabled':''}>리포트 보기</button>
+      <button class="quiet" data-cmd="clean" data-confirm="클러스터의 이 시험 리소스를 전부 삭제하고 진행 기록도 지웁니다. 계속할까요?" ${busy?'disabled':''}>원상복구</button>
+    </div></div>`;
+
+  const help = `<div class="card"><h2>쓰는 법</h2>
+    <p class="muted" style="margin:0;font-size:13.5px">문제는 이 화면에서 읽고, <b>kubectl 은 터미널에서</b> 칩니다.
+    이 패널은 문제 출제·채점·기록만 담당합니다. 시험장도 같은 구조입니다 —
+    한쪽에 문제, 한쪽에 터미널.</p></div>`;
+
+  return actions + result + status + (items.length || ST.done ? '' : help);
+}
+
+function bind(){
+  document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => run(b.dataset.cmd, b.dataset.confirm));
+}
+
+async function run(cmd, confirmMsg){
+  if(confirmMsg && !confirm(confirmMsg)) return;
+  if(cmd === 'start' && ST && ST.current && !confirmMsg &&
+     !confirm('시험을 시작하면 이전 진행 기록이 지워집니다. 계속할까요?')) return;
+
+  if(cmd === 'hint'){
+    const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({set:SET, cmd:'hint'})});
+    if(r.error) return alert(r.error);
+    const j = await waitJob(r.job);
+    HINT = {q: ST.current, text: j.output.trim()};
+    await refresh();
+    return;
+  }
+
+  const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({set:SET, cmd, confirm:true})});
+  if(r.error) return alert(r.error);
+  JOB = {id:r.job, cmd, output:'', done:false};
+  render();
+  await waitJob(r.job, true);
+  JOB = null;
+  await refresh();
+  await loadSetOptions();
+}
+
+async function waitJob(id, live){
+  for(;;){
+    const j = await api('/api/job?id=' + id);
+    if(live && JOB){ JOB.output = j.output; const el = $('#joblog'); if(el){ el.textContent = j.output; el.scrollTop = el.scrollHeight; } }
+    if(j.done) return j;
+    await new Promise(r => setTimeout(r, 600));
+  }
+}
+
+async function loadSetOptions(){
+  const sets = await api('/api/sets');
+  $('#sets').innerHTML = sets.map(s =>
+    `<option value="${s.id}" ${s.id===SET?'selected':''}>${esc(s.id)} — ${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
+}
+
+$('#sets').onchange = async e => { SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; await refresh(); };
+document.addEventListener('keydown', e => {
+  if(e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey) return;
+  if(e.key === 'c' || e.key === 'C'){ const b = document.querySelector('[data-cmd="check"]'); if(b && !b.disabled) b.click(); }
+});
+
+loadSets();
+</script>
+</body>
+</html>

@@ -14,6 +14,15 @@ cd practice
 - kubeadm으로 구축한 클러스터에서 `kubectl get nodes` 가 **Ready** 로 응답할 것
 - 노드에서 이미지 pull 이 가능할 것 (`nginx:1.24`, `busybox:1.36` 등 사용)
 
+## 브라우저로 풀기 (웹 패널)
+
+```bash
+cd ~/cka-lab && python3 web/server.py
+```
+
+출력된 주소(`http://192.168.56.10:8080`)를 맥/윈도우 브라우저에서 열면 문제·채점·리포트를 화면에서 볼 수 있다.
+kubectl 은 평소대로 터미널에서 친다. 터미널 방식과 점수·기록이 같다 — 자세한 건 [web/README.md](web/README.md).
+
 ## 실습 진행 방법
 
 ### 한 문제씩 풀기 (`exam.sh` 가 있는 세트)

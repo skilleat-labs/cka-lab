@@ -59,15 +59,26 @@ fmt_dur() {
 Q_PASS=0; Q_TOTAL=0; Q_FAILS=()
 EXAM_UNIT="${EXAM_UNIT:-항목}"   # 세트에서 EXAM_UNIT="점" 으로 바꾸면 리포트 단위가 바뀜
 _pass() { local pts="$1"; Q_PASS=$((Q_PASS+pts)); }
+
+# ── 채점 항목을 JSON 한 줄씩 남긴다 (web UI 가 읽는다. 터미널 출력에는 영향 없음) ──
+JSONL="$WORK_DIR/.last-check.jsonl"
+_json_esc() {
+  printf '%s' "$1" | tr '\n\r\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-300
+}
+_jrec() {  # desc ok(0/1) pts note
+  printf '{"desc":"%s","ok":%s,"pts":%s,"note":"%s"}\n' \
+    "$(_json_esc "$1")" "$([[ "$2" == "0" ]] && echo true || echo false)" "$3" "$(_json_esc "${4:-}")" \
+    >> "$JSONL" 2>/dev/null || true
+}
 _pts_label() { [[ "${EXAM_UNIT}" == "점" ]] && printf '[+%s점] ' "$1" || true; }
 _zero_label() { [[ "${EXAM_UNIT}" == "점" ]] && printf '[ 0점] ' || true; }
 check() {
   local desc="$1" cmd="$2" pts="${3:-1}"
   Q_TOTAL=$((Q_TOTAL+pts))
   if eval "$cmd" &>/dev/null; then
-    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"
+    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"; _jrec "$desc" 0 "$pts"
   else
-    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc"; Q_FAILS+=("$desc")
+    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc"; Q_FAILS+=("$desc"); _jrec "$desc" 1 "$pts"
   fi
 }
 check_output() {
@@ -75,10 +86,10 @@ check_output() {
   Q_TOTAL=$((Q_TOTAL+pts))
   out=$(eval "$cmd" 2>/dev/null || echo "")
   if echo "$out" | grep -qE "$pattern"; then
-    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"
+    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"; _jrec "$desc" 0 "$pts"
   else
     echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc  ${ORANGE}(기대: $pattern / 실제: '${out}')${RESET}"
-    Q_FAILS+=("$desc")
+    Q_FAILS+=("$desc"); _jrec "$desc" 1 "$pts" "기대: $pattern / 실제: ${out}"
   fi
 }
 # 직접 판정한 결과를 기록할 때 (복잡한 검사용)
@@ -86,9 +97,9 @@ check_result() {
   local desc="$1" ok="$2" note="${3:-}" pts="${4:-1}"
   Q_TOTAL=$((Q_TOTAL+pts))
   if [[ "$ok" == "0" ]]; then
-    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"
+    echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"; _jrec "$desc" 0 "$pts"
   else
-    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc${note:+  ${ORANGE}($note)${RESET}}"; Q_FAILS+=("$desc")
+    echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc${note:+  ${ORANGE}($note)${RESET}}"; Q_FAILS+=("$desc"); _jrec "$desc" 1 "$pts" "$note"
   fi
 }
 # 파드 Ready 대기 (최대 40초) — 채점 전 안정화용. 파드가 없으면 즉시 반환
@@ -145,6 +156,7 @@ show_question() {
 run_grade() {
   local n="$1"
   Q_PASS=0; Q_TOTAL=0; Q_FAILS=()
+  printf '{"q":%s}\n' "$n" > "$JSONL" 2>/dev/null || true
   "q${n}_grade"
 }
 
@@ -175,7 +187,7 @@ cmd_start() {
   echo -e "  ${BOLD}${EXAM_TITLE}${RESET}"
   echo -e "  ${EXAM_NQ}문제 · 한 문제씩 풀고 채점하며 진행합니다"
   sep
-  rm -f "$STATE" "$QLOG"
+  rm -f "$STATE" "$QLOG" "$JSONL"
   kubectl get nodes &>/dev/null || {
     echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"; exit 1; }
   echo -e "\n${CYAN}[CLEAN] 이전 시험 리소스를 정리합니다...${RESET}"
@@ -321,6 +333,30 @@ cmd_clean() {
   echo ""
 }
 
+# ── web UI 전용 (사람이 직접 쓸 일은 없다) ──────────────────────
+cmd_qtext() {   # 장식·ANSI 없는 문제 원문
+  local n="${1:-$(state_get current)}"
+  [[ -z "$n" ]] && n=1
+  (( n > EXAM_NQ )) && return 0
+  "q${n}_title"; echo "---8<---"; "q${n}_text"
+}
+cmd_hinttext() { # 장식 없는 힌트 (기록도 남긴다)
+  local n; n=$(state_get current); [[ -z "$n" ]] && exit 1
+  [[ "$(type -t "q${n}_hint")" != "function" ]] && { echo "(이 문제에는 힌트가 없습니다)"; exit 0; }
+  state_set "q${n}_hint" 1
+  "q${n}_hint"
+}
+cmd_meta() {    # key=value 로 세트 정보 출력
+  echo "title=$EXAM_TITLE"
+  echo "nq=$EXAM_NQ"
+  echo "unit=$EXAM_UNIT"
+  local i
+  for ((i=1;i<=EXAM_NQ;i++)); do
+    echo "q${i}_title=$("q${i}_title")"
+    [[ "$(type -t "q${i}_hint")" == "function" ]] && echo "q${i}_hasHint=1"
+  done
+}
+
 exam_main() {
   case "${1:-}" in
     start)  cmd_start ;;
@@ -332,6 +368,9 @@ exam_main() {
     finish) cmd_finish ;;
     clean)  cmd_clean ;;
     reset)  cmd_reset ;;
+    qtext)    cmd_qtext "${2:-}" ;;
+    hinttext) cmd_hinttext ;;
+    meta)     cmd_meta ;;
     *)
       echo ""
       echo -e "  ${BOLD}${EXAM_TITLE}${RESET}"

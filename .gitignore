@@ -26,3 +26,7 @@ etcd-backup*
 # 순차 진행형 시험 상태 (work/ 아래라 이미 무시되지만 명시)
 **/work/.progress
 **/work/questions-so-far.txt
+
+# 웹 패널 부산물
+**/work/.last-check.jsonl
+web/__pycache__/
