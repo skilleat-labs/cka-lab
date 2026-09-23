@@ -7,12 +7,12 @@ EXAM_TITLE="CKA 8강 실습 — RBAC (ServiceAccount · Role · ClusterRole)"
 EXAM_NQ=4
 
 exam_cleanup() {
-  kubectl delete clusterrolebinding node-reader-binding --ignore-not-found &>/dev/null || true
-  kubectl delete clusterrole node-reader --ignore-not-found &>/dev/null || true
-  kubectl delete rolebinding pod-reader-binding -n default --ignore-not-found &>/dev/null || true
-  kubectl delete role pod-reader -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pod sa-test -n default --ignore-not-found &>/dev/null || true
-  kubectl delete serviceaccount my-sa -n default --ignore-not-found &>/dev/null || true
+  kdel clusterrolebinding node-reader-binding
+  kdel clusterrole node-reader
+  kdel rolebinding pod-reader-binding -n default
+  kdel role pod-reader -n default
+  kdel pod sa-test -n default
+  kdel serviceaccount my-sa -n default
   echo "  my-sa / sa-test / pod-reader / node-reader 및 바인딩 삭제"
 }
 exam_setup() { echo "  (미리 만들어둘 것 없음)"; }

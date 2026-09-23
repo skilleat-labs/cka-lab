@@ -7,11 +7,11 @@ EXAM_TITLE="CKA 7강 실습 — Ingress (경로·호스트·TLS) · 네임스페
 EXAM_NQ=4
 
 exam_cleanup() {
-  kubectl delete ingress web-ingress host-ingress tls-ingress -n default --ignore-not-found &>/dev/null || true
-  kubectl delete deployment web1 -n default --ignore-not-found &>/dev/null || true
-  kubectl delete service web1-svc -n default --ignore-not-found &>/dev/null || true
-  kubectl delete secret tls-secret -n default --ignore-not-found &>/dev/null || true
-  kubectl delete namespace production --ignore-not-found &>/dev/null || true
+  kdel ingress web-ingress host-ingress tls-ingress -n default
+  kdel deployment web1 -n default
+  kdel service web1-svc -n default
+  kdel secret tls-secret -n default
+  kdel namespace production
   echo "  web1 / web1-svc / ingress 3종 / tls-secret / production ns 삭제"
 }
 exam_setup() { echo "  (미리 만들어둘 것 없음 — Ingress 컨트롤러가 설치돼 있어야 실제 접속 테스트가 된다)"; }

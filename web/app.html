@@ -433,11 +433,13 @@ async function run(cmd, confirmMsg){
 }
 
 async function waitJob(id, live){
+  // 롱폴링 — 새 출력이 생기거나 끝나는 즉시 서버가 응답한다 (대기 시간 없음)
+  let since = 0;
   for(;;){
-    const j = await api('/api/job?id=' + id);
+    const j = await api(`/api/job?id=${id}&wait=1&since=${since}`);
+    since = (j.output || '').length;
     if(live && JOB){ JOB.output = j.output; const el = $('#joblog'); if(el){ el.textContent = j.output; el.scrollTop = el.scrollHeight; } }
     if(j.done) return j;
-    await new Promise(r => setTimeout(r, 600));
   }
 }
 

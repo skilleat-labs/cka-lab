@@ -13,7 +13,7 @@ exam_cleanup() {
     kubectl delete namespace api --wait=true &>/dev/null || true
   fi
   for i in 1 2 3; do kubectl delete pv "api-pv-${i}" --ignore-not-found &>/dev/null || true; done
-  kubectl delete storageclass api-storage --ignore-not-found &>/dev/null || true
+  kdel storageclass api-storage
   echo "  api 네임스페이스 · api-storage · api-pv-1~3 삭제"
 }
 

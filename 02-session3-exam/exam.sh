@@ -21,7 +21,7 @@ exam_cleanup() {
     kubectl delete namespace shop --wait=true &>/dev/null || true
   fi
   for i in 1 2 3; do kubectl delete pv "exam-pv-${i}" --ignore-not-found &>/dev/null || true; done
-  kubectl delete storageclass exam-storage --ignore-not-found &>/dev/null || true
+  kdel storageclass exam-storage
   rm -f "$MODE_FILE"
   echo "  shop 네임스페이스 · exam-storage · exam-pv-1~3 삭제"
   echo "  (Gateway API 컨트롤러는 남겨둠 — 완전 제거: kubectl delete ns nginx-gateway)"

@@ -60,6 +60,19 @@ def list_sets():
     return out
 
 
+def run_exam_stream(set_id, args, job, timeout=900):
+    """exam.sh 를 실행하면서 나오는 줄을 그때그때 job["output"] 에 붙인다."""
+    d = os.path.join(ROOT, set_id)
+    p = subprocess.Popen(["bash", "exam.sh", *args], cwd=d,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, errors="replace", bufsize=1)
+    job["proc"] = p
+    for line in p.stdout:
+        job["output"] += ANSI.sub("", line)
+    p.stdout.close()
+    return p.wait(timeout=timeout)
+
+
 def run_exam(set_id, *args, timeout=900):
     """exam.sh 를 실행하고 (rc, 출력) 을 돌려준다."""
     d = os.path.join(ROOT, set_id)
@@ -196,8 +209,7 @@ def start_job(set_id, cmd):
     def work():
         try:
             args = ["hinttext"] if cmd == "hint" else [cmd]
-            rc, out = run_exam(set_id, *args)
-            job["rc"], job["output"] = rc, out
+            job["rc"] = run_exam_stream(set_id, args, job)
         except subprocess.TimeoutExpired:
             job["rc"], job["output"] = -1, "시간 초과 — 터미널에서 직접 확인하세요."
         except Exception as e:  # noqa: BLE001
@@ -423,6 +435,13 @@ class Handler(BaseHTTPRequestHandler):
                 j = _jobs.get(jid)
                 if not j:
                     return self._json({"error": "없는 작업"}, 404)
+                # wait=1 이면 새 출력이 생기거나 작업이 끝날 때까지 기다렸다 답한다
+                if (q.get("wait") or ["0"])[0] == "1":
+                    since = int((q.get("since") or ["0"])[0])
+                    deadline = time.time() + 20
+                    while (not j["done"] and len(j["output"]) <= since
+                           and time.time() < deadline):
+                        time.sleep(0.04)
                 return self._json({k: j[k] for k in ("id", "set", "cmd", "output", "done", "rc")})
             return self._send(404, "not found", "text/plain; charset=utf-8")
         except Exception as e:  # noqa: BLE001

@@ -7,10 +7,10 @@ EXAM_TITLE="CKA 6강 실습 — 서비스 · NodePort · NetworkPolicy · DNS"
 EXAM_NQ=4
 
 exam_cleanup() {
-  kubectl delete deployment web api backend -n default --ignore-not-found &>/dev/null || true
-  kubectl delete service web-svc api-svc -n default --ignore-not-found &>/dev/null || true
-  kubectl delete networkpolicy backend-policy -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pod dns-test -n default --ignore-not-found &>/dev/null || true
+  kdel deployment web api backend -n default
+  kdel service web-svc api-svc -n default
+  kdel networkpolicy backend-policy -n default
+  kdel pod dns-test -n default
   echo "  web / api / backend / web-svc / api-svc / backend-policy / dns-test 삭제"
 }
 exam_setup() { echo "  (미리 만들어둘 것 없음)"; }

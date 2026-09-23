@@ -7,9 +7,9 @@ EXAM_TITLE="CKA 4강 실습 — 스케줄링 (Requests/Limits · Affinity · Tai
 EXAM_NQ=4
 
 exam_cleanup() {
-  kubectl delete pod resource-pod ssd-pod gpu-pod -n default --ignore-not-found &>/dev/null || true
-  kubectl delete deployment nginx-hpa -n default --ignore-not-found &>/dev/null || true
-  kubectl delete hpa nginx-hpa -n default --ignore-not-found &>/dev/null || true
+  kdel pod resource-pod ssd-pod gpu-pod -n default
+  kdel deployment nginx-hpa -n default
+  kdel hpa nginx-hpa -n default
   kubectl label node worker-1 disktype- &>/dev/null || true
   kubectl taint node worker-2 dedicated=gpu:NoSchedule- &>/dev/null || true
   echo "  resource-pod / ssd-pod / gpu-pod / nginx-hpa 삭제, 노드 레이블·taint 원복"

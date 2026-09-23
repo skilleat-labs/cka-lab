@@ -14,7 +14,7 @@ exam_cleanup() {
       kubectl delete namespace "$ns" --wait=true &>/dev/null || true
     fi
   done
-  kubectl delete deployment cache-app -n default --ignore-not-found &>/dev/null || true
+  kdel deployment cache-app -n default
   echo "  ops / app 네임스페이스 삭제"
 }
 exam_setup() { echo "  (네임스페이스는 학생이 직접 만든다)"; }

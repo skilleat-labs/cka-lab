@@ -10,12 +10,12 @@ EXAM_NQ=7
 
 exam_cleanup() {
   kubectl delete pod affinity-pod toleration-pod shop-backend api-backend --ignore-not-found --force --grace-period=0 &>/dev/null || true
-  kubectl delete svc shop-svc api-svc mysql-headless --ignore-not-found &>/dev/null || true
-  kubectl delete networkpolicy deny-all allow-web --ignore-not-found &>/dev/null || true
-  kubectl delete ingress shop-ingress --ignore-not-found &>/dev/null || true
-  kubectl delete statefulset mysql-sts --ignore-not-found &>/dev/null || true
-  kubectl delete pvc -l app=mysql-sts --ignore-not-found &>/dev/null || true
-  kubectl delete pvc data-mysql-sts-0 data-mysql-sts-1 --ignore-not-found &>/dev/null || true
+  kdel svc shop-svc api-svc mysql-headless
+  kdel networkpolicy deny-all allow-web
+  kdel ingress shop-ingress
+  kdel statefulset mysql-sts
+  kdel pvc -l app=mysql-sts
+  kdel pvc data-mysql-sts-0 data-mysql-sts-1
   rm -f /tmp/mock2-etcd.db
   kubectl label node worker-1 disktype- &>/dev/null || true
   # worker-2 kubelet 복구 (시험 중단 시 NotReady 로 남지 않도록)

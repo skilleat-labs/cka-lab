@@ -17,7 +17,7 @@ exam_cleanup() {
     echo "  네임스페이스 $NS 삭제 중... (수십 초 걸릴 수 있음)"
     kubectl delete namespace $NS --wait=true &>/dev/null || true
   fi
-  kubectl delete pv logs-pv --ignore-not-found &>/dev/null || true
+  kdel pv logs-pv
   echo "  store 네임스페이스 · logs-pv 삭제"
 }
 

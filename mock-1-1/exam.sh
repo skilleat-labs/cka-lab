@@ -14,7 +14,7 @@ exam_cleanup() {
     echo "  네임스페이스 retail 삭제 중..."
     kubectl delete namespace retail --wait=true &>/dev/null || true
   fi
-  kubectl delete pv report-pv --ignore-not-found &>/dev/null || true
+  kdel pv report-pv
   kubectl uncordon worker-2 &>/dev/null || true
   echo "  retail 네임스페이스 · report-pv 삭제, worker-2 uncordon"
 }

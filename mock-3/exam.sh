@@ -9,16 +9,16 @@ EXAM_TITLE="CKA Mock Exam 3 — 자동화·권한·트러블슈팅 (100점 · �
 EXAM_NQ=7
 
 exam_cleanup() {
-  kubectl delete deployment web-app broken-deploy --ignore-not-found &>/dev/null || true
-  kubectl delete hpa web-app --ignore-not-found &>/dev/null || true
-  kubectl delete svc broken-svc --ignore-not-found &>/dev/null || true
-  kubectl delete pvc fast-pvc --ignore-not-found &>/dev/null || true
-  kubectl delete pv fast-pv --ignore-not-found &>/dev/null || true
-  kubectl delete storageclass fast-ssd --ignore-not-found &>/dev/null || true
-  kubectl delete clusterrolebinding cluster-reader-crb --ignore-not-found &>/dev/null || true
-  kubectl delete clusterrole cluster-reader --ignore-not-found &>/dev/null || true
-  kubectl delete serviceaccount reader-sa --ignore-not-found &>/dev/null || true
-  kubectl delete daemonset log-collector --ignore-not-found &>/dev/null || true
+  kdel deployment web-app broken-deploy
+  kdel hpa web-app
+  kdel svc broken-svc
+  kdel pvc fast-pvc
+  kdel pv fast-pv
+  kdel storageclass fast-ssd
+  kdel clusterrolebinding cluster-reader-crb
+  kdel clusterrole cluster-reader
+  kdel serviceaccount reader-sa
+  kdel daemonset log-collector
   kubectl delete pod crash-pod --ignore-not-found --force --grace-period=0 &>/dev/null || true
   rm -f /tmp/upgrade-plan.txt
   echo "  web-app/HPA · fast-ssd/pv/pvc · RBAC · DaemonSet · broken-deploy/svc · crash-pod · upgrade-plan 삭제"

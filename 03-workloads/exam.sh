@@ -9,12 +9,12 @@ EXAM_NQ=4
 
 # ══════════════════════════════════════════════════════════════
 exam_cleanup() {
-  kubectl delete deployment web-app -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pod db-client -n default --ignore-not-found &>/dev/null || true
-  kubectl delete configmap db-config -n default --ignore-not-found &>/dev/null || true
-  kubectl delete cronjob date-printer -n default --ignore-not-found &>/dev/null || true
+  kdel deployment web-app -n default
+  kdel pod db-client -n default
+  kdel configmap db-config -n default
+  kdel cronjob date-printer -n default
   kubectl get jobs -n default -o name 2>/dev/null | grep "date-printer" | xargs -r kubectl delete -n default &>/dev/null || true
-  kubectl delete namespace monitoring --ignore-not-found &>/dev/null || true
+  kdel namespace monitoring
   echo "  web-app / db-client / db-config / date-printer / monitoring ns 삭제"
 }
 exam_setup() { echo "  (미리 만들어둘 것 없음)"; }

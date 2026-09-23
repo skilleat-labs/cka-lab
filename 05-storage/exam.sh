@@ -7,12 +7,12 @@ EXAM_TITLE="CKA 5강 실습 — 스토리지 (PV/PVC · StorageClass · Stateful
 EXAM_NQ=4
 
 exam_cleanup() {
-  kubectl delete pod shared-vol -n default --ignore-not-found &>/dev/null || true
-  kubectl delete statefulset web-sts -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pvc data-pvc sc-pvc -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pvc www-storage-web-sts-0 www-storage-web-sts-1 www-storage-web-sts-2 -n default --ignore-not-found &>/dev/null || true
-  kubectl delete pv data-pv --ignore-not-found &>/dev/null || true
-  kubectl delete storageclass local-storage --ignore-not-found &>/dev/null || true
+  kdel pod shared-vol -n default
+  kdel statefulset web-sts -n default
+  kdel pvc data-pvc sc-pvc -n default
+  kdel pvc www-storage-web-sts-0 www-storage-web-sts-1 www-storage-web-sts-2 -n default
+  kdel pv data-pv
+  kdel storageclass local-storage
   echo "  data-pv / data-pvc / local-storage / sc-pvc / web-sts / shared-vol 삭제"
 }
 exam_setup() { echo "  (미리 만들어둘 것 없음)"; }

@@ -10,8 +10,8 @@ exam_cleanup() {
   if command -v helm &>/dev/null; then
     helm uninstall my-nginx &>/dev/null || true
   fi
-  kubectl delete deployment,service -l app.kubernetes.io/instance=my-nginx -n default --ignore-not-found &>/dev/null || true
-  kubectl delete deployment dev-web-app -n default --ignore-not-found &>/dev/null || true
+  kdel deployment,service -l app.kubernetes.io/instance=my-nginx -n default
+  kdel deployment dev-web-app -n default
   rm -rf /tmp/kustomize-lab 2>/dev/null || true
   echo "  helm release my-nginx, dev-web-app, /tmp/kustomize-lab 삭제"
 }

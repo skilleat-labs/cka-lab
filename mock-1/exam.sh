@@ -9,15 +9,15 @@ EXAM_TITLE="CKA Mock Exam 1 — 기초 워크로드 (100점 · 목표 40분)"
 EXAM_NQ=7
 
 exam_cleanup() {
-  kubectl delete deployment nginx-deploy --ignore-not-found &>/dev/null || true
-  kubectl delete svc nginx-svc --ignore-not-found &>/dev/null || true
-  kubectl delete configmap app-config --ignore-not-found &>/dev/null || true
+  kdel deployment nginx-deploy
+  kdel svc nginx-svc
+  kdel configmap app-config
   kubectl delete pod config-pod broken-app --ignore-not-found --force --grace-period=0 &>/dev/null || true
-  kubectl delete pvc task-pvc --ignore-not-found &>/dev/null || true
-  kubectl delete pv task-pv --ignore-not-found &>/dev/null || true
-  kubectl delete rolebinding app-rb --ignore-not-found &>/dev/null || true
-  kubectl delete role app-role --ignore-not-found &>/dev/null || true
-  kubectl delete serviceaccount app-sa --ignore-not-found &>/dev/null || true
+  kdel pvc task-pvc
+  kdel pv task-pv
+  kdel rolebinding app-rb
+  kdel role app-role
+  kdel serviceaccount app-sa
   kubectl uncordon worker-1 &>/dev/null || true
   echo "  nginx-deploy · nginx-svc · app-config · config-pod · task-pv/pvc · RBAC · broken-app 삭제, worker-1 uncordon"
 }

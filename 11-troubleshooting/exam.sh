@@ -7,9 +7,9 @@ EXAM_TITLE="CKA 11강 실습 — 트러블슈팅 (CrashLoop · ImagePull · Endp
 EXAM_NQ=4
 
 exam_cleanup() {
-  kubectl delete pod broken-pod fixed-pod pull-fail -n default --ignore-not-found &>/dev/null || true
-  kubectl delete deployment target-app -n default --ignore-not-found &>/dev/null || true
-  kubectl delete service target-svc -n default --ignore-not-found &>/dev/null || true
+  kdel pod broken-pod fixed-pod pull-fail -n default
+  kdel deployment target-app -n default
+  kdel service target-svc -n default
   echo "  broken-pod / fixed-pod / pull-fail / target-app / target-svc 삭제"
 }
 exam_setup() {
