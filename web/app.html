@@ -33,12 +33,30 @@
   .dot.part{background:var(--bluetint);border-color:var(--blue)}
   .dot.cur{border-color:var(--blue);border-width:3px}
 
-  main{display:grid;grid-template-columns:minmax(0,1fr) minmax(460px,42%);gap:18px;padding:18px;align-items:start}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 6px var(--sidew, 52%);gap:14px;padding:18px;align-items:start}
   .side{position:sticky;top:calc(var(--head) + 18px);height:calc(100vh - var(--head) - 36px);display:flex;flex-direction:column;gap:12px;min-width:0}
+
+  /* 드래그로 폭 조절 */
+  #resizer{position:sticky;top:calc(var(--head) + 18px);height:calc(100vh - var(--head) - 36px);
+    width:6px;border-radius:3px;background:var(--hair);cursor:col-resize;opacity:.6;transition:opacity .15s,background .15s}
+  #resizer:hover,#resizer.on{background:var(--blue);opacity:1}
+  #resizer::after{content:"";position:absolute;inset:0 -8px}   /* 집기 쉽게 */
+
+  /* 문제/터미널 좌우 바꾸기 */
+  body.swap main{grid-template-columns:var(--sidew, 52%) 6px minmax(0,1fr)}
+  body.swap .side{order:1}
+  body.swap #resizer{order:2}
+  body.swap #left{order:3}
+
+  /* 터미널만 넓게 보기 */
+  body.termfull #left, body.termfull #resizer{display:none}
+  body.termfull main{grid-template-columns:1fr}
+
   @media (max-width:1100px){
     main{grid-template-columns:1fr}
+    #resizer{display:none}
     .side{position:static;height:auto}
-    #termcard{height:58vh}
+    #termcard{height:62vh}
   }
 
   .card{border:1px solid var(--hair);border-radius:10px;padding:16px 18px;margin-bottom:14px;background:var(--white)}
@@ -101,12 +119,15 @@
 
 <main>
   <div id="left"></div>
+  <div id="resizer" title="드래그해서 너비 조절 · 더블클릭하면 기본값"></div>
   <aside class="side">
     <div id="actions"></div>
     <div class="card" id="termcard">
       <div class="termhead">
         <span id="termpath">터미널</span><span id="termstat" class="muted">연결 중…</span>
         <span class="spacer"></span>
+        <button id="termswap" title="문제와 터미널 좌우 바꾸기">⇄</button>
+        <button id="termwide" title="터미널만 넓게 (다시 누르면 복귀)">⤢</button>
         <button id="fontminus" title="글자 작게">A−</button>
         <button id="fontplus" title="글자 크게">A+</button>
         <button id="reconnect">재연결</button>
@@ -150,7 +171,59 @@ function initTerm(){
   $('#reconnect').onclick = () => { try{ ws && ws.close(); }catch(e){} connect(); };
   $('#fontplus').onclick = () => setFont(fontSize + 1);
   $('#fontminus').onclick = () => setFont(fontSize - 1);
+  initResizer();
   connect();
+}
+
+// ── 좌우 폭 조절 ────────────────────────────────────────────────────
+const DEFAULT_SIDE = '52%';
+function setSide(px){
+  document.documentElement.style.setProperty('--sidew', px ? px + 'px' : DEFAULT_SIDE);
+  if(px) localStorage.setItem('cka.sidew', px); else localStorage.removeItem('cka.sidew');
+  refit();
+}
+
+function initResizer(){
+  const saved = +(localStorage.getItem('cka.sidew') || 0);
+  if(saved) setSide(Math.min(saved, window.innerWidth - 360));
+  const r = $('#resizer');
+  if(!r) return;
+  let drag = null;
+  r.addEventListener('pointerdown', e => {
+    drag = {x: e.clientX, w: $('.side').getBoundingClientRect().width};
+    r.setPointerCapture(e.pointerId); r.classList.add('on');
+    document.body.style.userSelect = 'none';
+  });
+  r.addEventListener('pointermove', e => {
+    if(!drag) return;
+    const d = e.clientX - drag.x;
+    const w = Math.max(360, Math.min(window.innerWidth - 360,
+      document.body.classList.contains('swap') ? drag.w + d : drag.w - d));
+    setSide(Math.round(w));
+    if(term) termStat(term.cols + '×' + term.rows);
+  });
+  const end = () => { if(!drag) return; drag = null; r.classList.remove('on');
+    document.body.style.userSelect = ''; setTimeout(() => termStat(''), 900); };
+  r.addEventListener('pointerup', end);
+  r.addEventListener('pointercancel', end);
+  r.addEventListener('dblclick', () => setSide(null));
+
+  if(localStorage.getItem('cka.swap') === '1') document.body.classList.add('swap');
+  $('#termswap').onclick = () => {
+    const on = document.body.classList.toggle('swap');
+    localStorage.setItem('cka.swap', on ? '1' : '0');
+    setTimeout(() => { refit(); if(term) term.focus(); }, 30);
+  };
+
+  $('#termwide').onclick = () => {
+    document.body.classList.toggle('termfull');
+    $('#termwide').textContent = document.body.classList.contains('termfull') ? '⤡' : '⤢';
+    setTimeout(() => { refit(); if(term) term.focus(); }, 30);
+  };
+  window.addEventListener('resize', () => {
+    const w = $('.side').getBoundingClientRect().width;
+    if(w > window.innerWidth - 300) setSide(null);
+  });
 }
 
 function setFont(n){
@@ -377,8 +450,8 @@ $('#sets').onchange = async e => {
 (async () => {
   try{ CFG = await api('/api/config'); }catch(e){}
   if(CFG.shell) initTerm();
-  else $('#termcard').outerHTML = `<div class="card"><h2>터미널 꺼짐</h2>
-      <p class="muted" style="margin:0;font-size:13.5px">서버가 --no-shell 로 떠 있습니다. kubectl 은 VM 터미널에서 치세요.</p></div>`;
+  else { $('#resizer').style.display = 'none'; $('#termcard').outerHTML = `<div class="card"><h2>터미널 꺼짐</h2>
+      <p class="muted" style="margin:0;font-size:13.5px">서버가 --no-shell 로 떠 있습니다. kubectl 은 VM 터미널에서 치세요.</p></div>`; }
   await loadSets();
 })();
 </script>
