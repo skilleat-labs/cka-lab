@@ -38,7 +38,7 @@ WEB = os.path.join(ROOT, "web")
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 # exam.sh 에 넘길 수 있는 명령 — 화이트리스트
-SAFE_CMDS = {"start", "check", "skip", "finish", "status", "clean", "reset"}
+SAFE_CMDS = {"start", "check", "skip", "finish", "status", "clean", "reset", "go"}
 DESTRUCTIVE = {"start", "clean", "reset"}  # 진행 기록·클러스터 리소스를 지운다
 
 SHELL_ON = True          # --no-shell 로 끈다
@@ -195,20 +195,20 @@ def state(set_id, lang="en"):
 
 
 # ── 작업(job) — 오래 걸리는 명령을 백그라운드로 ──────────────────────
-def start_job(set_id, cmd):
+def start_job(set_id, cmd, arg=None):
     with _job_lock:
         for j in _jobs.values():
             if not j["done"]:
                 return None, "이미 실행 중인 명령이 있습니다 (%s %s)" % (j["set"], j["cmd"])
         _job_seq[0] += 1
         jid = _job_seq[0]
-        job = {"id": jid, "set": set_id, "cmd": cmd, "output": "",
+        job = {"id": jid, "set": set_id, "cmd": cmd, "arg": arg, "output": "",
                "done": False, "rc": None, "started": time.time()}
         _jobs[jid] = job
 
     def work():
         try:
-            args = ["hinttext"] if cmd == "hint" else [cmd]
+            args = ["hinttext"] if cmd == "hint" else ([cmd, arg] if arg else [cmd])
             job["rc"] = run_exam_stream(set_id, args, job)
         except subprocess.TimeoutExpired:
             job["rc"], job["output"] = -1, "시간 초과 — 터미널에서 직접 확인하세요."
@@ -461,7 +461,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "허용되지 않은 명령"}, 400)
             if cmd in DESTRUCTIVE and not body.get("confirm"):
                 return self._json({"error": "확인이 필요한 명령입니다"}, 400)
-            jid, err = start_job(s, cmd)
+            arg = None
+            if cmd == "go":                      # 문제 번호로 이동
+                try:
+                    n = int(body.get("arg"))
+                except (TypeError, ValueError):
+                    return self._json({"error": "문제 번호가 필요합니다"}, 400)
+                if not 1 <= n <= max(1, meta(s)["nq"]):
+                    return self._json({"error": "범위 밖의 문제 번호"}, 400)
+                arg = str(n)
+            jid, err = start_job(s, cmd, arg)
             if err:
                 return self._json({"error": err}, 409)
             return self._json({"job": jid})

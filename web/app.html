@@ -84,6 +84,9 @@
   th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--hair)}
   th{color:var(--blue);background:var(--bluetint);font-weight:700}
   tr.cur td{background:var(--bluetint)}
+  tr.go{cursor:pointer}
+  tr.go:hover td{background:var(--gray)}
+  tr.go.cur:hover td{background:var(--bluetint)}
   td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
   .tag{font-size:11px;color:var(--muted);border:1px solid var(--hair);border-radius:4px;padding:1px 5px;margin-left:4px}
   .log{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--gray);border-radius:8px;padding:13px;max-height:300px;overflow:auto;margin:0}
@@ -374,7 +377,7 @@ function reportHTML(){
 
 function tableHTML(){
   return `<table><thead><tr><th>문제</th><th style="text-align:right">점수</th><th style="text-align:right">시간</th></tr></thead><tbody>
-    ${ST.rows.map(r => `<tr class="${r.current?'cur':''}">
+    ${ST.rows.map(r => `<tr class="${r.current?'cur':''}${ST.done?'':' go'}" ${ST.done?'':`data-go="${r.n}"`} title="${ST.done?'':'클릭하면 이 문제로 이동'}">
       <td>Q${r.n} ${esc(r.title)}
         ${r.skipped?'<span class="tag">skip</span>':''}${r.hint?'<span class="tag">hint</span>':''}${r.tries>1?`<span class="tag">${r.tries}회</span>`:''}</td>
       <td class="num">${r.pass===null ? '<span class="muted">—</span>' : `${r.pass}/${r.total}`}</td>
@@ -395,7 +398,9 @@ function actionsHTML(){
       ${ST.hasHint ? `<button data-cmd="hint" ${busy?'disabled':''}>힌트</button>` : ''}
       <button data-cmd="skip" ${busy?'disabled':''}>넘어가기</button>
       <span class="spacer"></span>
+      <button class="quiet" data-go="${ST.current-1}" ${busy||ST.current<=1?'disabled':''} title="이전 문제">◀</button>
       <span class="muted" style="font-size:12.5px;align-self:center">Q${ST.current} / ${ST.nq}</span>
+      <button class="quiet" data-go="${ST.current+1}" ${busy||ST.current>=ST.nq?'disabled':''} title="다음 문제">▶</button>
     </div></div>`;
 }
 
@@ -404,6 +409,22 @@ const cmdLabel = c =>
 
 function bind(){
   document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => run(b.dataset.cmd, b.dataset.confirm));
+  document.querySelectorAll('[data-go]').forEach(el => el.onclick = e => {
+    if(el.disabled) return;
+    e.stopPropagation();
+    goQ(+el.dataset.go);
+  });
+}
+
+// 문제 이동 — 점수·시간은 그대로 유지되고, 돌아와 다시 채점하면 갱신된다
+async function goQ(n){
+  if(!ST || !ST.nq || n < 1 || n > ST.nq || n === ST.current) return;
+  const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({set:SET, cmd:'go', arg:n})});
+  if(r.error) return alert(r.error);
+  await waitJob(r.job);
+  HINT = null;
+  await refresh();
 }
 
 async function run(cmd, confirmMsg){

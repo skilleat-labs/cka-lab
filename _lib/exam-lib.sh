@@ -216,6 +216,7 @@ show_question() {
   thin
   echo -e "  풀고 나서:  ${CYAN}bash exam.sh check${RESET}      다시 보기: ${CYAN}bash exam.sh show${RESET}"
   echo -e "  넘어가기:   ${CYAN}bash exam.sh skip${RESET}       현황:     ${CYAN}bash exam.sh status${RESET}"
+  echo -e "  문제 이동:  ${CYAN}bash exam.sh go <번호>${RESET}   ${DIM}prev / next 도 가능${RESET}"
   thin
   progress_bar "$n"
   echo ""
@@ -237,23 +238,51 @@ run_grade() {
   rm -rf "$_CK_DIR"
 }
 
+# 문제 n 으로 이동 (되돌아가기 포함)
+goto_q() {
+  local n="$1" cur
+  cur=$(state_get current)
+  [[ -n "$cur" && "$cur" != "$n" ]] && q_close "$cur"
+  state_set current "$n"
+  state_set "q${n}_start" "$(now)"
+  show_question "$n"
+}
+# 다음으로 — 아직 채점되지 않은 문제를 우선 찾고, 없으면 리포트
 advance() {
-  local n="$1"
-  local next=$((n+1))
-  if (( next > EXAM_NQ )); then
-    state_set current "$next"
-    cmd_finish
-  else
-    state_set current "$next"
-    state_set "q${next}_start" "$(now)"
-    show_question "$next"
-  fi
+  local n="$1" i
+  for ((i=n+1;i<=EXAM_NQ;i++)); do
+    [[ -z "$(state_get "q$i")" ]] && { goto_q "$i"; return; }
+  done
+  for ((i=1;i<=EXAM_NQ;i++)); do
+    [[ -z "$(state_get "q$i")" ]] && { goto_q "$i"; return; }
+  done
+  q_close "$n"
+  state_set current $((EXAM_NQ+1))
+  cmd_finish
 }
 
+# 이 문제에 지금까지 쓴 총 시간 (문제를 오가도 누적된다)
+q_elapsed() {
+  local n="$1"
+  local st; st=$(state_get "q${n}_start")
+  local acc; acc=$(state_get "q${n}_acc"); acc="${acc:-0}"
+  local stint=0
+  [[ -n "$st" ]] && stint=$(( $(now) - st ))
+  echo $(( acc + stint ))
+}
+# 문제를 떠날 때(또는 채점할 때) 머문 시간을 누적하고 시계를 다시 건다
+q_close() {
+  local n="$1"
+  [[ -z "$n" ]] && return 0
+  local st; st=$(state_get "q${n}_start"); [[ -z "$st" ]] && return 0
+  local acc; acc=$(state_get "q${n}_acc"); acc="${acc:-0}"
+  state_set "q${n}_acc" $(( acc + $(now) - st ))
+  state_set "q${n}_start" "$(now)"
+}
 record_q() {
   local n="$1" pass="$2" total="$3"
-  local st; st=$(state_get "q${n}_start"); [[ -z "$st" ]] && st=$(now)
-  local el=$(( $(now) - st ))
+  local el; el=$(q_elapsed "$n")
+  q_close "$n"
   state_set "q$n" "${pass}/${total}:${el}"
 }
 
@@ -294,7 +323,7 @@ cmd_check() {
   echo -e "  ${BOLD}[Q${cur}] 채점${RESET}  $(q_title "$cur")"
   sep
   run_grade "$cur"
-  local st; st=$(state_get "q${cur}_start"); local el=$(( $(now) - ${st:-$(now)} ))
+  local el; el=$(q_elapsed "$cur")
   thin
   if (( Q_PASS == Q_TOTAL )); then
     echo -e "  ${GREEN}${BOLD}Q${cur}: ${Q_PASS}/${Q_TOTAL}  ✓ 만점${RESET}   ${DIM}(소요 $(fmt_dur $el))${RESET}"
@@ -308,10 +337,28 @@ cmd_check() {
     echo ""
     echo -e "  ▸ 위 ${RED}[FAIL]${RESET} 항목을 고치고 다시  ${CYAN}bash exam.sh check${RESET}"
     echo -e "  ▸ 이 점수로 넘어가려면        ${CYAN}bash exam.sh skip${RESET}"
+    echo -e "  ▸ 다른 문제로 이동             ${CYAN}bash exam.sh go <번호>${RESET}  ${DIM}(나중에 돌아와 다시 채점할 수 있습니다)${RESET}"
     [[ "$(type -t "q${cur}_hint")" == "function" ]] && \
       echo -e "  ▸ 막혔으면                    ${CYAN}bash exam.sh hint${RESET}  ${DIM}(사용 기록이 남습니다)${RESET}"
     echo ""
   fi
+}
+
+cmd_go() {   # bash exam.sh go 3   ·  next  ·  prev
+  local want="$1" cur
+  cur=$(state_get current)
+  [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.  bash exam.sh start${RESET}"; exit 1; }
+  case "$want" in
+    next) want=$(( cur + 1 )) ;;
+    prev) want=$(( cur - 1 )) ;;
+  esac
+  if ! [[ "$want" =~ ^[0-9]+$ ]] || (( want < 1 || want > EXAM_NQ )); then
+    echo -e "${ORANGE}1 ~ ${EXAM_NQ} 사이의 문제 번호를 주세요.  예) bash exam.sh go 2${RESET}"; exit 1
+  fi
+  local rec; rec=$(state_get "q$want")
+  goto_q "$want"
+  [[ -n "$rec" ]] && echo -e "  ${DIM}이미 채점된 문제입니다 (${rec%%:*}). 다시 채점하면 점수가 갱신됩니다.${RESET}\n"
+  return 0
 }
 
 cmd_skip() {
@@ -451,6 +498,9 @@ exam_main() {
     show)   cmd_show ;;
     check)  cmd_check ;;
     skip)   cmd_skip ;;
+    go)     cmd_go "${2:-}" ;;
+    next)   cmd_go next ;;
+    prev)   cmd_go prev ;;
     hint)   cmd_hint ;;
     status) cmd_status ;;
     finish) cmd_finish ;;
@@ -468,6 +518,7 @@ exam_main() {
       echo -e "  ${CYAN}bash exam.sh check${RESET}    현재 문제 채점 (만점이면 자동으로 다음 문제)"
       echo -e "  ${CYAN}bash exam.sh show${RESET}     현재 문제 다시 보기"
       echo -e "  ${CYAN}bash exam.sh skip${RESET}     현재 점수로 확정하고 다음으로"
+      echo -e "  ${CYAN}bash exam.sh go 2${RESET}     2번 문제로 이동 (되돌아가기 가능 · next / prev 도 됨)"
       echo -e "  ${CYAN}bash exam.sh hint${RESET}     힌트 (사용 기록이 남음)"
       echo -e "  ${CYAN}bash exam.sh status${RESET}   진행 현황"
       echo -e "  ${CYAN}bash exam.sh finish${RESET}   최종 리포트"
