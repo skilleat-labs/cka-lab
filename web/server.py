@@ -27,6 +27,7 @@ import select
 import signal
 import struct
 import subprocess
+import tempfile
 import termios
 import threading
 import time
@@ -282,7 +283,7 @@ def set_winsize(fd, rows, cols):
         pass
 
 
-def serve_shell(handler, cwd):
+def serve_shell(handler, cwd, set_id=""):
     """브라우저와 셸(PTY)을 연결한다. 이 연결이 끊기면 셸도 끝난다."""
     key = handler.headers.get("Sec-WebSocket-Key")
     if not key:
@@ -293,6 +294,10 @@ def serve_shell(handler, cwd):
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Accept: %s\r\n\r\n" % ws_accept(key)).encode())
 
+    # 패널이 고른 세트를 적어 두는 파일 — 셸이 프롬프트마다 읽어 따라간다
+    ptr = tempfile.NamedTemporaryFile("w", prefix="cka-set-", delete=False)
+    ptr.write(set_id); ptr.close()
+
     pid, fd = pty.fork()
     if pid == 0:                                   # 자식 — 셸이 된다
         try:
@@ -300,6 +305,8 @@ def serve_shell(handler, cwd):
         except Exception:  # noqa: BLE001
             pass
         os.environ["TERM"] = "xterm-256color"
+        os.environ["CKA_SET_FILE"] = ptr.name
+        os.environ["CKA_ROOT"] = ROOT
         rc = os.path.join(ROOT, "_lib", "exam-shellrc.sh")   # 자동완성·alias k·$do
         try:
             if os.path.isfile(rc):
@@ -337,10 +344,17 @@ def serve_shell(handler, cwd):
                         raise StopIteration
                     if op == 0x9:                  # ping
                         sock.sendall(ws_frame(payload, 0xA))
-                    elif op == 0x1:                # text = 제어 (창 크기)
+                    elif op == 0x1:                # text = 제어 (창 크기 · 세트 이동)
                         try:
                             m = json.loads(payload.decode("utf-8", "replace"))
-                            set_winsize(fd, int(m.get("r", 24)), int(m.get("c", 80)))
+                            if "r" in m:
+                                set_winsize(fd, int(m.get("r", 24)), int(m.get("c", 80)))
+                            if m.get("cd") in list_sets():
+                                with open(ptr.name, "w") as f:
+                                    f.write(m["cd"])
+                                # 셸이 놀고 있고 입력 중인 줄도 없으면 빈 엔터로 즉시 반영
+                                if m.get("idle") and os.tcgetpgrp(fd) == pid:
+                                    os.write(fd, b"\n")
                         except Exception:  # noqa: BLE001
                             pass
                     else:                          # binary = 키 입력
@@ -350,6 +364,10 @@ def serve_shell(handler, cwd):
     finally:
         try:
             os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(ptr.name)
         except OSError:
             pass
         for sig in (signal.SIGHUP, signal.SIGKILL):
@@ -400,7 +418,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not SHELL_ON:
                     return self._send(403, "터미널이 꺼져 있습니다 (--no-shell)", "text/plain; charset=utf-8")
                 s = self._set_param(q)
-                return serve_shell(self, os.path.join(ROOT, s) if s else ROOT)
+                return serve_shell(self, os.path.join(ROOT, s) if s else ROOT, s or "")
             if u.path.startswith("/vendor/"):
                 name = os.path.basename(u.path)
                 path = os.path.join(WEB, "vendor", name)
