@@ -145,7 +145,7 @@
 <script>
 const $ = s => document.querySelector(s);
 let SET = localStorage.getItem('cka.set') || '';
-let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text}
+let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text, open}
 let CFG = {shell:true};
 let LANG = localStorage.getItem('cka.lang') || 'en';
 
@@ -356,7 +356,7 @@ function leftHTML(){
   if(ST.done) return reportHTML();
 
   const q = ST.question || {};
-  const hint = (HINT && HINT.q === ST.current)
+  const hint = hintOpen()
     ? `<div class="card"><h2>힌트 <span class="muted" style="font-weight:400">— 리포트에 기록이 남습니다</span></h2>
        <pre class="q">${esc(HINT.text)}</pre></div>` : '';
   return `<div class="card">
@@ -364,6 +364,9 @@ function leftHTML(){
       <pre class="q">${esc(q.body)}</pre></div>`
     + hint + resultHTML() + statusHTML();
 }
+
+function hintShown(){ return !!(HINT && ST && HINT.q === ST.current); }
+function hintOpen(){ return hintShown() && HINT.open; }
 
 function resultHTML(){
   const items = ST.items || [];
@@ -421,7 +424,8 @@ function actionsHTML(){
   }
   return `<div class="card"><div class="bar">
       <button class="primary" data-cmd="check" ${busy?'disabled':''}>채점</button>
-      ${ST.hasHint ? `<button data-cmd="hint" ${busy?'disabled':''}>힌트</button>` : ''}
+      ${ST.hasHint ? `<button data-cmd="hint" ${busy?'disabled':''}
+        aria-expanded="${hintOpen()}">${hintOpen() ? '힌트 숨기기' : '힌트'}</button>` : ''}
       <button data-cmd="skip" ${busy?'disabled':''}>넘어가기</button>
       <span class="spacer"></span>
       <button class="quiet" data-go="${ST.current-1}" ${busy||ST.current<=1?'disabled':''} title="이전 문제">◀</button>
@@ -459,11 +463,16 @@ async function run(cmd, confirmMsg){
      !confirm('시험을 시작하면 이전 진행 기록이 지워집니다. 계속할까요?')) return;
 
   if(cmd === 'hint'){
+    if(hintShown()){            // 이미 받아 둔 힌트 — 서버를 다시 부르지 않고 접었다 편다
+      HINT.open = !HINT.open;
+      render();
+      return;
+    }
     const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({set:SET, cmd:'hint'})});
     if(r.error) return alert(r.error);
     const j = await waitJob(r.job);
-    HINT = {q: ST.current, text: j.output.trim()};
+    HINT = {q: ST.current, text: j.output.trim(), open: true};
     await refresh();
     return;
   }
