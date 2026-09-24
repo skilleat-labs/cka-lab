@@ -6,6 +6,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 2세션 시험 — 네임스페이스 · NodePort · ConfigMap · 롤아웃"
 EXAM_NQ=3
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-30}"   # 제한시간(분) — 0 이면 무제한
 
 exam_cleanup() {
   for ns in ops app; do

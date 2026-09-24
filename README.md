@@ -115,3 +115,14 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 - `13-cluster-setup` 실습은 worker 노드 IP 가 `192.168.56.12` 로 지정되어 있습니다. 다른 IP 로 VM 을 구성했다면 스크립트를 수정하세요.
 - 실습 중 만든 리소스는 클러스터에 그대로 남습니다. 정리는 각 폴더의 `exam-start.sh` 를 다시 실행하면 됩니다.
 - 문제가 풀리지 않을 때는 `bash exam-start.sh --hints` 로 힌트를 먼저 확인하세요. 정답 명령어까지 들어 있습니다.
+
+## 제한시간
+
+모의고사(`mock-*`)와 세션 시험(`session-*`)에는 제한시간이 있다. 강의 실습 세트는 무제한이다.
+10분이 남으면 알려 주고, 시간이 지나면 남은 문제를 0점으로 확정한 뒤 리포트를 띄운다.
+그 뒤로는 더 풀 수 없고, `exam.sh start` 로 다시 시작하면 처음부터 초기화된다.
+
+```bash
+EXAM_LIMIT_MIN=20 bash exam.sh start    # 제한시간 바꾸기 (0 이면 무제한)
+EXAM_WARN_MIN=5   bash exam.sh start    # 경고 시점 바꾸기
+```

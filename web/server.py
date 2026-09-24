@@ -94,6 +94,7 @@ def meta(set_id):
         return hit[1]
     rc, out = run_exam(set_id, "meta", timeout=30)
     m = {"id": set_id, "title": set_id, "nq": 0, "unit": "항목",
+         "limit": 0, "warn": 10,
          "titles": {}, "titlesKo": {}, "hasHint": {}, "hasKo": {}}
     for line in out.splitlines():
         if "=" not in line:
@@ -105,6 +106,10 @@ def meta(set_id):
             m["nq"] = int(v or 0)
         elif k == "unit":
             m["unit"] = v
+        elif k == "limit":
+            m["limit"] = int(v or 0)
+        elif k == "warn":
+            m["warn"] = int(v or 10)
         elif k.endswith("_title") and k.startswith("q"):
             m["titles"][k[1:-6]] = v
         elif k.endswith("_titleKo") and k.startswith("q"):
@@ -182,6 +187,9 @@ def state(set_id, lang="en"):
         "current": cur, "rows": rows, "sum": sum_p, "total": sum_t,
         "started": int(pr.get("started") or 0),
         "finished": int(pr.get("finished") or 0),
+        "limit": m["limit"],                      # 제한시간(분) · 0 이면 무제한
+        "warn": m["warn"],                        # 몇 분 남으면 경고할지
+        "timeup": bool(pr.get("timeup")),         # 시간 초과로 마감됐나
         "done": bool(cur and cur > nq),
         "hasHint": bool(m["hasHint"].get(str(cur))),
         "items": items if items_q == cur else [],   # 지난 문제의 결과는 보여주지 않는다

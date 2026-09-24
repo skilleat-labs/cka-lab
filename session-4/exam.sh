@@ -6,6 +6,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 4세션 시험 — PVC/Deployment YAML · Requests/Limits · Probe"
 EXAM_NQ=3
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-30}"   # 제한시간(분) — 0 이면 무제한
 
 exam_cleanup() {
   if kubectl get namespace api &>/dev/null; then

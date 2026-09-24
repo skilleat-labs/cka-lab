@@ -7,6 +7,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA Mock Exam 1 — 기초 워크로드 (100점 · 목표 40분)"
 EXAM_NQ=7
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-40}"   # 제한시간(분) — 0 이면 무제한
 
 exam_cleanup() {
   kdel deployment nginx-deploy

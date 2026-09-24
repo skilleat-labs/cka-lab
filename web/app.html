@@ -23,6 +23,13 @@
   select{font-family:var(--sans);font-size:14px;padding:6px 8px;border:1px solid var(--hair);border-radius:6px;background:var(--white);color:var(--ink);max-width:min(40vw,400px)}
   .spacer{flex:1}
   .timer{font-family:var(--mono);font-size:14px;color:var(--muted);white-space:nowrap}
+  .timer.warn{color:#b45309;font-weight:700}
+  .timer.over{color:#b91c1c;font-weight:700}
+  @keyframes tickpulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .timer.warn .lefticon{animation:tickpulse 1s ease-in-out infinite}
+  .timebar{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;
+    border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13.5px;font-weight:600}
+  .timebar.over{background:#fef2f2;border-color:#fca5a5;color:#991b1b}
   .dots{display:flex;gap:6px;align-items:center}
   .langsw{display:flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden}
   .langsw button{border:0;border-radius:0;padding:5px 11px;font-size:12.5px;font-weight:700;color:var(--muted);background:var(--white)}
@@ -294,6 +301,7 @@ async function loadSets(){
 
 async function refresh(){
   ST = await api('/api/state?set=' + encodeURIComponent(SET) + '&lang=' + LANG);
+  if(ST) ST._recv = Math.floor(Date.now()/1000);   // 서버 시각 보정용
   render();
 }
 
@@ -307,16 +315,64 @@ function renderDots(){
   }).join('');
 }
 
+// 서버 시각과 브라우저 시각이 다를 수 있으므로, 받아온 now 로 보정해서 센다
+function serverNow(){
+  return Math.floor(Date.now()/1000) + (ST && ST.now ? ST.now - ST._recv : 0);
+}
+
+function timeLeft(){                 // 제한이 없으면 null
+  if(!ST || !ST.limit || !ST.started) return null;
+  return ST.limit * 60 - (serverNow() - ST.started);
+}
+
+function fmtLeft(l){
+  if(l < 0) return Math.ceil(-l/60) + '분 초과';
+  return fmt(l);
+}
+
 function renderTimer(){
   clearInterval(TICK);
-  if(!ST || !ST.started){ $('#timer').textContent = ''; return; }
+  const el = $('#timer');
+  if(!ST || !ST.started){ el.textContent=''; el.className='timer'; return; }
   const base = ST.finished || 0;
+
   const draw = () => {
-    const end = base || Math.floor(Date.now()/1000);
-    $('#timer').textContent = (base ? '총 ' : '경과 ') + fmt(end - ST.started);
+    const left = timeLeft();
+    if(left === null){                               // 제한 없음 — 예전처럼 경과 시간
+      const end = base || serverNow();
+      el.className = 'timer';
+      el.textContent = (base ? '총 ' : '경과 ') + fmt(end - ST.started);
+      return;
+    }
+    if(ST.timeup || left <= 0){
+      el.className = 'timer over';
+      el.textContent = '⏰ 시간 종료';
+      clearInterval(TICK);
+      if(!ST.timeup) refresh();                      // 서버에도 마감을 알린다
+      return;
+    }
+    const warn = left <= (ST.warn || 10) * 60;
+    el.className = 'timer' + (warn ? ' warn' : '');
+    el.innerHTML = (warn ? '<span class="lefticon">⏰</span> ' : '⏱ ')
+                 + esc(fmtLeft(left)) + ' 남음';
   };
   draw();
-  if(!base) TICK = setInterval(draw, 1000);
+  if(!base || (ST.limit && !ST.timeup)) TICK = setInterval(draw, 1000);
+}
+
+// 문제 위에 띄우는 큰 알림 (10분 남았을 때 · 시간이 끝났을 때)
+function timeBarHTML(){
+  const left = timeLeft();
+  if(left === null) return '';
+  if(ST.timeup || left <= 0){
+    return `<div class="timebar over">⏰ 제한시간 ${ST.limit}분이 지나 시험이 마감됐습니다.
+      풀지 못한 문제는 0점입니다. 다시 풀려면 <b>시험 시작</b>을 누르세요 (기록이 초기화됩니다).</div>`;
+  }
+  if(left <= (ST.warn || 10) * 60){
+    return `<div class="timebar">⏰ ${esc(fmtLeft(left))} 남았습니다.
+      시간이 지나면 남은 문제는 0점으로 확정됩니다.</div>`;
+  }
+  return '';
 }
 
 function renderLang(){
@@ -351,6 +407,8 @@ function leftHTML(){
       <div class="banner">시험을 시작하면 이전 시험 리소스를 정리하고 환경을 준비한 뒤 1번 문제가 나옵니다.
         문제는 여기에서 읽고 <b>kubectl 은 오른쪽 터미널</b>에서 칩니다. 다 풀었으면 채점을 누르세요.
         지문은 실제 시험처럼 <b>영어</b>가 기본입니다 — 막히면 오른쪽 위 <b>KO</b> 로 한글을 봅니다.</div>
+      ${ST.limit ? `<div class="timebar">⏱ 제한시간 <b>${ST.limit}분</b>입니다.
+        ${ST.warn || 10}분 남으면 알려 드리고, 시간이 지나면 남은 문제는 0점으로 확정됩니다.</div>` : ''}
       <div class="bar"><button class="primary" data-cmd="start">시험 시작</button></div></div>`;
   }
   if(ST.done) return reportHTML();
@@ -359,7 +417,8 @@ function leftHTML(){
   const hint = hintOpen()
     ? `<div class="card"><h2>힌트 <span class="muted" style="font-weight:400">— 리포트에 기록이 남습니다</span></h2>
        <pre class="q">${esc(HINT.text)}</pre></div>` : '';
-  return `<div class="card">
+  return timeBarHTML()
+    + `<div class="card">
       <h2><span class="n">Q${q.n} / ${ST.nq}</span>${esc(q.title)}</h2>
       <pre class="q">${esc(q.body)}</pre></div>`
     + hint + resultHTML() + statusHTML();
@@ -392,7 +451,11 @@ function statusHTML(){
 
 function reportHTML(){
   const pct = ST.total ? Math.round(ST.sum*100/ST.total) : 0;
-  return `<div class="card">
+  return (ST.timeup
+      ? `<div class="timebar over">⏰ 제한시간 ${ST.limit}분이 지나 마감됐습니다.
+          풀지 못한 문제는 0점으로 들어갔습니다. 다시 풀려면 <b>시험 시작</b>을 누르세요.</div>`
+      : '')
+    + `<div class="card">
     <h2>최종 리포트 — ${esc(ST.title)}</h2>
     <div class="score">${ST.sum} <span class="of">/ ${ST.total} ${esc(ST.unit)} · ${pct}%</span></div>
     <div class="banner" style="margin-top:10px">${pct >= 66 ? '합격선(66%) 통과' : '합격선(66%) 미달'}
@@ -419,7 +482,7 @@ function actionsHTML(){
   const busy = JOB && !JOB.done;
   if(!ST.current || ST.done){
     return `<div class="card"><p class="muted" style="margin:0;font-size:13px">
-      ${ST.done ? '시험을 마쳤습니다. 리포트는 왼쪽에 있습니다.' : '왼쪽에서 시험을 시작하세요.'}
+      ${ST.done ? (ST.timeup ? '제한시간이 끝났습니다. 리포트는 왼쪽에 있습니다.' : '시험을 마쳤습니다. 리포트는 왼쪽에 있습니다.') : '왼쪽에서 시험을 시작하세요.'}
       터미널은 언제든 쓸 수 있습니다.</p></div>`;
   }
   return `<div class="card"><div class="bar">

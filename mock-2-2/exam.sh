@@ -10,6 +10,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA Mock Exam 2-2 — 30분 속도 점검 (100점 · 6문항)"
 EXAM_NQ=6
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-30}"   # 제한시간(분) — 0 이면 무제한
 NS=store
 
 exam_cleanup() {

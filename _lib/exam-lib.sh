@@ -68,6 +68,77 @@ fmt_dur() {
   printf '%d분 %02d초' $((s/60)) $((s%60))
 }
 
+# ── 제한시간 ─────────────────────────────────────────────────────
+#   세트에서  EXAM_LIMIT_MIN=45  처럼 지정한다. 0 이면 무제한(강의 실습은 기본 무제한).
+#   환경변수로도 걸 수 있다:  EXAM_LIMIT_MIN=30 bash exam.sh start
+#   시간이 다 되면 남은 문제를 0점으로 확정하고 리포트를 띄운다.
+#   기록을 바로 지우지는 않는다 — 어디서 시간을 흘렸는지 봐야 다음이 나아진다.
+#   다시 풀려면 start 를 하면 되고, 그때 처음부터 초기화된다.
+#   주의: 이 파일은 세트의 exam.sh 맨 위에서 읽힌다. 여기서 EXAM_LIMIT_MIN 에 기본값을
+#   넣어 버리면, 세트가 그 아래에서 쓰는 "${EXAM_LIMIT_MIN:-45}" 가 이미 채워진 값을 보고
+#   무시된다. 그래서 기본값은 exam_main 에서, 세트 코드가 다 읽힌 뒤에 정한다.
+EXAM_WARN_MIN="${EXAM_WARN_MIN:-10}"      # 몇 분 남았을 때부터 경고할지
+
+limit_sec() { echo $(( EXAM_LIMIT_MIN * 60 )); }
+has_limit() { [[ "$EXAM_LIMIT_MIN" =~ ^[0-9]+$ && "$EXAM_LIMIT_MIN" -gt 0 ]]; }
+
+time_left() {   # 남은 초 (음수면 초과). 제한이 없으면 아무것도 출력하지 않는다
+  has_limit || return 1
+  local st; st=$(state_get started); [[ -z "$st" ]] && return 1
+  echo $(( $(limit_sec) - ( $(now) - st ) ))
+}
+
+time_expired() {  # 시간이 지났으면 0
+  local left; left=$(time_left) || return 1
+  (( left <= 0 ))
+}
+
+fmt_left() {    # 남은 시간을 사람이 읽는 형태로
+  local l="$1"
+  if (( l < 0 )); then printf '%d분 초과' $(( (-l + 59) / 60 ))
+  else printf '%d분 %02d초' $((l/60)) $((l%60)); fi
+}
+
+time_banner() {  # 문제 화면·채점 화면 위에 남은 시간을 한 줄로
+  local left; left=$(time_left) || return 0
+  if (( left <= 0 )); then
+    echo -e "  ${RED}${BOLD}⏰ 시간 종료${RESET}"
+  elif (( left <= EXAM_WARN_MIN * 60 )); then
+    echo -e "  ${ORANGE}${BOLD}⏰ $(fmt_left "$left") 남았습니다${RESET}  ${DIM}(제한 ${EXAM_LIMIT_MIN}분)${RESET}"
+  else
+    echo -e "  ${DIM}⏱  $(fmt_left "$left") 남음 (제한 ${EXAM_LIMIT_MIN}분)${RESET}"
+  fi
+}
+
+# 시간이 지났으면 남은 문제를 0점으로 확정하고 리포트를 띄운다.
+#   어느 명령에서든 먼저 불러서, 시간 뒤에는 더 풀 수 없게 한다.
+enforce_limit() {
+  time_expired || return 0
+  if [[ -n "$(state_get timeup)" ]]; then
+    # 이미 마감된 시험 — 시간이 지난 뒤에는 더 풀 수 없다
+    echo ""
+    echo -e "  ${RED}${BOLD}⏰ 제한시간 ${EXAM_LIMIT_MIN}분이 끝난 시험입니다.${RESET}"
+    echo -e "  ${CYAN}bash exam.sh finish${RESET}  ${DIM}리포트 다시 보기${RESET}"
+    echo -e "  ${CYAN}bash exam.sh start${RESET}   ${DIM}처음부터 다시 (기록 초기화)${RESET}"
+    exit 0
+  fi
+  local i
+  for ((i=1;i<=EXAM_NQ;i++)); do
+    [[ -z "$(state_get "q$i")" ]] && state_set "q$i" "0/0:0"
+  done
+  state_set current $((EXAM_NQ+1))
+  state_set timeup 1
+  echo ""
+  sep
+  echo -e "  ${RED}${BOLD}⏰ 제한시간 ${EXAM_LIMIT_MIN}분이 지났습니다 — 시험을 마감합니다${RESET}"
+  sep
+  echo -e "  ${DIM}풀지 못한 문제는 0점으로 확정됩니다. 아래 리포트를 확인하세요.${RESET}"
+  cmd_finish
+  echo ""
+  echo -e "  ${CYAN}다시 풀려면  bash exam.sh start${RESET}  ${DIM}(진행 기록이 초기화됩니다)${RESET}"
+  exit 0
+}
+
 # ── 채점 헬퍼 (qN_grade 안에서만 사용) ───────────────────────────
 #   배점 없이 쓰면 항목 1개 = 1점, 마지막 인자로 배점을 주면 그 점수로 계산
 #   check        desc cmd            [pts]
@@ -251,6 +322,7 @@ show_question() {
   echo ""
   sep
   echo -e "  ${BOLD}[Q${n}/${EXAM_NQ}]  ${title}${RESET}"
+  time_banner
   sep
   echo ""
   q_text "$n" | sed 's/^/  /'
@@ -346,10 +418,16 @@ cmd_start() {
   state_set started "$(now)"
   state_set current 1
   state_set q1_start "$(now)"
+  if has_limit; then
+    echo ""
+    echo -e "  ${BOLD}제한시간 ${EXAM_LIMIT_MIN}분${RESET}  ${DIM}— ${EXAM_WARN_MIN}분 남으면 알려 드립니다.${RESET}"
+    echo -e "  ${DIM}시간이 지나면 남은 문제는 0점으로 확정되고 리포트가 나옵니다.${RESET}"
+  fi
   show_question 1
 }
 
 cmd_show() {
+  enforce_limit
   local cur; cur=$(state_get current)
   [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.  bash exam.sh start${RESET}"; exit 1; }
   (( cur > EXAM_NQ )) && { echo -e "${GREEN}모든 문제를 마쳤습니다.  bash exam.sh finish${RESET}"; exit 0; }
@@ -357,12 +435,14 @@ cmd_show() {
 }
 
 cmd_check() {
+  enforce_limit
   local cur; cur=$(state_get current)
   [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.  bash exam.sh start${RESET}"; exit 1; }
   (( cur > EXAM_NQ )) && { echo -e "${GREEN}모든 문제를 마쳤습니다.  bash exam.sh finish${RESET}"; exit 0; }
   echo ""
   sep
   echo -e "  ${BOLD}[Q${cur}] 채점${RESET}  $(q_title "$cur")"
+  time_banner
   sep
   run_grade "$cur"
   local el; el=$(q_elapsed "$cur")
@@ -387,6 +467,7 @@ cmd_check() {
 }
 
 cmd_go() {   # bash exam.sh go 3   ·  next  ·  prev
+  enforce_limit
   local want="$1" cur
   cur=$(state_get current)
   [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.  bash exam.sh start${RESET}"; exit 1; }
@@ -404,6 +485,7 @@ cmd_go() {   # bash exam.sh go 3   ·  next  ·  prev
 }
 
 cmd_skip() {
+  enforce_limit
   local cur; cur=$(state_get current)
   [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.${RESET}"; exit 1; }
   (( cur > EXAM_NQ )) && { cmd_finish; exit 0; }
@@ -416,6 +498,7 @@ cmd_skip() {
 }
 
 cmd_hint() {
+  enforce_limit
   local cur; cur=$(state_get current)
   [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.${RESET}"; exit 1; }
   if [[ "$(type -t "q${cur}_hint")" != "function" ]]; then
@@ -458,11 +541,20 @@ cmd_finish() {
   local i sumP=0 sumT=0 slowest=0 slowQ=0
   echo ""; sep
   echo -e "  ${BOLD}${EXAM_TITLE} — 최종 리포트${RESET}"
+  if [[ -n "$(state_get timeup)" ]]; then
+    echo -e "  ${RED}${BOLD}⏰ 제한시간 ${EXAM_LIMIT_MIN}분 초과로 마감됨${RESET}  ${DIM}— 풀지 못한 문제는 0점${RESET}"
+  elif has_limit; then
+    echo -e "  ${DIM}제한 ${EXAM_LIMIT_MIN}분 안에 마쳤습니다${RESET}"
+  fi
   sep
   for ((i=1;i<=EXAM_NQ;i++)); do
     local rec; rec=$(state_get "q$i"); local title; title=$(q_title "$i")
     if [[ -z "$rec" ]]; then
       run_grade "$i" >/dev/null; record_q "$i" "$Q_PASS" "$Q_TOTAL"; rec=$(state_get "q$i")
+    fi
+    if [[ "$rec" == "0/0:0" ]]; then          # 시간 초과로 손도 못 댄 문제 — 배점만 세어 둔다
+      run_grade "$i" >/dev/null
+      state_set "q$i" "0/${Q_TOTAL}:0"; rec="0/${Q_TOTAL}:0"
     fi
     local p="${rec%%/*}"; local rest="${rec#*/}"; local t="${rest%%:*}"; local el="${rest#*:}"
     sumP=$((sumP+p)); sumT=$((sumT+t))
@@ -524,6 +616,8 @@ cmd_meta() {    # key=value 로 세트 정보 출력
   echo "title=$EXAM_TITLE"
   echo "nq=$EXAM_NQ"
   echo "unit=$EXAM_UNIT"
+  echo "limit=$EXAM_LIMIT_MIN"
+  echo "warn=$EXAM_WARN_MIN"
   local i
   echo "lang=$(exam_lang)"
   for ((i=1;i<=EXAM_NQ;i++)); do
@@ -535,6 +629,7 @@ cmd_meta() {    # key=value 로 세트 정보 출력
 }
 
 exam_main() {
+  EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-0}"   # 세트가 정하지 않았으면 무제한
   case "${1:-}" in
     start)  cmd_start ;;
     show)   cmd_show ;;

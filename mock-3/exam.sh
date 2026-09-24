@@ -7,6 +7,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA Mock Exam 3 — 자동화·권한·트러블슈팅 (100점 · 목표 50분)"
 EXAM_NQ=7
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-50}"   # 제한시간(분) — 0 이면 무제한
 
 exam_cleanup() {
   kdel deployment web-app broken-deploy

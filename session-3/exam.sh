@@ -7,6 +7,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 3세션 시험 — Deployment+Service · StorageClass/PVC · Gateway API"
 EXAM_NQ=3
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-30}"   # 제한시간(분) — 0 이면 무제한
 
 NGF_VERSION="v2.7.0"
 GW_CRD_KUSTOMIZE="https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=${NGF_VERSION}"

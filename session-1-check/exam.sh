@@ -9,6 +9,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 1세션 점검 — 명령어로 만들 수 있는가"
 EXAM_NQ=3
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-25}"   # 제한시간(분) — 0 이면 무제한
 
 # ══════════════════════════════════════════════════════════════
 # 환경 준비
