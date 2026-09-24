@@ -11,20 +11,20 @@
 
 | 폴더 | 성격 | 문제 수 | 채점 항목 | 주제 |
 |------|------|--------|----------|------|
-| `00-session-check` | 세션 점검 | 3 | 24 | Pod · Deployment · Service(ClusterIP) |
-| `01-session2-exam` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
-| `02-session3-exam` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
-| `03-session4-exam` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
-| `02-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
-| `03-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
-| `04-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
-| `05-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
-| `06-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
-| `07-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
-| `08-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
-| `09-maintenance` | 강의 실습 | 4 | 18 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
-| `10-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
-| `11-troubleshooting` | 강의 실습 | 4 | 19 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
+| `session-1-check` | 세션 점검 | 3 | 24 | Pod · Deployment · Service(ClusterIP) |
+| `session-2` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
+| `session-3` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
+| `session-4` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
+| `13-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
+| `06-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
+| `07-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
+| `08-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
+| `09-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
+| `11-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
+| `14-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
+| `15-maintenance` | 강의 실습 | 4 | 18 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
+| `17-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
+| `19-troubleshooting` | 강의 실습 | 4 | 19 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
 | `mock-1` | 모의고사 | 7 | 100점 | 전 범위 (목표 40분) |
 | `mock-1-1` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
 | `mock-2-2` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
@@ -37,7 +37,7 @@
 
 ---
 
-## 00-session-check — 1세션 점검 (24항목)
+## session-1-check — 1세션 점검 (24항목)
 
 명령어(imperative)만으로 기본 리소스 3종을 만들 수 있는지 확인한다.
 
@@ -49,7 +49,7 @@
 
 **특징**: `run=web-pod` 기본 레이블로 명령어 생성 여부를 판정한다. 마지막에 임시 파드를 띄워 `wget` 으로 실제 통신을 검증한다.
 
-## 01-session2-exam — 2세션 시험 (30항목)
+## session-2 — 2세션 시험 (30항목)
 
 네임스페이스를 지정해 만들 수 있는지, 설정 주입과 롤아웃을 다룰 수 있는지 본다.
 
@@ -63,7 +63,7 @@
 
 ---
 
-## 02-session3-exam — 3세션 시험 (32항목)
+## session-3 — 3세션 시험 (32항목)
 
 환경(네임스페이스 · StorageClass · PV · Gateway API 컨트롤러)은 `exam-start.sh` 가 전부 준비한다.
 
@@ -79,7 +79,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 ---
 
-## 03-session4-exam — 4세션 시험 (33항목)
+## session-4 — 4세션 시험 (33항목)
 
 환경(네임스페이스 · StorageClass · PV · Q2용 Deployment)은 `exam-start.sh` 가 준비한다. 외부 설치가 없어 오프라인에서도 동작한다.
 
@@ -93,14 +93,14 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 ---
 
-## 02-cluster-setup — 클러스터 구축 (5항목)
+## 13-cluster-setup — 클러스터 구축 (5항목)
 
 | 문제 | 내용 |
 |------|------|
 | P1 | worker-2(192.168.56.12) 노드를 클러스터에 join |
 | P2 | control-plane 에서 `crictl` 로 컨테이너 확인 및 로그 출력 |
 
-## 03-workloads — 워크로드 (20항목)
+## 06-workloads — 워크로드 (20항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -109,7 +109,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | 매 분 `date` 를 출력하는 CronJob |
 | P4 | `monitoring` 네임스페이스에 DaemonSet (hostNetwork/hostPID) |
 
-## 04-scheduling — 스케줄링 (21항목)
+## 07-scheduling — 스케줄링 (21항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -118,7 +118,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | worker-2 의 Taint(dedicated=gpu:NoSchedule) 허용하는 Toleration |
 | P4 | HPA 생성 |
 
-## 05-storage — 스토리지 (23항목)
+## 08-storage — 스토리지 (23항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -127,7 +127,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | StatefulSet + volumeClaimTemplates |
 | P4 | emptyDir 공유 볼륨 파드 |
 
-## 06-networking — 서비스와 네트워킹 (27항목)
+## 09-networking — 서비스와 네트워킹 (27항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -136,7 +136,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | NetworkPolicy — frontend 에서만 backend 인그레스 허용 |
 | P4 | DNS 검증 (busybox 파드에서 nslookup) |
 
-## 07-ingress — 외부 트래픽 (23항목)
+## 11-ingress — 외부 트래픽 (23항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -145,7 +145,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | TLS Ingress |
 | P4 | NetworkPolicy 로 production 네임스페이스 격리 |
 
-## 08-rbac — 권한과 인증 (26항목)
+## 14-rbac — 권한과 인증 (26항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -154,7 +154,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | ClusterRole + ClusterRoleBinding |
 | P4 | `kubectl auth can-i` 로 권한 검증 |
 
-## 09-maintenance — 클러스터 유지보수 (9항목)
+## 15-maintenance — 클러스터 유지보수 (9항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -163,7 +163,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | `kubeadm upgrade plan` 으로 업그레이드 가능 버전 확인 |
 | P4 | `kubeadm certs check-expiration` 으로 인증서 만료 확인 |
 
-## 10-helm — 패키징 도구 (11항목)
+## 17-helm — 패키징 도구 (11항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -172,7 +172,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | revision 1 로 롤백 |
 | P4 | Kustomize 디렉토리 구성 후 `kubectl apply -k` |
 
-## 11-troubleshooting — 트러블슈팅 (8항목)
+## 19-troubleshooting — 트러블슈팅 (8항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -253,6 +253,6 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 ## 알아둘 점
 
 - **폴더 번호는 실습 세트 번호이며 강의 회차와 일대일 대응이 아니다.** 담당 강사의 안내를 따른다.
-- `02-cluster-setup` 은 worker 노드 IP 가 `192.168.56.12` 로 고정되어 있다. 다른 IP 라면 스크립트를 수정한다.
-- `09-maintenance`, `10-helm`, `11-troubleshooting` 은 채점 항목 수가 상대적으로 적다. 통과했다고 해서 완전히 익혔다고 보기 어려우니 반복 연습이 필요하다.
+- `13-cluster-setup` 은 worker 노드 IP 가 `192.168.56.12` 로 고정되어 있다. 다른 IP 라면 스크립트를 수정한다.
+- `15-maintenance`, `17-helm`, `19-troubleshooting` 은 채점 항목 수가 상대적으로 적다. 통과했다고 해서 완전히 익혔다고 보기 어려우니 반복 연습이 필요하다.
 - `exam-start.sh --hints` 는 정답 명령어까지 출력한다. 시험용으로 쓸 때는 사용하지 않는다.

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 6강 실습 — 서비스와 네트워킹 (순차 진행형)
+# CKA 5강 실습 — 서비스와 네트워킹 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 6강 실습 — 서비스 · NodePort · NetworkPolicy · DNS"
+EXAM_TITLE="CKA 5강 실습 — 서비스 · NodePort · NetworkPolicy · DNS"
 EXAM_NQ=4
 
 exam_cleanup() {

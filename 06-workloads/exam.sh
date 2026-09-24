@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# CKA 3강 실습 — 워크로드 배포와 관리 (순차 진행형)
+# CKA 2강 실습 — 워크로드 배포와 관리 (순차 진행형)
 # 사용법: bash exam.sh start  →  풀고  →  bash exam.sh check  →  ...
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 3강 실습 — 워크로드 배포와 관리"
+EXAM_TITLE="CKA 2강 실습 — 워크로드 배포와 관리"
 EXAM_NQ=4
 
 # ══════════════════════════════════════════════════════════════

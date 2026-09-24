@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 2강 실습 — 클러스터 구축과 노드 조인 (순차 진행형)
+# CKA 7강 실습 — 클러스터 구축과 노드 조인 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 2강 실습 — 클러스터 구축 · 노드 조인"
+EXAM_TITLE="CKA 7강 실습 — 클러스터 구축 · 노드 조인"
 EXAM_NQ=2
 
 exam_cleanup() {

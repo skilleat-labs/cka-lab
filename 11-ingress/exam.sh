@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 7강 실습 — Ingress 와 네임스페이스 격리 (순차 진행형)
+# CKA 6강 실습 — Ingress 와 네임스페이스 격리 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 7강 실습 — Ingress (경로·호스트·TLS) · 네임스페이스 격리"
+EXAM_TITLE="CKA 6강 실습 — Ingress (경로·호스트·TLS) · 네임스페이스 격리"
 EXAM_NQ=4
 
 exam_cleanup() {

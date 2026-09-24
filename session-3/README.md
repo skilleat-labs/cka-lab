@@ -192,4 +192,4 @@ NGINX Gateway Fabric 을 완전히 제거하려면 `kubectl delete namespace ngi
 
 ## 다른 실습 세트와의 관계
 
-이 세트는 모든 리소스를 `shop` 네임스페이스와 `exam-` 접두사 안에 격리한다. `default` 네임스페이스를 쓰는 다른 실습 세트(`00-session-check`, `03-workloads`, `06-networking` 등)와 이름이 겹치지 않으므로, 다른 세트의 답안을 지우지 않는다.
+이 세트는 모든 리소스를 `shop` 네임스페이스와 `exam-` 접두사 안에 격리한다. `default` 네임스페이스를 쓰는 다른 실습 세트(`session-1-check`, `06-workloads`, `09-networking` 등)와 이름이 겹치지 않으므로, 다른 세트의 답안을 지우지 않는다.

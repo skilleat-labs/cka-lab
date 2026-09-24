@@ -94,8 +94,8 @@ python3 web/server.py --replace          # 이미 떠 있는 패널을 끄고 �
 
 | | 순차(이전) | 병렬(지금) |
 |---|---|---|
-| 07-ingress Q1 (11항목) | 1,981ms | **693ms** |
-| 06-networking Q1 (10항목) | 1,872ms | **665ms** |
+| 11-ingress Q1 (11항목) | 1,981ms | **693ms** |
+| 09-networking Q1 (10항목) | 1,872ms | **665ms** |
 | 시험 시작 — mock-3 정리 | 2,755ms | **1,073ms** |
 
 ```bash
