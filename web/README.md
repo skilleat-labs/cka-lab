@@ -16,7 +16,12 @@ VirtualBox 호스트온리 네트워크라 별도 포트포워딩 없이 바로 
 ```bash
 python3 web/server.py --port 9000        # 포트 변경
 python3 web/server.py --host 0.0.0.0     # 주소 자동 탐지가 실패할 때
+python3 web/server.py --replace          # 이미 떠 있는 패널을 끄고 새로 띄운다
 ```
+
+**"Address already in use" 가 뜨면** 패널이 이미 떠 있는 것이다. 서버가 누가 그 포트를 쓰는지 찾아서 알려 준다.
+이 패널이면 브라우저에서 그냥 열면 되고, 새로 띄우고 싶으면 `--replace` 를 준다.
+다른 프로그램이 쓰고 있으면 `--replace` 를 줘도 건드리지 않고 다른 포트를 안내한다.
 
 파이썬 표준 라이브러리만 쓴다. pip 설치할 것이 없다.
 

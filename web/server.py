@@ -17,6 +17,7 @@ cka-lab 웹 패널 — exam.sh 를 브라우저에서 돌린다.
 """
 import argparse
 import base64
+import errno
 import fcntl
 import hashlib
 import json
@@ -509,17 +510,97 @@ def guess_host():
     return "0.0.0.0"
 
 
+def port_owner(port):
+    """그 포트를 듣고 있는 (pid, 명령이름) — 못 찾으면 (None, None)."""
+    for cmd in (["ss", "-ltnp"], ["netstat", "-ltnp"],
+                ["lsof", "-nP", "-iTCP:%d" % port, "-sTCP:LISTEN"]):
+        try:
+            out = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=5).stdout
+        except Exception:  # noqa: BLE001
+            continue
+        for line in out.splitlines():
+            if not re.search(r"[:.]%d\b" % port, line):
+                continue
+            m = re.search(r'\("([^"]+)",pid=(\d+)', line)     # ss:      ("python3",pid=123
+            if m:
+                return int(m.group(2)), m.group(1)
+            m = re.search(r"\s(\d+)/(\S+)\s*$", line)         # netstat: 123/python3
+            if m:
+                return int(m.group(1)), m.group(2)
+            m = re.match(r"(\S+)\s+(\d+)\s", line)            # lsof:    Python 123 ...
+            if m and m.group(2).isdigit() and "LISTEN" in line:
+                return int(m.group(2)), m.group(1)
+    return None, None
+
+
+def is_our_panel(pid):
+    """그 프로세스가 이 패널 서버인가 (엉뚱한 것을 죽이지 않으려고 확인)."""
+    cmd = ""
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            cmd = f.read().decode(errors="replace").replace("\0", " ")
+    except OSError:                                   # /proc 이 없는 환경(macOS 등)
+        try:
+            cmd = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=5).stdout
+        except Exception:  # noqa: BLE001
+            return False
+    return "server.py" in cmd and "python" in cmd.lower()
+
+
+def bind_or_explain(host, port, shown, replace):
+    """포트가 이미 쓰이고 있으면 무엇을 하면 되는지 알려 주고 끝낸다."""
+    try:
+        return ThreadingHTTPServer((host, port), Handler)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+    pid, name = port_owner(port)
+    if replace and pid and is_our_panel(pid):
+        print("%d 번 포트의 이전 패널(pid %d)을 종료합니다." % (port, pid))
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as e:  # noqa: BLE001
+            print("  종료 실패: %s" % e)
+        else:
+            for _ in range(20):                    # 최대 2초 기다린다
+                time.sleep(0.1)
+                try:
+                    return ThreadingHTTPServer((host, port), Handler)
+                except OSError:
+                    continue
+        print("  포트가 풀리지 않았습니다.")
+
+    print("%d 번 포트를 이미 누가 쓰고 있습니다." % port)
+    if pid:
+        print("  쓰는 프로세스: %s (pid %d)%s"
+              % (name or "?", pid, " — 이 패널 서버입니다" if is_our_panel(pid) else ""))
+    print()
+    if pid and is_our_panel(pid):
+        print("  패널이 이미 떠 있습니다. 브라우저에서 그냥 여세요:")
+        print("      http://%s:%d" % (shown, port))
+        print("  다시 띄우고 싶으면:   python3 web/server.py --replace")
+    else:
+        print("  다른 프로그램이 쓰고 있습니다. 포트를 바꿔 띄우세요:")
+        print("      python3 web/server.py --port %d" % (port + 1))
+    raise SystemExit(1)
+
+
 def main():
     ap = argparse.ArgumentParser(description="cka-lab 웹 패널")
     ap.add_argument("--host", default=None, help="바인드 주소 (기본: 192.168.56.x 자동 탐지)")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--no-shell", action="store_true", help="브라우저 터미널 끄기")
+    ap.add_argument("--replace", action="store_true",
+                    help="같은 포트에 이미 떠 있는 패널을 종료하고 새로 띄운다")
     a = ap.parse_args()
     global SHELL_ON
     SHELL_ON = not a.no_shell
     host = a.host or guess_host()
-    srv = ThreadingHTTPServer((host, a.port), Handler)
     shown = host if host != "0.0.0.0" else guess_host()
+    srv = bind_or_explain(host, a.port, shown, a.replace)
     print("cka-lab 웹 패널")
     print("  주소   http://%s:%d   ← 맥/윈도우 브라우저에서 열기" % (shown, a.port))
     print("  세트   %s" % ", ".join(list_sets()))
