@@ -70,6 +70,7 @@ q1_grade() {
   check_output "롤백 후 이미지가 nginx:1.24" \
     "kubectl get deployment web-app -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" '^nginx:1\.24$'
   local rev; rev=$(kubectl get deployment web-app -n default -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null || echo 0)
+  rev="${rev//[^0-9]/}"; rev="${rev:-0}"      # 숫자만 남긴다 (설명 문구에 그대로 들어가므로)
   check_result "업데이트 후 롤백한 이력 (revision ${rev:-0} ≥ 3)" \
     "$([[ "${rev:-0}" -ge 3 ]] && echo 0 || echo 1)" "revision=${rev:-0} — 1.25 로 올렸다가 되돌렸는지 확인"
   check_output "이전 ReplicaSet(nginx:1.25)이 남아 있다" \

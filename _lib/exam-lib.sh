@@ -84,13 +84,33 @@ EXAM_PARALLEL="${EXAM_PARALLEL:-1}"
 EXAM_PARALLEL_MAX="${EXAM_PARALLEL_MAX:-4}"   # 동시 kubectl 프로세스 수 (VM 메모리 고려)
 _CK_DIR=""; _CK_N=0
 
+# EXAM_TIMING=1 이면 항목마다 걸린 시간을 옆에 찍는다 — 느린 곳을 찾을 때 쓴다.
+EXAM_TIMING="${EXAM_TIMING:-0}"
+_ms() {   # 현재 시각(ms). bash 내장 EPOCHREALTIME 을 쓰므로 프로세스를 띄우지 않는다.
+  local t="${EPOCHREALTIME:-}"
+  if [[ "$t" == *[.,]* ]]; then
+    t="${t//,/.}"
+    local sec="${t%%.*}" frac="${t#*.}"
+    printf '%s' $(( 10#$sec * 1000 + 10#${frac:0:3} ))
+  else
+    printf '%s' $(( $(date +%s) * 1000 ))    # bash 4 이하 폴백 (초 단위)
+  fi
+}
+_ck_time() {   # _ck_time <항목번호> <시작ms>  — 걸린 시간을 파일에 남긴다
+  [[ "$EXAM_TIMING" == "1" ]] && printf '%s' $(( $(_ms) - $2 )) > "$_CK_DIR/$1.ms" 2>/dev/null
+  return 0
+}
+
 _ck_throttle() {   # 동시 실행 수를 EXAM_PARALLEL_MAX 로 제한
   while (( $(jobs -rp 2>/dev/null | wc -l) >= EXAM_PARALLEL_MAX )); do
     wait -n 2>/dev/null || sleep 0.05
   done
 }
 _ck_meta() {       # 항목 메타 기록 (번호는 호출부에서 증가시킨다 — 서브셸이면 안 되므로)
-  printf '%s\n%s\n%s\n' "$2" "$3" "${4:-}" > "$_CK_DIR/$1.meta"
+  # 메타는 '한 줄에 하나' 로 읽는다. 설명이나 배점에 줄바꿈이 섞이면 줄이 밀려
+  # 배점 자리에 엉뚱한 값이 들어간다 (kubectl 이 여러 줄을 뱉는 경우가 있다) — 여기서 눌러 둔다.
+  local d="${2//$'\n'/ }" p="${3//$'\n'/ }" pat="${4:-}"
+  printf '%s\n%s\n%s\n' "$d" "$p" "${pat//$'\n'/ }" > "$_CK_DIR/$1.meta"
 }
 _pass() { local pts="$1"; Q_PASS=$((Q_PASS+pts)); }
 _pts_label() { [[ "${EXAM_UNIT}" == "점" ]] && printf '[+%s점] ' "$1" || true; }
@@ -115,18 +135,20 @@ check() {
   _CK_N=$((_CK_N+1)); i=$_CK_N; _ck_meta "$i" "$desc" "$pts"
   if [[ "$EXAM_PARALLEL" == "1" ]]; then
     _ck_throttle
-    { eval "$cmd" &>/dev/null && echo 0 || echo 1; } > "$_CK_DIR/$i.rc" &
+    { local t0; t0=$(_ms); eval "$cmd" &>/dev/null && echo 0 || echo 1; _ck_time "$i" "$t0"; } > "$_CK_DIR/$i.rc" &
   else
-    { eval "$cmd" &>/dev/null && echo 0 || echo 1; } > "$_CK_DIR/$i.rc"
+    { local t0; t0=$(_ms); eval "$cmd" &>/dev/null && echo 0 || echo 1; _ck_time "$i" "$t0"; } > "$_CK_DIR/$i.rc"
   fi
 }
 check_output() {
   local desc="$1" cmd="$2" pattern="$3" pts="${4:-1}" i
   _CK_N=$((_CK_N+1)); i=$_CK_N; _ck_meta "$i" "$desc" "$pts" "$pattern"
   _ck_run_output() {
-    local out; out=$(eval "$1" 2>/dev/null || echo "")
+    local out t0; t0=$(_ms)
+    out=$(eval "$1" 2>/dev/null || echo "")
     printf '%s' "$out" > "$_CK_DIR/$2.out"
     echo "$out" | grep -qE "$3" && echo 0 || echo 1
+    _ck_time "$2" "$t0"
   }
   if [[ "$EXAM_PARALLEL" == "1" ]]; then
     _ck_throttle
@@ -151,20 +173,26 @@ _ck_report() {
     desc=""; pts=1; pattern=""
     { IFS= read -r desc; IFS= read -r pts; IFS= read -r pattern; } < "$_CK_DIR/$i.meta" 2>/dev/null
     pts="${pts:-1}"
+    [[ "$pts" =~ ^[0-9]+$ ]] || pts=1        # 배점 자리가 깨져도 채점이 멈추지 않게
     Q_TOTAL=$((Q_TOTAL+pts))
+    local ms=""
+    if [[ "$EXAM_TIMING" == "1" && -s "$_CK_DIR/$i.ms" ]]; then
+      ms="$(cat "$_CK_DIR/$i.ms")"
+      ms="$(printf ' %s(%sms)%s' "$DIM" "$ms" "$RESET")"
+    fi
     if [[ "$rc" == "0" ]]; then
-      echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc"; _pass "$pts"; _jrec "$desc" 0 "$pts"
+      echo -e "  ${GREEN}[PASS]${RESET} $(_pts_label "$pts")$desc$ms"; _pass "$pts"; _jrec "$desc" 0 "$pts"
     else
       note=""
       if [[ -f "$_CK_DIR/$i.out" ]]; then
         out=$(cat "$_CK_DIR/$i.out" 2>/dev/null)
         note="기대: $pattern / 실제: ${out}"
-        echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc  ${ORANGE}($note)${RESET}"
+        echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc$ms  ${ORANGE}($note)${RESET}"
       elif [[ -s "$_CK_DIR/$i.note" ]]; then
         note=$(cat "$_CK_DIR/$i.note" 2>/dev/null)
-        echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc  ${ORANGE}($note)${RESET}"
+        echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc$ms  ${ORANGE}($note)${RESET}"
       else
-        echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc"
+        echo -e "  ${RED}[FAIL]${RESET} $(_zero_label)$desc$ms"
       fi
       Q_FAILS+=("$desc"); _jrec "$desc" 1 "$pts" "$note"
     fi
@@ -175,16 +203,30 @@ _ck_report() {
 #   exam_cleanup 안에서 kdel 을 쓰면 엔진이 cleanup 직후 wait 로 모두 끝날 때까지 기다린다.
 kdel() { kubectl delete "$@" --ignore-not-found &>/dev/null & }
 
-# 파드 Ready 대기 (최대 40초) — 채점 전 안정화용. 파드가 없으면 즉시 반환
+# 파드 Ready 대기 — 채점 전 안정화용.
+#   kubectl wait 는 watch 라서 Ready 가 되는 순간 바로 돌아온다 (1초 폴링보다 훨씬 빠르다).
+#   파드가 없거나, 기다려도 살아날 수 없는 상태(이미지 오류·CrashLoop)면 기다리지 않고 바로 포기한다.
+#   EXAM_WAIT 로 최대 대기 초를 바꾼다 (기본 15초). 채점은 몇 번이든 다시 할 수 있으므로 길게 잡지 않는다.
+EXAM_WAIT="${EXAM_WAIT:-15}"
 wait_ready() {
-  local sel="$1" ns="${2:-default}" i
+  local sel="$1" ns="${2:-default}" t0; t0=$(_ms)
   [[ -z "$(kubectl get pods -n "$ns" $sel -o name 2>/dev/null)" ]] && return 1
-  for i in $(seq 1 40); do
-    local r; r=$(kubectl get pods -n "$ns" $sel -o jsonpath='{range .items[*]}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null | sort -u | tr -d '\n')
-    [[ "$r" == "true" ]] && return 0
-    sleep 1
-  done
-  return 1
+
+  # 가망 없는 상태면 즉시 포기 — 여기서 기다리는 시간이 채점 지연의 대부분이었다
+  local bad
+  bad=$(kubectl get pods -n "$ns" $sel -o jsonpath='{range .items[*]}{.status.containerStatuses[*].state.waiting.reason} {end}' 2>/dev/null)
+  case "$bad" in
+    *ImagePullBackOff*|*ErrImagePull*|*InvalidImageName*|*CrashLoopBackOff*|*CreateContainerConfigError*)
+      [[ "$EXAM_TIMING" == "1" ]] && echo -e "  ${DIM}(wait_ready: $bad — 기다리지 않음)${RESET}" >&2
+      return 1 ;;
+  esac
+
+  local target
+  if [[ "$sel" == -l* ]]; then target=(pod $sel); else target=("pod/$sel"); fi
+  kubectl wait --for=condition=Ready -n "$ns" "${target[@]}" --timeout="${EXAM_WAIT}s" &>/dev/null
+  local rc=$?
+  [[ "$EXAM_TIMING" == "1" ]] && echo -e "  ${DIM}(wait_ready $sel: $(( $(_ms) - t0 ))ms, rc=$rc)${RESET}" >&2
+  return $rc
 }
 
 # ── 진행바 ───────────────────────────────────────────────────────
