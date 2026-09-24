@@ -612,6 +612,11 @@ cmd_lang() {    # 지문 언어 바꾸기 — bash exam.sh lang ko
   state_set lang "$l"
   echo -e "${GREEN}지문 언어를 ${l} 로 바꿨습니다.${RESET}  다시 보기: bash exam.sh show"
 }
+cmd_timecheck() {   # 패널이 주기적으로 부른다 — 시간이 지났으면 마감만 하고 끝낸다
+  enforce_limit
+  echo "ok"
+}
+
 cmd_meta() {    # key=value 로 세트 정보 출력
   echo "title=$EXAM_TITLE"
   echo "nq=$EXAM_NQ"
@@ -647,6 +652,7 @@ exam_main() {
     lang)     cmd_lang "${2:-}" ;;
     hinttext) cmd_hinttext ;;
     meta)     cmd_meta ;;
+    timecheck) cmd_timecheck ;;
     *)
       echo ""
       echo -e "  ${BOLD}${EXAM_TITLE}${RESET}"

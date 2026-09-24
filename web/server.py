@@ -40,7 +40,7 @@ WEB = os.path.join(ROOT, "web")
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 # exam.sh 에 넘길 수 있는 명령 — 화이트리스트
-SAFE_CMDS = {"start", "check", "skip", "finish", "status", "clean", "reset", "go"}
+SAFE_CMDS = {"start", "check", "skip", "finish", "status", "clean", "reset", "go", "timecheck"}
 DESTRUCTIVE = {"start", "clean", "reset"}  # 진행 기록·클러스터 리소스를 지운다
 
 SHELL_ON = True          # --no-shell 로 끈다

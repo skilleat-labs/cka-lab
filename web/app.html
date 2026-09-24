@@ -153,6 +153,7 @@
 const $ = s => document.querySelector(s);
 let SET = localStorage.getItem('cka.set') || '';
 let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text, open}
+let TIMEUP_SENT = false;   // 시간 종료를 서버에 알렸는지 (한 번만 보낸다)
 let CFG = {shell:true};
 let LANG = localStorage.getItem('cka.lang') || 'en';
 
@@ -320,8 +321,9 @@ function serverNow(){
   return Math.floor(Date.now()/1000) + (ST && ST.now ? ST.now - ST._recv : 0);
 }
 
-function timeLeft(){                 // 제한이 없으면 null
+function timeLeft(){                 // 제한이 없거나 이미 끝난 시험이면 null
   if(!ST || !ST.limit || !ST.started) return null;
+  if(ST.finished) return null;       // 마친 시험에 카운트다운은 의미가 없다
   return ST.limit * 60 - (serverNow() - ST.started);
 }
 
@@ -348,7 +350,9 @@ function renderTimer(){
       el.className = 'timer over';
       el.textContent = '⏰ 시간 종료';
       clearInterval(TICK);
-      if(!ST.timeup) refresh();                      // 서버에도 마감을 알린다
+      // 서버에도 마감을 알린다 — 딱 한 번만. (여기서 그냥 refresh 를 부르면
+      //  refresh → render → renderTimer → refresh 로 끝없이 돌아 화면이 먹통이 된다)
+      if(!ST.timeup && !TIMEUP_SENT){ TIMEUP_SENT = true; markTimeUp(); }
       return;
     }
     const warn = left <= (ST.warn || 10) * 60;
@@ -358,6 +362,16 @@ function renderTimer(){
   };
   draw();
   if(!base || (ST.limit && !ST.timeup)) TICK = setInterval(draw, 1000);
+}
+
+// 시간이 다 됐는데 서버가 아직 모르는 경우 — 마감만 시키고 화면을 새로 받는다
+async function markTimeUp(){
+  try{
+    const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({set:SET, cmd:'timecheck', confirm:true})});
+    if(r && r.job) await waitJob(r.job);
+  }catch(e){ /* 실패해도 화면은 계속 쓸 수 있어야 한다 */ }
+  await refresh();
 }
 
 // 문제 위에 띄우는 큰 알림 (10분 남았을 때 · 시간이 끝났을 때)
@@ -543,6 +557,7 @@ async function run(cmd, confirmMsg){
   const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({set:SET, cmd, confirm:true})});
   if(r.error) return alert(r.error);
+  if(cmd === 'start' || cmd === 'reset') TIMEUP_SENT = false;
   JOB = {id:r.job, cmd, output:'', done:false};
   render();
   await waitJob(r.job, true);
@@ -563,7 +578,7 @@ async function waitJob(id, live){
 }
 
 $('#sets').onchange = async e => {
-  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null;
+  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null; TIMEUP_SENT = false;
   followSet();                 // 터미널도 그 세트 폴더로 따라간다
   await refresh();
 };
