@@ -254,7 +254,7 @@ q4_grade() {
 
 q5_title() { echo "StatefulSet with a headless Service [15 pts]"; }
 q5_text() { cat <<'EOF'
-Create a StatefulSet and a headless Service with the following spec.
+Create a StatefulSet and a headless Service in the default namespace.
 
 StatefulSet
   name            mysql-sts
@@ -275,7 +275,7 @@ EOF
 }
 q5_title_ko() { echo "StatefulSet + headless Service [15점]"; }
 q5_text_ko() { cat <<'EOF'
-다음 조건으로 StatefulSet 과 headless Service 를 생성하시오.
+default 네임스페이스에 다음 조건으로 StatefulSet 과 headless Service 를 생성하시오.
 
 StatefulSet
   이름          mysql-sts
@@ -302,9 +302,13 @@ q5_grade() {
   check_output "복제본 2" "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.replicas}'" "^2$" 2
   check_output "serviceName 이 mysql-headless" "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.serviceName}'" "^mysql-headless$" 2
   check_output "volumeClaimTemplates data / 1Gi" \
-    "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.volumeClaimTemplates[0].metadata.name}{\" \"}{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}'" "^data 1Gi$" 3
+    "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.volumeClaimTemplates[0].metadata.name}{\" \"}{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}'" "^data 1Gi$" 2
+  check_output "환경변수 MYSQL_ROOT_PASSWORD=rootpass" \
+    "kubectl get statefulset mysql-sts -n default -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\" \"}{end}'" "MYSQL_ROOT_PASSWORD=rootpass" 1
   check_output "headless Service mysql-headless (clusterIP: None)" \
-    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.clusterIP}'" "^None$" 3
+    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.clusterIP}'" "^None$" 2
+  check_output "Service 포트 3306" \
+    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.ports[0].port}'" "^3306$" 1
 }
 
 q6_title() { echo "etcd snapshot [10 pts]"; }

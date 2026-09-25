@@ -271,7 +271,10 @@ q5_grade() {
   check_result "RoleBinding deploy-reader-rb 존재" "$([[ -n "$rb" ]] && echo 0 || echo 1)" "" 2
   check_output "권한 검증: list deployments = yes" \
     "kubectl auth can-i list deployments --as=system:serviceaccount:$NS:deploy-sa -n $NS" "^yes$" 3
-  local ap; ap=$(kubectl auth can-i list pods --as=system:serviceaccount:$NS:deploy-sa -n $NS 2>/dev/null || echo yes)
+  # auth can-i 는 권한이 없으면 "no" 를 찍고 exit 1 을 낸다. 그래서 || 로 기본값을 붙이면
+  # 정답(권한 없음)일 때 값이 "no\nyes" 가 되어 비교가 깨진다 — 출력만 보고 판정한다.
+  local ap; ap=$(kubectl auth can-i list pods --as=system:serviceaccount:$NS:deploy-sa -n $NS 2>/dev/null | head -1 | tr -d '[:space:]')
+  [[ -z "$ap" ]] && ap=yes        # 명령 자체가 실패해 판정할 수 없으면 감점 쪽으로 둔다
   check_result "권한 검증: list pods = no (필요한 권한만)" "$([[ -n "$sa" && -n "$rb" && "$ap" == "no" ]] && echo 0 || echo 1)" "" 2
 }
 
