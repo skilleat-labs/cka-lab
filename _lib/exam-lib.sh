@@ -300,6 +300,24 @@ wait_ready() {
   return $rc
 }
 
+# ── drain 검증 ───────────────────────────────────────────────────
+#   drain 을 "했는지" 를 이벤트로 보면 안 된다. reason=Drain 이라는 이벤트는 없고,
+#   NodeNotSchedulable 은 한 시간 뒤 사라져서 제대로 푼 사람이 나중에 FAIL 된다.
+#   그래서 시작할 때 그 노드의 파드 수를 적어 두고, 채점 때 비워졌는지를 본다.
+drain_mark() {   # drain_mark <레이블셀렉터> <노드>
+  kubectl get pods -A -l "$1" --field-selector "spec.nodeName=$2" -o name 2>/dev/null \
+    | wc -l | tr -d ' ' > "$WORK_DIR/.drain-before" 2>/dev/null || true
+}
+drain_moved() {  # drain_moved <레이블셀렉터> <노드> — 0 이면 비워졌다
+  local before now
+  before=$(cat "$WORK_DIR/.drain-before" 2>/dev/null || echo 0)
+  before="${before//[^0-9]/}"; before="${before:-0}"
+  now=$(kubectl get pods -A -l "$1" --field-selector "spec.nodeName=$2" -o name 2>/dev/null | wc -l | tr -d ' ')
+  now="${now//[^0-9]/}"; now="${now:-0}"
+  (( before == 0 )) && return 0     # 처음부터 그 노드에 없었으면 판정 불가 — 불이익 없게 통과
+  (( now == 0 ))
+}
+
 # ── 진행바 ───────────────────────────────────────────────────────
 progress_bar() {
   local cur="$1" i out=""

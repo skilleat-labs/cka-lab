@@ -7,11 +7,22 @@ EXAM_TITLE="CKA 9강 실습 — 유지보수 (drain · etcd 백업 · 업그레�
 EXAM_NQ=4
 
 exam_cleanup() {
+  kdel deployment drain-demo -n default
   kubectl uncordon worker-2 &>/dev/null || true
   rm -f /tmp/etcd-backup.db /tmp/upgrade-plan.txt /tmp/cert-expiration.txt 2>/dev/null || true
   echo "  worker-2 uncordon, /tmp 결과 파일 삭제"
 }
-exam_setup() { echo "  (미리 만들어둘 것 없음 — Q2~Q4 는 control-plane 에서 실행한다)"; }
+exam_setup() {
+  if kubectl get node worker-2 &>/dev/null; then
+    kubectl create deployment drain-demo --image=nginx:1.24 --replicas=4 &>/dev/null
+    wait_ready "-l app=drain-demo" default >/dev/null 2>&1 || true
+    drain_mark "app=drain-demo" worker-2          # drain 이 실제로 파드를 옮겼는지 보려고 적어 둔다
+    echo "  drain-demo (4 레플리카) 배치 — worker-2 의 파드 $(cat work/.drain-before 2>/dev/null || echo 0)개"
+  else
+    echo "  (worker-2 가 없어 drain 검증용 배치를 건너뜁니다)"
+  fi
+  echo "  Q2~Q4 는 control-plane 노드에서 실행합니다"
+}
 
 # ══════════════════════════════════════════════════════════════
 q1_title() { echo "Drain and uncordon a node"; }
@@ -48,10 +59,9 @@ q1_grade() {
   check_result "uncordon 되어 스케줄 가능 (SchedulingDisabled 아님)" \
     "$(kubectl get node worker-2 -o jsonpath='{.spec.unschedulable}' 2>/dev/null | grep -q true && echo 1 || echo 0)" \
     "drain 만 하고 uncordon 을 안 했으면 여기서 FAIL"
-  check_result "drain 이력이 있다 (work/.drained 기록 또는 파드 이동 흔적)" \
-    "$(kubectl get events -A --field-selector reason=Drain 2>/dev/null | grep -q worker-2 && echo 0 || \
-       kubectl get node worker-2 -o jsonpath='{.metadata.managedFields[*].operation}' 2>/dev/null | grep -q Update && echo 0 || echo 1)" \
-    "drain → uncordon 순서로 실제 수행했는지 확인"
+  check_result "drain 으로 파드가 실제로 비워졌다" \
+    "$(drain_moved "app=drain-demo" worker-2 && echo 0 || echo 1)" \
+    "worker-2 에 drain-demo 파드가 아직 남아 있다 — cordon 만 하면 파드는 그대로다"
 }
 q1_hint() { cat <<'EOF'
 kubectl drain worker-2 --ignore-daemonsets --delete-emptydir-data

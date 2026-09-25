@@ -22,8 +22,11 @@ exam_setup() {
     echo "         현재 노드: $(kubectl get nodes --no-headers -o custom-columns=:metadata.name 2>/dev/null | tr '\n' ' ')"
     return 0
   fi
-  kubectl create deployment drain-demo --image=nginx:1.24 --replicas=3 &>/dev/null
-  echo "  drain-demo (3 레플리카) 배치 · 대상 노드: $TARGET_NODE"
+  kubectl create deployment drain-demo --image=nginx:1.24 --replicas=4 &>/dev/null
+  wait_ready "-l app=drain-demo" default >/dev/null 2>&1 || true
+  drain_mark "app=drain-demo" "$TARGET_NODE"      # 지금 이 노드에 몇 개 있는지 적어 둔다
+  echo "  drain-demo (4 레플리카) 배치 · 대상 노드: $TARGET_NODE"
+  echo "  $TARGET_NODE 의 파드 $(cat work/.drain-before 2>/dev/null || echo 0)개 — drain 하면 비워져야 한다"
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -70,9 +73,9 @@ q1_grade() {
   check_result "SchedulingDisabled 가 풀려 있다 (uncordon 됨)" \
     "$([[ "$(kubectl get node "$TARGET_NODE" -o jsonpath='{.spec.unschedulable}' 2>/dev/null)" != "true" ]] && echo 0 || echo 1)" \
     "아직 cordon 상태다 — kubectl uncordon $TARGET_NODE"
-  check_result "drain 을 거친 흔적이 있다 (한 번이라도 cordon 됐다)" \
-    "$(kubectl get events -A --field-selector reason=NodeNotSchedulable 2>/dev/null | grep -q "$TARGET_NODE" && echo 0 || echo 1)" \
-    "cordon/drain 이벤트를 찾지 못했다 — drain 을 실제로 실행했는지 확인"
+  check_result "drain 으로 파드가 실제로 비워졌다" \
+    "$(drain_moved "app=drain-demo" "$TARGET_NODE" && echo 0 || echo 1)" \
+    "$TARGET_NODE 에 drain-demo 파드가 아직 남아 있다 — cordon 만 하면 파드는 그대로다"
 }
 q1_hint() { cat <<'EOF'
 kubectl drain worker1 --ignore-daemonsets --delete-emptydir-data
