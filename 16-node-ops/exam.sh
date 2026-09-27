@@ -30,6 +30,7 @@ exam_setup() {
   drain_mark "app=drain-demo" "$TARGET_NODE"      # 지금 이 노드에 몇 개 있는지 적어 둔다
   echo "  drain-demo (4 레플리카) 배치 · 대상 노드: $TARGET_NODE"
   echo "  $TARGET_NODE 의 파드 $(cat work/.drain-before 2>/dev/null || echo 0)개 — drain 하면 비워져야 한다"
+  etcd_tool_check
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -151,6 +152,14 @@ sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-snapshot.db \
 
 # sudo 를 빼면 인증서를 못 읽어 permission denied 가 난다.
 # 파일 소유자가 root 라 채점이 못 읽으면: sudo chmod 644 /tmp/etcd-snapshot.db /tmp/etcd-status.txt
+
+# ETCDCTL_API=3 은 etcd 3.4 부터 기본값이라 사실 없어도 된다.
+# 다만 붙여도 무해하고 시험 자료가 대부분 붙이므로, 습관으로 두는 편이 안전하다.
+
+# etcdctl 이 호스트에 없으면 (kubeadm 은 etcd 가 static pod 로만 있다):
+#   sudo apt-get install -y etcd-client
+# 또는 etcd 파드 안의 것을 쓴다 — 이때는 저장 경로도 파드 안이므로 주의한다
+#   kubectl -n kube-system exec -i etcd-$(hostname) -- etcdctl --cacert=... --cert=... --key=... member list
 EOF
 }
 

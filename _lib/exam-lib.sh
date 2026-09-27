@@ -300,6 +300,24 @@ wait_ready() {
   return $rc
 }
 
+# ── etcdctl 준비 확인 ────────────────────────────────────────────
+#   kubeadm 클러스터에는 etcd 가 static pod 로만 있고, 호스트에 etcdctl 바이너리가
+#   없는 경우가 많다. 실제 시험 환경에는 깔려 있지만 우리 VM 은 직접 세운 것이라
+#   없을 수 있어서, 시작할 때 미리 알려 준다.
+etcd_tool_check() {
+  if command -v etcdctl &>/dev/null; then
+    local v; v=$(etcdctl version 2>/dev/null | head -1 | awk '{print $NF}')
+    echo -e "  etcdctl 준비됨 ${DIM}(${v:-버전 미상})${RESET}"
+    return 0
+  fi
+  echo -e "  ${ORANGE}[주의] etcdctl 이 없습니다.${RESET} 둘 중 하나로 준비하세요."
+  echo -e "     ${CYAN}sudo apt-get install -y etcd-client${RESET}   ${DIM}인터넷이 되면 이쪽이 편하다${RESET}"
+  echo -e "     ${DIM}또는 etcd 파드 안의 것을 그대로 쓴다 (한 줄):${RESET}"
+  # 줄 끝 백슬래시는 echo -e 가 이스케이프로 먹어 버리므로 한 줄로 둔다
+  echo -e "     ${CYAN}kubectl -n kube-system exec -i etcd-\$(hostname) -- etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key member list${RESET}"
+  return 1
+}
+
 # ── drain 검증 ───────────────────────────────────────────────────
 #   drain 을 "했는지" 를 이벤트로 보면 안 된다. reason=Drain 이라는 이벤트는 없고,
 #   NodeNotSchedulable 은 한 시간 뒤 사라져서 제대로 푼 사람이 나중에 FAIL 된다.

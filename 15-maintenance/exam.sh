@@ -22,6 +22,7 @@ exam_setup() {
     echo "  (worker-2 가 없어 drain 검증용 배치를 건너뜁니다)"
   fi
   echo "  Q2~Q4 는 control-plane 노드에서 실행합니다"
+  etcd_tool_check
 }
 
 # ══════════════════════════════════════════════════════════════

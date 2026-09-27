@@ -45,6 +45,7 @@ exam_setup() {
       echo "      강사가 worker-2 에서 직접  systemctl stop kubelet  을 실행해 주세요."
     fi
   fi
+  etcd_tool_check
 }
 
 q1_title() { echo "Node affinity Pod [15 pts]"; }
