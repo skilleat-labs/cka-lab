@@ -142,6 +142,9 @@ Use the following connection details (the real exam gives them the same way):
 Then verify the snapshot and save the verification output to
 /tmp/etcd-status.txt
 
+(The real exam usually stops at "save". Verifying is added here because a
+failed backup often leaves a small or empty file that looks fine at a glance.)
+
 Verify:
   ls -l /tmp/etcd-snapshot.db
   cat /tmp/etcd-status.txt
@@ -161,20 +164,24 @@ q2_text_ko() { cat <<'EOF'
 그리고 스냅샷이 제대로 떠졌는지 확인한 출력을
 /tmp/etcd-status.txt 에 저장한다.
 
+(실제 시험은 대개 "저장하라" 까지만 요구한다. 확인까지 시키는 이유는
+ 백업이 실패하면 작거나 빈 파일이 남는데 눈으로는 멀쩡해 보이기 때문이다.)
+
 [확인]
   ls -l /tmp/etcd-snapshot.db
   cat /tmp/etcd-status.txt
 EOF
 }
 q2_grade() {
-  check "/tmp/etcd-snapshot.db 가 있다" "test -s /tmp/etcd-snapshot.db"
+  check "/tmp/etcd-snapshot.db 가 있다" "test -s /tmp/etcd-snapshot.db" 2
   local sz; sz=$(wc -c < /tmp/etcd-snapshot.db 2>/dev/null | tr -d ' '); sz="${sz//[^0-9]/}"; sz="${sz:-0}"
   check_result "스냅샷 크기가 그럴듯하다 (1MB 이상)" \
     "$([[ "$sz" -ge 1048576 ]] && echo 0 || echo 1)" \
-    "현재 ${sz} 바이트 — 너무 작으면 백업이 실패한 것이다"
+    "현재 ${sz} 바이트 — 너무 작으면 백업이 실패한 것이다" 2
+  # 여기까지가 시험에서 실제로 요구하는 부분이다 (4점)
   check "/tmp/etcd-status.txt 가 있다" "test -s /tmp/etcd-status.txt"
-  check_output "status 출력에 해시가 있다" "cat /tmp/etcd-status.txt 2>/dev/null" '[0-9a-fA-F]{6,}'
-  check_output "status 출력에 키 개수가 있다" "cat /tmp/etcd-status.txt 2>/dev/null" '[0-9]+'
+  check_output "status 출력이다 (해시와 키 개수가 보인다)" \
+    "cat /tmp/etcd-status.txt 2>/dev/null" '[0-9a-fA-F]{6,}.*[0-9]|[0-9].*[0-9a-fA-F]{6,}'
 }
 q2_hint() { cat <<'EOF'
 sudo ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-snapshot.db \
