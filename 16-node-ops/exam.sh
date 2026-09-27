@@ -6,8 +6,12 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA 특강 실습 — 노드 운영 (drain/uncordon · etcd 백업 · 업그레이드 확인)"
 EXAM_NQ=4
 
-# 작업 대상 워커. 다른 이름이면 TARGET_NODE 로 바꿔 쓴다.
-TARGET_NODE="${TARGET_NODE:-worker1}"
+# 작업 대상 워커. 노드 이름은 클러스터마다 다르므로(worker1 · worker-1 · node01 …)
+# 고정하지 않고 컨트롤플레인이 아닌 첫 노드를 찾아 쓴다. TARGET_NODE 로 직접 지정해도 된다.
+TARGET_NODE="${TARGET_NODE:-$(kubectl get nodes --no-headers \
+  -l '!node-role.kubernetes.io/control-plane' \
+  -o custom-columns=:metadata.name 2>/dev/null | head -1 | tr -d ' ')}"
+TARGET_NODE="${TARGET_NODE:-worker-1}"
 
 exam_cleanup() {
   kubectl uncordon "$TARGET_NODE" &>/dev/null || true
@@ -20,9 +24,12 @@ exam_cleanup() {
 }
 exam_setup() {
   if ! kubectl get node "$TARGET_NODE" &>/dev/null; then
-    echo "  [주의] 노드 '$TARGET_NODE' 를 찾을 수 없습니다."
-    echo "         TARGET_NODE=<노드이름> bash exam.sh start 로 다시 실행하세요."
-    echo "         현재 노드: $(kubectl get nodes --no-headers -o custom-columns=:metadata.name 2>/dev/null | tr '\n' ' ')"
+    echo ""
+    echo -e "  ${RED}${BOLD}[중단] 노드 '$TARGET_NODE' 를 찾을 수 없습니다.${RESET}"
+    echo -e "  ${DIM}이 상태로는 Q1(drain)을 풀 수 없습니다 — 배치할 노드가 없습니다.${RESET}"
+    echo -e "  현재 노드: ${CYAN}$(kubectl get nodes --no-headers -o custom-columns=:metadata.name 2>/dev/null | tr '\n' ' ')${RESET}"
+    echo -e "  다시 실행: ${CYAN}TARGET_NODE=<위 이름 중 하나> bash exam.sh start${RESET}"
+    echo ""
     return 0
   fi
   kubectl create deployment drain-demo --image=nginx:1.24 --replicas=4 &>/dev/null
@@ -36,7 +43,7 @@ exam_setup() {
 # ══════════════════════════════════════════════════════════════
 q1_title() { echo "Drain a node and bring it back"; }
 q1_text() { cat <<'EOF'
-A worker node needs maintenance.
+A worker node needs maintenance. (this cluster: $TARGET_NODE)
 
   1) mark the node so no new Pods are scheduled on it AND
      evict the Pods already running there
@@ -54,7 +61,7 @@ EOF
 }
 q1_title_ko() { echo "노드를 비우고 되돌리기"; }
 q1_text_ko() { cat <<'EOF'
-워커 노드 한 대를 점검해야 한다.
+워커 노드 한 대를 점검해야 한다. (이 클러스터에서는 $TARGET_NODE)
 
   1) 그 노드에 새 파드가 배치되지 않게 하고,
      이미 돌고 있는 파드도 다른 노드로 옮긴다
