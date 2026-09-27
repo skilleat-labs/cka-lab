@@ -133,10 +133,11 @@ q2_text() { cat <<'EOF'
 On the control plane node, take an etcd snapshot and save it to
 /tmp/etcd-snapshot.db
 
-Use the certificates that kube-apiserver uses:
-  --cacert   /etc/kubernetes/pki/etcd/ca.crt
-  --cert     /etc/kubernetes/pki/etcd/server.crt
-  --key      /etc/kubernetes/pki/etcd/server.key
+Use the following connection details (the real exam gives them the same way):
+  --endpoints  https://127.0.0.1:2379
+  --cacert     /etc/kubernetes/pki/etcd/ca.crt
+  --cert       /etc/kubernetes/pki/etcd/server.crt
+  --key        /etc/kubernetes/pki/etcd/server.key
 
 Then verify the snapshot and save the verification output to
 /tmp/etcd-status.txt
@@ -151,10 +152,11 @@ q2_text_ko() { cat <<'EOF'
 컨트롤플레인 노드에서 etcd 스냅샷을 떠서
 /tmp/etcd-snapshot.db 에 저장한다.
 
-kube-apiserver 가 쓰는 인증서를 그대로 쓴다.
-  --cacert   /etc/kubernetes/pki/etcd/ca.crt
-  --cert     /etc/kubernetes/pki/etcd/server.crt
-  --key      /etc/kubernetes/pki/etcd/server.key
+접속 정보는 아래를 쓴다 (실제 시험도 이렇게 다 준다).
+  --endpoints  https://127.0.0.1:2379
+  --cacert     /etc/kubernetes/pki/etcd/ca.crt
+  --cert       /etc/kubernetes/pki/etcd/server.crt
+  --key        /etc/kubernetes/pki/etcd/server.key
 
 그리고 스냅샷이 제대로 떠졌는지 확인한 출력을
 /tmp/etcd-status.txt 에 저장한다.
@@ -187,13 +189,41 @@ sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-snapshot.db \
 # sudo 를 빼면 인증서를 못 읽어 permission denied 가 난다.
 # 파일 소유자가 root 라 채점이 못 읽으면: sudo chmod 644 /tmp/etcd-snapshot.db /tmp/etcd-status.txt
 
+# 문제가 접속 정보를 주지 않으면 매니페스트에서 읽는다 — 외우지 않아도 된다
+sudo grep -E 'listen-client-urls|cert-file|key-file|trusted-ca-file' \
+  /etc/kubernetes/manifests/etcd.yaml
+#   listen-client-urls → --endpoints    cert-file → --cert
+#   key-file           → --key          trusted-ca-file → --cacert
+#
+# --endpoints 는 생략해도 된다. etcdctl 의 기본값이 이미 127.0.0.1:2379 다.
+# 다만 etcd 가 별도 노드에 있는 구성이면 기본값으로는 닿지 않으니 붙이는 편이 안전하다.
+
 # ETCDCTL_API=3 은 etcd 3.4 부터 기본값이라 사실 없어도 된다.
 # 다만 붙여도 무해하고 시험 자료가 대부분 붙이므로, 습관으로 두는 편이 안전하다.
 
-# etcdctl 이 호스트에 없으면 (kubeadm 은 etcd 가 static pod 로만 있다):
-#   sudo apt-get install -y etcd-client
-# 또는 etcd 파드 안의 것을 쓴다 — 이때는 저장 경로도 파드 안이므로 주의한다
-#   kubectl -n kube-system exec -i etcd-$(hostname) -- etcdctl --cacert=... --cert=... --key=... member list
+# ── etcdctl 이 "command not found" 라면 ──────────────────────────
+# kubeadm 클러스터는 etcd 가 컨테이너 안에만 있어서 호스트에 바이너리가 없다.
+#
+# (가) 설치한다 — 인터넷이 되면
+sudo apt-get install -y etcd-client
+#
+# (나) 파드 안의 etcdctl 을 쓴다 — 인터넷이 없어도 된다
+#     핵심: etcd 파드의 /var/lib/etcd 는 호스트의 /var/lib/etcd 와 같은 곳이다(hostPath).
+#     그래서 파드 안에서 거기에 저장하면 호스트에서 바로 꺼낼 수 있다.
+ETCD_POD=etcd-$(hostname)
+kubectl -n kube-system exec $ETCD_POD -- etcdctl \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  snapshot save /var/lib/etcd/snap.db
+
+kubectl -n kube-system exec $ETCD_POD -- etcdctl \
+  --write-out=table snapshot status /var/lib/etcd/snap.db | sudo tee /tmp/etcd-status.txt
+
+sudo mv /var/lib/etcd/snap.db /tmp/etcd-snapshot.db      # 채점이 보는 경로로
+#
+#     status 를 먼저 뜨고 나중에 옮기는 순서가 중요하다 —
+#     옮기고 나면 파드 안에서는 그 파일이 보이지 않는다.
 EOF
 }
 

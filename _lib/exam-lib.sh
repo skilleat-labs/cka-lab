@@ -310,11 +310,14 @@ etcd_tool_check() {
     echo -e "  etcdctl 준비됨 ${DIM}(${v:-버전 미상})${RESET}"
     return 0
   fi
-  echo -e "  ${ORANGE}[주의] etcdctl 이 없습니다.${RESET} 둘 중 하나로 준비하세요."
-  echo -e "     ${CYAN}sudo apt-get install -y etcd-client${RESET}   ${DIM}인터넷이 되면 이쪽이 편하다${RESET}"
-  echo -e "     ${DIM}또는 etcd 파드 안의 것을 그대로 쓴다 (한 줄):${RESET}"
-  # 줄 끝 백슬래시는 echo -e 가 이스케이프로 먹어 버리므로 한 줄로 둔다
-  echo -e "     ${CYAN}kubectl -n kube-system exec -i etcd-\$(hostname) -- etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key member list${RESET}"
+  echo -e "  ${ORANGE}[주의] etcdctl 이 호스트에 없습니다.${RESET} ${DIM}(kubeadm 은 etcd 가 컨테이너 안에만 있다)${RESET}"
+  echo -e "     ${BOLD}① 설치한다${RESET}  ${DIM}— 인터넷이 되면 이쪽이 편하다${RESET}"
+  echo -e "        ${CYAN}sudo apt-get install -y etcd-client${RESET}"
+  echo -e "     ${BOLD}② 파드 안의 것을 쓴다${RESET}  ${DIM}— 인터넷이 없어도 된다${RESET}"
+  echo -e "        ${DIM}etcd 파드의 /var/lib/etcd 는 호스트의 같은 경로다(hostPath).${RESET}"
+  echo -e "        ${DIM}거기에 저장하면 호스트에서 그대로 꺼낼 수 있다:${RESET}"
+  echo -e "        ${CYAN}kubectl -n kube-system exec etcd-\$(hostname) -- etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/snap.db${RESET}"
+  echo -e "        ${CYAN}sudo mv /var/lib/etcd/snap.db /tmp/etcd-snapshot.db${RESET}"
   return 1
 }
 
