@@ -126,3 +126,22 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 EXAM_LIMIT_MIN=20 bash exam.sh start    # 제한시간 바꾸기 (0 이면 무제한)
 EXAM_WARN_MIN=5   bash exam.sh start    # 경고 시점 바꾸기
 ```
+
+## 실습 환경 한 번에 정리하기
+
+세트를 여러 개 풀고 나면 클러스터에 리소스가 쌓인다. 한 번에 치운다.
+
+```bash
+cd ~/cka-lab && bash clean-all.sh
+```
+
+각 세트의 `exam.sh clean` 을 부르므로 **그 세트가 만든 것만** 지운다. 실습과 무관한 리소스는 건드리지 않는다.
+진행 기록(`work/`)도 함께 초기화되므로 처음부터 다시 풀 수 있다.
+
+```bash
+bash clean-all.sh --dry-run   # 지우지 않고 대상만 본다
+bash clean-all.sh --yes       # 묻지 않고 바로
+```
+
+**엉뚱한 클러스터에서 돌지 않게 막아 둔다.** 연결된 서버가 `192.168.56.x` 가 아니면
+경고하고 `DELETE` 를 직접 입력해야 진행한다 — 회사 클러스터에 kubectl 이 붙어 있을 때를 대비한 것이다.
