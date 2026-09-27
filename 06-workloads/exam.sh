@@ -5,10 +5,12 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 2강 실습 — 워크로드 배포와 관리"
-EXAM_NQ=4
+EXAM_NQ=5
 
 # ══════════════════════════════════════════════════════════════
 exam_cleanup() {
+  kdel deployment log-app -n logging
+  kdel namespace logging
   kdel deployment web-app -n default
   kdel pod db-client -n default
   kdel configmap db-config -n default
@@ -17,7 +19,36 @@ exam_cleanup() {
   kdel namespace monitoring
   echo "  web-app / db-client / db-config / date-printer / monitoring ns 삭제"
 }
-exam_setup() { echo "  (미리 만들어둘 것 없음)"; }
+exam_setup() {
+  # Q5(사이드카) 용 — 로그를 계속 쓰는 앱을 미리 띄워 둔다. 사이드카만 붙이면 되게.
+  kubectl create namespace logging &>/dev/null
+  cat <<'YAML' | kubectl apply -f - &>/dev/null
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-app
+  namespace: logging
+  labels: { app: log-app }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: log-app } }
+  template:
+    metadata:
+      labels: { app: log-app }
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo \"$(date) hello from log-app\" >> /var/log/app/app.log; sleep 2; done"]
+          volumeMounts:
+            - name: applogs
+              mountPath: /var/log/app
+      volumes:
+        - name: applogs
+          emptyDir: {}
+YAML
+  echo "  logging 네임스페이스에 log-app 배치 (Q5 에서 사이드카를 붙인다)"
+}
 
 # ══════════════════════════════════════════════════════════════
 # Q1 — Deployment 생성 · 스케일 · 롤링 업데이트 · 롤백
@@ -279,6 +310,85 @@ kubectl create deployment node-exporter -n monitoring \
 #   spec.replicas / spec.strategy 줄 삭제
 #   spec.template.spec 에 hostNetwork: true, hostPID: true 추가
 kubectl apply -f ds.yaml
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "Native sidecar — a logging container"; }
+q5_text() { cat <<'EOF'
+A Deployment named log-app already exists in the logging namespace.
+Its main container writes to /var/log/app/app.log on a shared emptyDir volume.
+
+Add a native sidecar named log-sidecar to that Deployment.
+
+  image        busybox:1.36
+  command      sh -c 'tail -F /var/log/app/app.log'
+  mountPath    /var/log/app   (the same emptyDir volume)
+
+It must be a NATIVE sidecar:
+  - declared under initContainers
+  - with restartPolicy: Always
+
+After the change each Pod must show READY 2/2.
+
+Verify:
+  kubectl -n logging get pods
+  kubectl -n logging logs deploy/log-app -c log-sidecar
+EOF
+}
+q5_title_ko() { echo "네이티브 사이드카 — 로그 수집 컨테이너"; }
+q5_text_ko() { cat <<'EOF'
+logging 네임스페이스에 log-app Deployment 가 이미 있다.
+본 컨테이너가 공유 emptyDir 볼륨의 /var/log/app/app.log 에 로그를 쓴다.
+
+여기에 log-sidecar 라는 네이티브 사이드카를 추가한다.
+
+  이미지       busybox:1.36
+  명령         sh -c 'tail -F /var/log/app/app.log'
+  마운트 경로  /var/log/app   (같은 emptyDir 볼륨)
+
+반드시 네이티브 사이드카여야 한다.
+  - initContainers 아래에 선언
+  - restartPolicy: Always
+
+바꾸고 나면 각 파드가 READY 2/2 로 보여야 한다.
+
+[확인]
+  kubectl -n logging get pods
+  kubectl -n logging logs deploy/log-app -c log-sidecar
+EOF
+}
+q5_grade() {
+  check "Deployment log-app 존재" "kubectl -n logging get deployment log-app"
+  check_output "initContainers 에 log-sidecar 가 있다" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{.spec.template.spec.initContainers[*].name}'" 'log-sidecar'
+  check_output "사이드카 이미지가 busybox:1.36" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.image}{end}'" '^busybox:1\.36$'
+  check_output "restartPolicy: Always (네이티브 사이드카의 조건)" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.restartPolicy}{end}'" '^Always$'
+  check_output "같은 볼륨을 /var/log/app 에 마운트" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{range .volumeMounts[*]}{.mountPath}{\" \"}{end}{end}'" '/var/log/app'
+  wait_ready "-l app=log-app" logging
+  check_output "파드가 READY 2/2 (사이드카가 살아 있다)" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{.status.readyReplicas}'" '^1$'
+  check_output "사이드카가 본 컨테이너의 로그를 읽고 있다" \
+    "kubectl -n logging logs deploy/log-app -c log-sidecar --tail=5 2>/dev/null" '.'
+}
+q5_hint() { cat <<'EOF'
+kubectl -n logging edit deployment log-app
+
+# spec.template.spec 아래, containers 와 나란히 initContainers 를 둔다
+  initContainers:
+    - name: log-sidecar
+      image: busybox:1.36
+      restartPolicy: Always          # ← 이 한 줄이 '네이티브 사이드카' 를 만든다
+      command: ["sh", "-c", "tail -F /var/log/app/app.log"]
+      volumeMounts:
+        - name: applogs             # 본 컨테이너가 쓰는 볼륨과 같은 이름
+          mountPath: /var/log/app
+
+# 일반 initContainer 는 끝나야 본 컨테이너가 시작한다.
+# restartPolicy: Always 를 주면 먼저 시작해서 끝까지 함께 산다 → READY 2/2
 EOF
 }
 

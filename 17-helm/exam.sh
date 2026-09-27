@@ -4,7 +4,7 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 10강 실습 — Helm (install · upgrade · rollback) · Kustomize"
-EXAM_NQ=4
+EXAM_NQ=5
 
 exam_cleanup() {
   if command -v helm &>/dev/null; then
@@ -12,7 +12,7 @@ exam_cleanup() {
   fi
   kdel deployment,service -l app.kubernetes.io/instance=my-nginx -n default
   kdel deployment dev-web-app -n default
-  rm -rf /tmp/kustomize-lab 2>/dev/null || true
+  rm -rf /tmp/kustomize-lab /tmp/argocd.yaml 2>/dev/null || true
   echo "  helm release my-nginx, dev-web-app, /tmp/kustomize-lab 삭제"
 }
 exam_setup() {
@@ -219,6 +219,84 @@ namePrefix: dev-
 YAML
 
 kubectl apply -k /tmp/kustomize-lab/overlays/dev/
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "Render a chart without installing it"; }
+q5_text() { cat <<'EOF'
+Sometimes you need the manifests a chart would produce, without touching
+the cluster — for review, for GitOps, or to install the CRDs separately.
+
+  1) add the Helm repository
+       name  argo
+       url   https://argoproj.github.io/argo-helm
+
+  2) render the chart argo/argo-cd WITHOUT installing it
+       release name   argocd
+       namespace      argocd
+       CRDs           must NOT be in the output
+       save it to     /tmp/argocd.yaml
+
+Do not install the chart into the cluster.
+
+Verify:
+  head -5 /tmp/argocd.yaml
+  grep -c CustomResourceDefinition /tmp/argocd.yaml     -> 0
+  helm list -A                                          -> no argocd release
+EOF
+}
+q5_title_ko() { echo "설치하지 않고 매니페스트만 뽑기"; }
+q5_text_ko() { cat <<'EOF'
+차트가 만들어 낼 매니페스트만 필요할 때가 있다. 클러스터는 건드리지 않고
+검토하거나, GitOps 로 넘기거나, CRD 만 따로 설치하려는 경우다.
+
+  1) Helm 저장소를 추가한다
+       이름  argo
+       주소  https://argoproj.github.io/argo-helm
+
+  2) argo/argo-cd 차트를 설치하지 말고 렌더링만 한다
+       릴리스 이름   argocd
+       네임스페이스  argocd
+       CRD           결과에 들어가면 안 된다
+       저장 경로     /tmp/argocd.yaml
+
+클러스터에 설치하지 않는다.
+
+[확인]
+  head -5 /tmp/argocd.yaml
+  grep -c CustomResourceDefinition /tmp/argocd.yaml     → 0
+  helm list -A                                          → argocd 릴리스 없음
+EOF
+}
+q5_grade() {
+  check "helm 이 설치돼 있다" "command -v helm"
+  check_output "argo 저장소가 추가됐다" "helm repo list 2>/dev/null" 'argoproj\.github\.io/argo-helm'
+  check "/tmp/argocd.yaml 이 있다" "test -s /tmp/argocd.yaml"
+  check_output "렌더링 결과다 (쿠버네티스 매니페스트)" "cat /tmp/argocd.yaml 2>/dev/null" '^kind:|^apiVersion:'
+  check_output "argo-cd 차트의 리소스가 들어 있다" "cat /tmp/argocd.yaml 2>/dev/null" 'argocd'
+  # CRD 가 빠졌는지 — --skip-crds 를 줬는지 보는 핵심 항목
+  local crd; crd=$(grep -c 'kind: CustomResourceDefinition' /tmp/argocd.yaml 2>/dev/null)
+  crd="${crd//[^0-9]/}"; crd="${crd:-0}"
+  check_result "CRD 가 빠져 있다 (--skip-crds)" \
+    "$([[ "$crd" == "0" ]] && echo 0 || echo 1)" "CustomResourceDefinition ${crd}개가 들어 있다" 2
+  # 설치는 하지 말라고 했다
+  local inst; inst=$(helm list -A -q 2>/dev/null | grep -cx argocd)
+  inst="${inst//[^0-9]/}"; inst="${inst:-0}"
+  check_result "클러스터에 설치하지는 않았다" \
+    "$([[ "$inst" == "0" ]] && echo 0 || echo 1)" "argocd 릴리스가 설치돼 있다 — template 만 하면 된다"
+}
+q5_hint() { cat <<'EOF'
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+
+helm template argocd argo/argo-cd \
+  --namespace argocd \
+  --skip-crds > /tmp/argocd.yaml
+
+# template 은 클러스터에 아무것도 만들지 않는다. 결과를 화면(또는 파일)로 뱉을 뿐이다.
+# --skip-crds 를 빼면 CustomResourceDefinition 이 함께 나온다.
+# 특정 버전이 필요하면  --version 8.8.3  처럼 붙인다.
 EOF
 }
 

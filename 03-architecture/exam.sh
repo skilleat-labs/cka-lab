@@ -145,7 +145,7 @@ q3_grade() {
   check "/tmp/node-runtime.txt 가 있다" "test -s /tmp/node-runtime.txt"
   local nodes lines
   nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  lines=$(grep -c . /tmp/node-runtime.txt 2>/dev/null || echo 0)
+  lines=$(grep -c . /tmp/node-runtime.txt 2>/dev/null)
   lines="${lines//[^0-9]/}"; lines="${lines:-0}"
   check_result "노드 수만큼 줄이 있다" \
     "$([[ "$nodes" -gt 0 && "$lines" == "$nodes" ]] && echo 0 || echo 1)" \

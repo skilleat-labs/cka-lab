@@ -191,7 +191,7 @@ q3_grade() {
   check_output "버전 문자열이 있다" "cat /tmp/kubelet-version.txt 2>/dev/null" 'v1\.[0-9]+'
   local nodes lines
   nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  lines=$(grep -c 'v1\.' /tmp/kubelet-version.txt 2>/dev/null || echo 0)
+  lines=$(grep -c 'v1\.' /tmp/kubelet-version.txt 2>/dev/null)
   lines="${lines//[^0-9]/}"; lines="${lines:-0}"
   check_result "노드 수만큼 버전이 적혀 있다" \
     "$([[ "$nodes" -gt 0 && "$lines" -ge "$nodes" ]] && echo 0 || echo 1)" \
