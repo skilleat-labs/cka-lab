@@ -4,7 +4,7 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 특강 실습 — 노드 운영 (drain/uncordon · etcd 백업 · 업그레이드 확인)"
-EXAM_NQ=3
+EXAM_NQ=4
 
 # 작업 대상 워커. 다른 이름이면 TARGET_NODE 로 바꿔 쓴다.
 TARGET_NODE="${TARGET_NODE:-worker1}"
@@ -13,6 +13,9 @@ exam_cleanup() {
   kubectl uncordon "$TARGET_NODE" &>/dev/null || true
   kdel deployment drain-demo -n default
   rm -f /tmp/etcd-snapshot.db /tmp/etcd-status.txt /tmp/upgrade-plan.txt /tmp/kubelet-version.txt
+  # Q4 에서 만든 static pod — 매니페스트를 치우면 kubelet 이 파드를 거둬간다
+  ( rm -f /etc/kubernetes/manifests/static-web.yaml 2>/dev/null \
+    || sudo -n rm -f /etc/kubernetes/manifests/static-web.yaml 2>/dev/null ) || true
   echo "  $TARGET_NODE uncordon · drain-demo 및 /tmp 답안 파일 삭제"
 }
 exam_setup() {
@@ -204,6 +207,94 @@ kubectl get nodes -o custom-columns='NAME:.metadata.name,KUBELET:.status.nodeInf
   --no-headers > /tmp/kubelet-version.txt
 
 # upgrade plan 은 읽기만 한다 — 실제로 바꾸는 것은 upgrade apply 다.
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q4_title() { echo "Create a static Pod"; }
+q4_text() { cat <<'EOF'
+The control plane components run as static Pods. Make one yourself to see
+how they work.
+
+On the control plane node, create a static Pod:
+
+  name        static-web
+  image       nginx:1.24
+  namespace   default
+
+Put it where the kubelet looks for static Pod manifests
+(/etc/kubernetes/manifests). Do NOT use kubectl to create it.
+
+Note what the Pod is called once it appears — the node name is appended.
+
+Verify:
+  kubectl get pods -o wide | grep static-web
+  kubectl delete pod static-web-<node>     # it comes back within seconds
+EOF
+}
+q4_title_ko() { echo "static pod 만들어 보기"; }
+q4_text_ko() { cat <<'EOF'
+컨트롤플레인 구성 요소가 static pod 로 돈다. 직접 하나 만들어 보면
+어떻게 동작하는지 알 수 있다.
+
+컨트롤플레인 노드에서 static pod 를 만든다.
+
+  이름          static-web
+  이미지        nginx:1.24
+  네임스페이스  default
+
+kubelet 이 static pod 매니페스트를 찾는 곳(/etc/kubernetes/manifests)에
+파일을 둔다. kubectl 로 만들지 않는다.
+
+파드가 뜬 뒤 이름이 어떻게 되는지 보라 — 뒤에 노드 이름이 붙는다.
+
+[확인]
+  kubectl get pods -o wide | grep static-web
+  kubectl delete pod static-web-<노드>     # 몇 초 뒤 되살아난다
+EOF
+}
+q4_grade() {
+  local pod; pod=$(kubectl get pods -n default -o name 2>/dev/null | grep static-web | head -1)
+  pod="${pod#pod/}"
+  local owner; owner=$(kubectl get pod "${pod:-none}" -n default -o jsonpath='{.metadata.ownerReferences[0].kind}' 2>/dev/null)
+
+  # 매니페스트 파일 확인. 다만 폴더가 root 전용이라 못 읽을 수 있으므로,
+  # 그럴 때는 '소유자가 Node' 라는 사실로 대신 판정한다 (kubelet 이 파일로 띄웠다는 증거다).
+  local mf=/etc/kubernetes/manifests/static-web.yaml seen=1
+  ( test -f "$mf" || sudo -n test -f "$mf" ) 2>/dev/null && seen=0
+  check_result "매니페스트를 두어 만들었다 (kubectl 로 만든 것이 아니다)" \
+    "$([[ "$seen" == "0" || "$owner" == "Node" ]] && echo 0 || echo 1)" \
+    "$([[ "$seen" == "0" ]] && echo "$mf 확인" || echo "파일도 못 찾고 소유자도 Node 가 아니다")"
+  check_result "static-web 파드가 떠 있다" "$([[ -n "$pod" ]] && echo 0 || echo 1)" "${pod:-찾지 못함}"
+  check_result "이름 뒤에 노드 이름이 붙어 있다" \
+    "$([[ "$pod" =~ ^static-web-.+ ]] && echo 0 || echo 1)" \
+    "실제 이름: ${pod:-없음} (static pod 는 이름 뒤에 노드 이름이 붙는다)"
+  check_output "이미지가 nginx:1.24" \
+    "kubectl get pod ${pod:-none} -n default -o jsonpath='{.spec.containers[0].image}' 2>/dev/null" '^nginx:1\.24$'
+  # static pod 는 Node 가 소유자다 (API 서버에 보이는 것은 읽기용 복제본)
+  check_output "소유자가 Node 다 — 진짜 static pod" \
+    "kubectl get pod ${pod:-none} -n default -o jsonpath='{.metadata.ownerReferences[0].kind}' 2>/dev/null" '^Node$'
+  wait_ready "${pod:-none}" default
+  check_output "Running 상태" \
+    "kubectl get pod ${pod:-none} -n default -o jsonpath='{.status.phase}' 2>/dev/null" '^Running$'
+}
+q4_hint() { cat <<'EOF'
+# YAML 골격은 dry-run 으로 뽑는다
+kubectl run static-web --image=nginx:1.24 $do > /tmp/sw.yaml
+
+# 그 파일을 kubelet 이 보는 폴더로 옮긴다 (kubectl apply 하지 않는다)
+sudo cp /tmp/sw.yaml /etc/kubernetes/manifests/static-web.yaml
+
+# 몇 초 뒤 뜬다. 이름 뒤에 노드 이름이 붙는다
+kubectl get pods -o wide | grep static-web
+#   static-web-control-plane   1/1   Running
+
+# 지워 보면 되살아난다 — kubelet 이 파일을 다시 읽기 때문이다
+kubectl delete pod static-web-control-plane
+kubectl get pods | grep static-web
+
+# 진짜로 없애려면 파일을 치운다
+sudo rm /etc/kubernetes/manifests/static-web.yaml
 EOF
 }
 
