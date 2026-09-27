@@ -80,7 +80,21 @@ q1_text_ko() { cat <<'EOF'
 EOF
 }
 q1_grade() {
-  check "노드 $TARGET_NODE 가 있다" "kubectl get node $TARGET_NODE"
+  local exists; exists=$(kubectl get node "$TARGET_NODE" -o name 2>/dev/null)
+  local nodes; nodes=$(kubectl get nodes --no-headers -o custom-columns=:metadata.name 2>/dev/null | tr '\n' ' ')
+  check_result "노드 $TARGET_NODE 가 있다" "$([[ -n "$exists" ]] && echo 0 || echo 1)" \
+    "$([[ -n "$exists" ]] || echo "이 클러스터의 노드: ${nodes:-조회 실패} → TARGET_NODE=<이름> bash exam.sh start")"
+
+  # 노드가 없으면 나머지는 판정할 수 없다. 여기서 빠져나가지 않으면
+  # unschedulable 이 빈 값이라 'cordon 아님' 으로 읽혀 엉뚱하게 통과한다.
+  if [[ -z "$exists" ]]; then
+    local why="노드를 찾지 못해 판정할 수 없다"
+    check_result "Ready 상태다" 1 "$why"
+    check_result "SchedulingDisabled 가 풀려 있다 (uncordon 됨)" 1 "$why"
+    check_result "drain 으로 파드가 실제로 비워졌다" 1 "$why"
+    return
+  fi
+
   check_output "Ready 상태다" \
     "kubectl get node $TARGET_NODE -o jsonpath='{range .status.conditions[?(@.type==\"Ready\")]}{.status}{end}'" '^True$'
   check_result "SchedulingDisabled 가 풀려 있다 (uncordon 됨)" \
