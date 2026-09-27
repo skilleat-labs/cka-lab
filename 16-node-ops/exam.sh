@@ -48,6 +48,7 @@ A worker node needs maintenance. (this cluster: $TARGET_NODE)
   1) mark the node so no new Pods are scheduled on it AND
      evict the Pods already running there
      (ignore DaemonSet-managed Pods, and delete Pods using emptyDir)
+     If a Pod has no controller, drain refuses to evict it — deal with that too.
 
   2) confirm the node shows SchedulingDisabled
 
@@ -66,6 +67,7 @@ q1_text_ko() { cat <<'EOF'
   1) 그 노드에 새 파드가 배치되지 않게 하고,
      이미 돌고 있는 파드도 다른 노드로 옮긴다
      (DaemonSet 파드는 무시하고, emptyDir 을 쓰는 파드는 삭제 허용)
+     컨트롤러가 없는 단독 파드가 있으면 drain 이 거부한다 — 그것도 처리한다
 
   2) 노드가 SchedulingDisabled 로 보이는지 확인한다
 
@@ -89,13 +91,24 @@ q1_grade() {
     "$TARGET_NODE 에 drain-demo 파드가 아직 남아 있다 — cordon 만 하면 파드는 그대로다"
 }
 q1_hint() { cat <<'EOF'
-kubectl drain worker1 --ignore-daemonsets --delete-emptydir-data
-kubectl get nodes                # worker1   Ready,SchedulingDisabled
+kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data
+kubectl get nodes                # <노드>   Ready,SchedulingDisabled
 
-kubectl uncordon worker1
-kubectl get nodes                # worker1   Ready
+# "cannot delete Pods that declare no controller" 가 나오면
+#   Deployment 나 ReplicaSet 없이 혼자 뜬 파드가 있다는 뜻이다.
+#   drain 은 그런 파드를 함부로 지우지 않는다 — 옮겨 줄 컨트롤러가 없으니
+#   지우면 그대로 사라지기 때문이다. 알고도 진행하려면 --force 를 붙인다.
+kubectl drain <노드> --ignore-daemonsets --delete-emptydir-data --force
+
+#   어떤 파드가 걸렸는지 먼저 보고 싶으면
+kubectl get pods -A --field-selector spec.nodeName=<노드> -o wide
+
+kubectl uncordon <노드>
+kubectl get nodes                # <노드>   Ready
 
 # drain 은 cordon + 파드 퇴거를 한 번에 한다.
+# 중간에 실패해도 cordon 은 이미 걸려 있다 — SchedulingDisabled 인데 파드는
+# 그대로인 상태가 그것이다. 원인을 고치고 drain 을 다시 치면 된다.
 # 이 명령은 kubectl 이므로 노드 안이 아니라 밖(control-plane)에서 친다.
 EOF
 }
