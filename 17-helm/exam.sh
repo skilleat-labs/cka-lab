@@ -292,11 +292,13 @@ helm repo update
 
 helm template argocd argo/argo-cd \
   --namespace argocd \
-  --skip-crds > /tmp/argocd.yaml
+  --skip-crds \
+  --set crds.install=false > /tmp/argocd.yaml
 
 # template 은 클러스터에 아무것도 만들지 않는다. 결과를 화면(또는 파일)로 뱉을 뿐이다.
-# --skip-crds 를 빼면 CustomResourceDefinition 이 함께 나온다.
-# 특정 버전이 필요하면  --version 8.8.3  처럼 붙인다.
+# --skip-crds 는 차트의 crds/ 폴더만 뺀다. argo-cd 차트는 CRD 를 templates/ 안에 두기 때문에
+# 차트가 제공하는 값(crds.install=false)으로 꺼야 한다 → helm show values 로 crds 키를 찾아본다.
+# 특정 버전이 필요하면  --version <버전>  을 붙인다 (helm search repo argo/argo-cd --versions).
 EOF
 }
 
