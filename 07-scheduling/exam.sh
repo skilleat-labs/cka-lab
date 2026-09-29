@@ -4,9 +4,13 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 3강 실습 — 스케줄링 (Requests/Limits · Affinity · Taint · HPA)"
-EXAM_NQ=4
+EXAM_NQ=5
 
 exam_cleanup() {
+  kdel deployment web-logger -n priority
+  kdel namespace priority
+  kdel priorityclass high-priority-apps
+  kdel priorityclass medium-priority
   kdel pod resource-pod ssd-pod gpu-pod -n default
   kdel deployment nginx-hpa -n default
   kdel hpa nginx-hpa -n default
@@ -15,6 +19,10 @@ exam_cleanup() {
   echo "  resource-pod / ssd-pod / gpu-pod / nginx-hpa 삭제, 노드 레이블·taint 원복"
 }
 exam_setup() {
+  kubectl create namespace priority &>/dev/null
+  kubectl create priorityclass medium-priority --value=500 --description="기준값" &>/dev/null
+  kubectl -n priority create deployment web-logger --image=nginx:1.24 --replicas=2 &>/dev/null
+  echo "  priority 네임스페이스에 web-logger · 기준 PriorityClass medium-priority(500) 준비"
   kubectl label node worker-1 disktype=ssd --overwrite &>/dev/null || true
   kubectl taint node worker-2 dedicated=gpu:NoSchedule --overwrite &>/dev/null || true
   echo "  worker-1 에 disktype=ssd 레이블, worker-2 에 dedicated=gpu:NoSchedule taint 를 걸었다"
@@ -244,6 +252,76 @@ kubectl autoscale deployment nginx-hpa --min=2 --max=10 --cpu-percent=50
 
 # 확인 (metrics-server 가 없으면 TARGETS 가 <unknown> 으로 나오지만 채점에는 문제없다)
 kubectl get hpa nginx-hpa
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "PriorityClass and preemption"; }
+q5_text() { cat <<'EOF'
+A PriorityClass named medium-priority already exists in the cluster.
+A Deployment named web-logger runs in the priority namespace.
+
+  1) create a PriorityClass named high-priority-apps
+     its value must be LOWER than medium-priority
+
+  2) make the existing Deployment web-logger use it
+     (do not delete and recreate the Deployment)
+
+Verify:
+  kubectl get priorityclass
+  kubectl -n priority get deployment web-logger     -o jsonpath='{.spec.template.spec.priorityClassName}'
+EOF
+}
+q5_title_ko() { echo "PriorityClass 와 우선순위"; }
+q5_text_ko() { cat <<'EOF'
+클러스터에 medium-priority 라는 PriorityClass 가 이미 있다.
+priority 네임스페이스에는 web-logger Deployment 가 돌고 있다.
+
+  1) high-priority-apps 라는 PriorityClass 를 만든다
+     값은 medium-priority 보다 **낮아야** 한다
+
+  2) 기존 web-logger Deployment 가 그것을 쓰도록 한다
+     (지우고 다시 만들지 않는다)
+
+[확인]
+  kubectl get priorityclass
+  kubectl -n priority get deployment web-logger     -o jsonpath='{.spec.template.spec.priorityClassName}'
+EOF
+}
+q5_grade() {
+  check "PriorityClass high-priority-apps 존재" "kubectl get priorityclass high-priority-apps"
+  local hv mv
+  hv=$(kubectl get priorityclass high-priority-apps -o jsonpath='{.value}' 2>/dev/null); hv="${hv//[^0-9-]/}"
+  mv=$(kubectl get priorityclass medium-priority   -o jsonpath='{.value}' 2>/dev/null); mv="${mv//[^0-9-]/}"
+  check_result "medium-priority 보다 값이 낮다" \
+    "$([[ -n "$hv" && -n "$mv" && "$hv" -lt "$mv" ]] && echo 0 || echo 1)" \
+    "high-priority-apps=${hv:-없음} / medium-priority=${mv:-없음}"
+  check_output "web-logger 가 그 클래스를 쓴다" \
+    "kubectl -n priority get deployment web-logger -o jsonpath='{.spec.template.spec.priorityClassName}'" '^high-priority-apps$'
+  # 지우고 다시 만들지 않았는지 — 재생성했다면 revision 이 1 이다
+  local rev; rev=$(kubectl -n priority get deployment web-logger -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null)
+  rev="${rev//[^0-9]/}"; rev="${rev:-0}"
+  check_result "기존 Deployment 를 고쳤다 (지우고 다시 만들지 않음)" \
+    "$([[ "$rev" -ge 2 ]] && echo 0 || echo 1)" \
+    "revision=${rev} — 새로 만들면 1 이 된다"
+  wait_ready "-l app=web-logger" priority
+  check_output "파드가 Ready" \
+    "kubectl -n priority get deployment web-logger -o jsonpath='{.status.readyReplicas}'" '^2$'
+}
+q5_hint() { cat <<'EOF'
+# 기존 값을 먼저 본다 — "보다 낮게" 가 조건이다
+kubectl get priorityclass
+#   medium-priority   500
+
+kubectl create priorityclass high-priority-apps --value=100 \
+  --description="medium 보다 낮은 우선순위"
+
+# 붙이는 자리가 spec 바로 아래가 아니라 spec.template.spec 이다 (파드 속성이므로)
+kubectl -n priority patch deployment web-logger -p \
+  '{"spec":{"template":{"spec":{"priorityClassName":"high-priority-apps"}}}}'
+
+# edit 로 해도 된다 — template.spec 아래에 priorityClassName 한 줄
+kubectl -n priority edit deployment web-logger
 EOF
 }
 

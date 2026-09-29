@@ -4,9 +4,10 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 7강 실습 — 클러스터 구축 · 노드 조인"
-EXAM_NQ=2
+EXAM_NQ=3
 
 exam_cleanup() {
+  rm -f /tmp/cni.txt /tmp/cni-install.sh
   echo "  (노드는 자동으로 제거하지 않는다 — 다시 조인 연습을 하려면"
   echo "   control-plane 에서 kubectl delete node worker-2,"
   echo "   worker-2 에서 sudo kubeadm reset -f 를 직접 실행한다)"
@@ -104,6 +105,80 @@ sudo crictl logs <컨테이너ID> > /tmp/coredns.log 2>&1
 
 # 한 줄로
 sudo crictl logs "$(sudo crictl ps -q --name coredns | head -1)" > /tmp/coredns.log 2>&1
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q3_title() { echo "Identify the CNI and write the install command"; }
+q3_text() { cat <<'EOF'
+After kubeadm init the nodes stay NotReady until a CNI plugin is installed.
+
+  1) find which CNI plugin this cluster uses and write its name
+     to /tmp/cni.txt  (one word, lowercase — e.g. calico / cilium / flannel)
+
+  2) write to /tmp/cni-install.sh the command that installs a CNI
+     on a fresh cluster. It must be a single kubectl or helm command
+     and must reference a manifest URL or a chart.
+
+Do NOT run the install command — the cluster already has a CNI.
+
+Verify:
+  cat /tmp/cni.txt
+  cat /tmp/cni-install.sh
+EOF
+}
+q3_title_ko() { echo "CNI 확인하고 설치 명령 적기"; }
+q3_text_ko() { cat <<'EOF'
+kubeadm init 만 하면 노드는 NotReady 다. CNI 를 깔아야 Ready 가 된다.
+
+  1) 이 클러스터가 어떤 CNI 를 쓰는지 알아내어 이름을 /tmp/cni.txt 에
+     적는다 (소문자 한 단어 — 예: calico / cilium / flannel)
+
+  2) 새 클러스터에 CNI 를 설치하는 명령을 /tmp/cni-install.sh 에 적는다
+     kubectl 또는 helm 한 줄이어야 하고, 매니페스트 URL 이나 차트를
+     가리켜야 한다.
+
+설치 명령을 실행하지는 않는다 — 이 클러스터에는 이미 CNI 가 있다.
+
+[확인]
+  cat /tmp/cni.txt
+  cat /tmp/cni-install.sh
+EOF
+}
+q3_grade() {
+  check "/tmp/cni.txt 가 있다" "test -s /tmp/cni.txt"
+  # 실제로 돌고 있는 CNI 를 찾아 대조한다
+  local actual
+  actual=$(kubectl -n kube-system get pods -o name 2>/dev/null \
+    | grep -oiE 'cilium|calico|flannel|weave|canal' | head -1 | tr 'A-Z' 'a-z')
+  local wrote; wrote=$(tr 'A-Z' 'a-z' < /tmp/cni.txt 2>/dev/null | tr -d ' \n')
+  check_result "이 클러스터의 CNI 이름이 맞다" \
+    "$([[ -n "$actual" && "$wrote" == *"$actual"* ]] && echo 0 || echo 1)" \
+    "실제: ${actual:-찾지 못함} / 적어낸 값: ${wrote:-비어 있음}"
+  check "/tmp/cni-install.sh 가 있다" "test -s /tmp/cni-install.sh"
+  check_output "kubectl apply 또는 helm install 이다" \
+    "cat /tmp/cni-install.sh 2>/dev/null" 'kubectl apply|helm (install|upgrade)|cilium install'
+  check_output "매니페스트 URL 이나 차트를 가리킨다" \
+    "cat /tmp/cni-install.sh 2>/dev/null" 'https?://|[a-z-]+/[a-z-]+'
+}
+q3_hint() { cat <<'EOF'
+# 어떤 CNI 가 도는지는 kube-system 파드를 보면 안다
+kubectl -n kube-system get pods
+#   cilium-xxxxx · cilium-operator-...   → cilium
+#   calico-node-xxxxx                    → calico
+
+# 노드의 CNI 설정 파일로도 확인된다
+ls /etc/cni/net.d/
+
+echo cilium > /tmp/cni.txt
+
+# 설치 명령 예시 (실행하지 않는다 — 파일로만)
+cat > /tmp/cni-install.sh <<'SH'
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
+SH
+
+# 시험에서는 "노드가 NotReady 다" 로 나오는 경우가 많다.
+# describe node 의 Conditions 에 network plugin is not ready 가 보이면 CNI 가 없는 것이다.
 EOF
 }
 
