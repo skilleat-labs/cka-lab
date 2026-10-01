@@ -1,0 +1,145 @@
+================================================================
+  CKA Final Test — 출제 주제 5유형 30분 점검
+  6문항 · 100점 · 제한시간 30분
+================================================================
+
+  실행 :  bash exam.sh start      (한 문제씩 출제 · check 로 바로 채점)
+  채점 :  bash exam.sh check
+  현황 :  bash exam.sh status
+  정리 :  bash exam.sh clean
+
+  2026 합격 후기에서 확인된 13개 주제를 5개 유형으로 묶었다.
+    유형① 워크로드 고치기   PriorityClass · HPA · 사이드카
+    유형② 트래픽 열고 막기   NodePort · NetworkPolicy · Gateway
+    유형③ 스토리지 붙이기   StorageClass · PV/PVC
+    유형④ 클러스터 운영     Helm · etcd · 패키지 설치 · CNI
+    유형⑤ 조회해서 파일로   Pod 목록 저장
+
+  문제마다 네임스페이스가 따로라 순서를 바꿔 풀어도 된다.
+  30분이 지나면 남은 문제는 0점으로 마감된다. 문제당 5분.
+
+
+----------------------------------------------------------------
+ Q1. [유형① 워크로드] 스케일 다운 안정화가 있는 HPA [15점]
+----------------------------------------------------------------
+
+  scaling 네임스페이스의 Deployment api-server 가 CPU 기준으로 늘고 줄어야 한다.
+
+    (a) HPA 가 사용률을 계산할 수 있도록 컨테이너에 CPU request 100m 을 준다.
+        Deployment 를 지우지 않는다.
+
+    (b) HorizontalPodAutoscaler (autoscaling/v2) api-server 를 만든다
+          대상                  Deployment api-server
+          최소 / 최대           2 / 6
+          CPU 사용률            60 %
+          스케일 다운           stabilizationWindowSeconds 45
+
+  [확인]
+    kubectl -n scaling get hpa api-server
+    kubectl -n scaling get hpa api-server -o yaml | grep -A3 behavior
+
+
+----------------------------------------------------------------
+ Q2. [유형② 트래픽] nodePort 를 지정한 Service [15점]
+----------------------------------------------------------------
+
+  storefront 네임스페이스의 Deployment catalog 는 컨테이너 포트 8080 에서 응답한다.
+
+  Service catalog-svc 를 만든다
+    타입          NodePort
+    port          80        (Service 가 받는 포트)
+    targetPort    8080      (컨테이너 포트)
+    nodePort      30180
+
+  storefront/client 파드에서 http://catalog-svc 로 "catalog-ok" 가 와야 한다.
+
+  [확인]
+    kubectl -n storefront get svc catalog-svc
+    kubectl -n storefront get endpoints catalog-svc
+    kubectl -n storefront exec client -- wget -qO- -T 3 http://catalog-svc
+
+
+----------------------------------------------------------------
+ Q3. [유형② 트래픽] DNS 를 살린 Egress 정책 [20점]
+----------------------------------------------------------------
+
+  vault 네임스페이스의 worker 파드(레이블 app=worker)는 db 하고만 통신해야 한다.
+
+  NetworkPolicy worker-egress 를 만든다
+    - 대상: app=worker 파드
+    - EGRESS 만 제한한다 (Ingress 는 건드리지 않는다)
+    - app=db 파드로 가는 TCP 80 허용
+    - DNS(UDP 53 · TCP 53) 허용 — worker 가 Service 이름을 풀 수 있어야 한다
+
+  기대 결과:
+    worker → http://db.vault    통과   (이름으로)
+    worker → http://web.vault   차단
+
+  [확인]
+    kubectl -n vault exec worker -- nslookup db.vault.svc.cluster.local
+    kubectl -n vault exec worker -- wget -qO- -T 3 http://db.vault
+    kubectl -n vault exec worker -- wget -qO- -T 3 http://web.vault
+
+
+----------------------------------------------------------------
+ Q4. [유형③ 스토리지] Pending PVC 에 맞는 PV 와 Pod [20점]
+----------------------------------------------------------------
+
+  records 네임스페이스의 PVC archive-claim 이 Pending 이다.
+  PVC 는 고치거나 다시 만들지 않는다.
+
+    (a) 이 PVC 가 붙을 PersistentVolume pv-archive 를 만든다
+          용량        1Gi
+          hostPath    /mnt/archive   (type: DirectoryOrCreate)
+        그 밖에 맞춰야 할 값은 PVC 를 읽어서 찾는다.
+
+    (b) records 에 Pod archive-reader 를 만든다
+          이미지      busybox:1.36
+          명령        sh -c 'sleep 3600'
+          마운트      PVC archive-claim 을 /data 에
+
+  PVC 가 pv-archive 에 Bound 이고 Pod 가 Running 이어야 한다.
+
+  [확인]
+    kubectl get pv pv-archive
+    kubectl -n records get pvc archive-claim
+    kubectl -n records exec archive-reader -- touch /data/ok
+
+
+----------------------------------------------------------------
+ Q5. [유형④ 클러스터 운영] etcd 스냅샷 저장 [15점]
+----------------------------------------------------------------
+
+  컨트롤 플레인 노드에서 실행 중인 etcd 의 스냅샷을 아래 경로에 저장한다.
+
+    /tmp/finaltest/etcd.db
+
+    endpoint   https://127.0.0.1:2379
+    CA 인증서  /etc/kubernetes/pki/etcd/ca.crt
+    인증서     /etc/kubernetes/pki/etcd/server.crt
+    키         /etc/kubernetes/pki/etcd/server.key
+
+  복원은 하지 않는다. 클러스터를 건드리지 않는 것도 문제의 일부다.
+
+  [확인]
+    sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/finaltest/etcd.db -w table
+
+
+----------------------------------------------------------------
+ Q6. [유형⑤ 조회] 조건에 맞는 파드 목록을 파일로 [15점]
+----------------------------------------------------------------
+
+  fleet 네임스페이스의 파드를 대상으로 한다.
+
+    (a) 레이블 tier=web 인 파드의 이름을
+        /tmp/finaltest/web-pods.txt 에 저장한다
+
+    (b) phase 가 Running 이 아닌 파드의 이름을
+        /tmp/finaltest/not-running.txt 에 저장한다
+
+  두 파일 모두: 한 줄에 파드 이름 하나, 이름순,
+  헤더 없이, "pod/" 접두사 없이, 다른 내용 없이.
+
+  [확인]
+    cat /tmp/finaltest/web-pods.txt
+    cat /tmp/finaltest/not-running.txt
