@@ -16,6 +16,7 @@
 | `tutoring/session-3` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
 | `tutoring/session-4` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
 | `03-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
+| `04-pods` | 강의 실습 | 7 | 36 | Pod · logs/exec · ReplicaSet · 라벨/셀렉터 · Deployment 업데이트/롤백 |
 | `05-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
 | `09-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
 | `10-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
@@ -99,6 +100,20 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 |------|------|
 | P1 | worker-2(192.168.56.12) 노드를 클러스터에 join |
 | P2 | control-plane 에서 `crictl` 로 컨테이너 확인 및 로그 출력 |
+
+## 04-pods — 파드 · ReplicaSet · Deployment (36항목)
+
+| 문제 | 내용 |
+|------|------|
+| Q1 | 라벨 두 개를 붙인 파드 `web` 생성 (Deployment 소속이면 오답) |
+| Q2 | 파드 IP · 노드 · `nginx -v`(stderr) · 로그 속 접속 코드를 파일로 |
+| Q3 | 이미지 오타(`ngnix`)로 못 뜨는 파드 고치기 |
+| Q4 | ReplicaSet `web-rs` 를 YAML 로 만들고 5개로 scale |
+| Q5 | 라벨을 바꿔 파드 하나를 ReplicaSet 에서 떼어 내기 — RS 는 다시 3개 |
+| Q6 | Deployment `shop` 생성 → nginx:1.28 롤링 업데이트, 옛 RS 0개 |
+| Q7 | 없는 태그로 멈춘 롤아웃 — 잘못된 이미지 기록 후 `rollout undo` |
+
+**특징**: 모든 리소스를 `pod-lab` 네임스페이스에 둔다. Q2 접속 코드는 시작할 때마다 바뀐다. Q7 은 revision 이 3 이상인지로 "지우고 다시 만들기"를 오답 처리한다.
 
 ## 05-networking — 서비스와 네트워킹 (27항목)
 
