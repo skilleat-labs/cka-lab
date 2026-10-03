@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 5강 실습 초기화 스크립트
+# CKA 8강 실습 초기화 스크립트
 # 사용법: bash exam-start.sh [--hints]
 set -euo pipefail
 
@@ -9,7 +9,7 @@ for arg in "$@"; do
 done
 
 echo "=========================================="
-echo "  CKA 5강 실습: 스토리지 — 데이터를 영속하라"
+echo "  CKA 8강 실습: 스토리지 — 데이터를 영속하라"
 echo "=========================================="
 echo ""
 echo "[CLEANUP] 이전 실습 리소스 정리 중..."

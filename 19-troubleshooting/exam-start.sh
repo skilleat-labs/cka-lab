@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# CKA 11강 실습 초기화
+# CKA 19강 실습 초기화
 set -euo pipefail
 HINTS=false
 for arg in "$@"; do [[ "$arg" == "--hints" ]] && HINTS=true; done
 
 echo "================================================="
-echo " CKA 11강 실습: 트러블슈팅"
+echo " CKA 19강 실습: 트러블슈팅"
 echo "================================================="
 
 # 기존 리소스 정리

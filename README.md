@@ -40,10 +40,10 @@ bash exam.sh lang ko      # 한글 지문 (웹 패널은 오른쪽 위 EN/KO 버
 bash setup-shell.sh       # ~/.bashrc 에 한 줄 추가 — 웹 패널 터미널은 자동 적용
 ```
 
-### 한 문제씩 풀기 (`exam.sh` — 19개 세트 전부)
+### 한 문제씩 풀기 (`exam.sh` — 모든 세트)
 
 ```bash
-cd session-1-check
+cd 03-architecture
 bash exam.sh start      # 환경 준비 + 1번 문제
 bash exam.sh check      # 채점 → 만점이면 자동으로 다음 문제
 bash exam.sh status     # 진행 현황 (점수·소요 시간)
@@ -61,7 +61,7 @@ bash exam.sh status     # 진행 현황 (점수·소요 시간)
 모든 폴더가 동일한 방식입니다.
 
 ```bash
-cd session-1-check
+cd tutoring/session-1-check
 
 bash exam-start.sh            # ① 환경 초기화 + 문제 출력
 bash exam-start.sh --hints    # 힌트까지 함께 보고 싶을 때
@@ -80,28 +80,49 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 
 > 각 폴더에 어떤 문제가 들어 있는지 자세한 내용은 [PROBLEMS.md](PROBLEMS.md) 참고.
 
-| 폴더 | 주제 | 핵심 |
-|------|------|------|
-| `session-1-check` | 1세션 점검 | kubectl run / label / create deployment / scale / expose |
-| `session-2` | 2세션 시험 | 네임스페이스 지정 / NodePort / ConfigMap / 롤아웃·롤백 |
-| `session-3` | 3세션 시험 | Deployment+Service / StorageClass·PVC / Gateway API |
-| `session-4` | 4세션 시험 | PVC를 Deployment YAML에서 바로 연결 / Requests·Limits / Probe |
-| `13-cluster-setup` | 클러스터 구축 | kubeadm join, crictl |
-| `06-workloads` | 워크로드 | Deployment, ConfigMap, CronJob, DaemonSet |
-| `07-scheduling` | 스케줄링 | Requests/Limits, Affinity, Taint/Toleration |
-| `08-storage` | 스토리지 | PV, PVC, StorageClass |
-| `09-networking` | 서비스·네트워킹 | ClusterIP, NodePort, NetworkPolicy, DNS |
-| `11-ingress` | 외부 트래픽 | Ingress |
-| `14-rbac` | 권한과 인증 | Role, RoleBinding, ServiceAccount |
-| `15-maintenance` | 유지보수 | drain/cordon, 업그레이드, etcd 백업 |
-| `17-helm` | 패키징 | Helm |
-| `19-troubleshooting` | 트러블슈팅 | 파드/노드/컨트롤플레인 장애 진단 |
-| `mock-1` ~ `mock-3` | 모의고사 | 전 범위 통합 |
-| `mock-1-1` | 모의고사 변형 | mock-1 과 같은 유형, 다른 값 — 암기 답안 판별용 |
-| `mock-2-2` | 30분 속도 점검 | 기초~중급 6문항 100점 — 문제별 소요 시간 확인용 |
-| `mock-4` | 2026 출제 주제 20분 점검 | PriorityClass · Helm template · 네이티브 사이드카 · NetworkPolicy · 기본 StorageClass — 5문항 100점, 제한 20분 |
+**폴더 앞 번호 = 강의 번호입니다.** 7강을 봤다면 `07-scheduling` 을 풉니다. 번호가 비는 강의(1·2·4·5·12·18강)는 실습 세트가 없고, 20강(모의고사)은 `mock-*` 을 풉니다.
 
-> 폴더 번호는 실습 세트 번호이며 강의 회차와 일대일로 맞지 않습니다. 담당 강사의 안내를 따르세요.
+### 강의별 실습
+
+| 폴더 | 강의 | 핵심 |
+|------|------|------|
+| `03-architecture` | 3강 아키텍처 | 컨트롤플레인 구성, etcd 연결, 노드 구성, 선언적 모델 |
+| `06-workloads` | 6강 워크로드 | Deployment 롤백, ConfigMap, CronJob, DaemonSet, 네이티브 사이드카 |
+| `07-scheduling` | 7강 스케줄링 | Requests/Limits, Affinity, Taint/Toleration, HPA, PriorityClass |
+| `08-storage` | 8강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |
+| `09-networking` | 9강 서비스와 내부 통신 | ClusterIP, NodePort, NetworkPolicy, DNS |
+| `10-networkpolicy` | 10강 NetworkPolicy | 기본 거부, 선택 허용, 네임스페이스 허용, Egress |
+| `11-ingress` | 11강 Ingress | 경로·호스트 라우팅, TLS, 네임스페이스 격리 |
+| `13-cluster-setup` | 13강 클러스터 구축 | kubeadm join, crictl, CNI |
+| `14-rbac` | 14강 RBAC | ServiceAccount, Role, ClusterRole, 권한 검증 |
+| `15-maintenance` | 15강 유지보수 | drain/cordon, etcd 백업, 업그레이드 계획, 인증서 |
+| `16-node-ops` | 16강 노드 운영 | drain/uncordon, etcd 백업, 업그레이드 확인, static pod |
+| `17-helm` | 17강 Helm과 Kustomize | install/upgrade/rollback, Kustomize, helm template |
+| `19-troubleshooting` | 19강 트러블슈팅 | CrashLoopBackOff, ImagePull, Endpoints, 노드 |
+
+### 모의고사 (20강)
+
+| 폴더 | 내용 | 시간 |
+|------|------|------|
+| `mock-1` | 기초 워크로드 | 40분 |
+| `mock-2` | mock-1 과 같은 유형, 다른 값 — 외운 답인지 확인용 | 40분 |
+| `mock-3` | 기초~중급 6문항 속도 점검 | 30분 |
+| `mock-4` | 스케줄링 · 네트워킹 · 운영 | 45분 |
+| `mock-5` | 자동화 · 권한 · 트러블슈팅 | 50분 |
+| `mock-6` | 2026 출제 주제 — PriorityClass · Helm template · 사이드카 · NetworkPolicy · 기본 StorageClass | 20분 |
+| `finaltest` | 출제 주제 13선 나머지 — HPA 안정화 · nodePort · Egress·DNS · Pending PVC · etcd 스냅샷 · 파드 목록 파일 | 30분 |
+
+### 1:1 과외 전용 (`tutoring/`)
+
+| 폴더 | 내용 |
+|------|------|
+| `tutoring/session-1-check` | 1세션 점검 — kubectl run / label / create deployment / scale / expose |
+| `tutoring/session-2` | 2세션 시험 — 네임스페이스 / NodePort / ConfigMap / 롤아웃·롤백 |
+| `tutoring/session-3` | 3세션 시험 — Deployment+Service / StorageClass·PVC / Gateway API |
+| `tutoring/session-4` | 4세션 시험 — PVC 를 Deployment YAML 에서 연결 / Requests·Limits / Probe |
+
+> **2026-09-30 번호 개편:** 모의고사 이름이 바뀌었습니다. 옛 이름 → 새 이름: `mock-1-1` → `mock-2`, `mock-2-2` → `mock-3`, `mock-2` → `mock-4`, `mock-3` → `mock-5`, `mock-4` → `mock-6`. `session-*` 은 `tutoring/` 안으로 옮겼습니다.
+> 옛 폴더에서 풀던 기록이 있다면 `bash clean-all.sh` 로 한 번 정리하고 다시 시작하세요.
 
 ## 개념 문서
 

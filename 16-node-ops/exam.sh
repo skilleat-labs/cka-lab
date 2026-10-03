@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 특강 실습 — 노드 안에서 푸는 문제 3종 (순차 진행형)
+# CKA 16강 실습 — 노드 안에서 푸는 문제 3종 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 특강 실습 — 노드 운영 (drain/uncordon · etcd 백업 · 업그레이드 확인)"
+EXAM_TITLE="CKA 16강 실습 — 노드 운영 (drain/uncordon · etcd 백업 · 업그레이드 확인)"
 EXAM_NQ=4
 
 # 작업 대상 워커. 노드 이름은 클러스터마다 다르므로(worker1 · worker-1 · node01 …)

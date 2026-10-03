@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 3강 실습 초기화 스크립트
+# CKA 6강 실습 초기화 스크립트
 # 사용법: bash exam-start.sh [--hints]
 set -euo pipefail
 
@@ -10,7 +10,7 @@ WORK_DIR="$(cd "$(dirname "$0")" && pwd)/work"
 mkdir -p "$WORK_DIR"
 
 echo "================================================="
-echo " CKA 3강 실습: 워크로드 배포와 관리"
+echo " CKA 6강 실습: 워크로드 배포와 관리"
 echo "================================================="
 echo ""
 

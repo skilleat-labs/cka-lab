@@ -11,10 +11,10 @@
 
 | 폴더 | 성격 | 문제 수 | 채점 항목 | 주제 |
 |------|------|--------|----------|------|
-| `session-1-check` | 세션 점검 | 3 | 24 | Pod · Deployment · Service(ClusterIP) |
-| `session-2` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
-| `session-3` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
-| `session-4` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
+| `tutoring/session-1-check` | 세션 점검 | 3 | 24 | Pod · Deployment · Service(ClusterIP) |
+| `tutoring/session-2` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
+| `tutoring/session-3` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
+| `tutoring/session-4` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
 | `13-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
 | `06-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
 | `07-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
@@ -26,10 +26,10 @@
 | `17-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
 | `19-troubleshooting` | 강의 실습 | 4 | 19 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
 | `mock-1` | 모의고사 | 7 | 100점 | 전 범위 (목표 40분) |
-| `mock-1-1` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
-| `mock-2-2` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
-| `mock-2` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
-| `mock-3` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
+| `mock-2` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
+| `mock-3` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
+| `mock-4` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
+| `mock-5` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
 
 > 채점 항목 수는 `exam.sh` 가 검사하는 개별 체크 개수다. 모의고사만 100점 배점제를 쓴다.
 > 강의 실습 10개는 2026-09-22 에 `exam.sh` 순차 진행형으로 전환하면서 채점을 더 촘촘하게 고쳤다
@@ -37,7 +37,7 @@
 
 ---
 
-## session-1-check — 1세션 점검 (24항목)
+## tutoring/session-1-check — 1세션 점검 (24항목)
 
 명령어(imperative)만으로 기본 리소스 3종을 만들 수 있는지 확인한다.
 
@@ -49,7 +49,7 @@
 
 **특징**: `run=web-pod` 기본 레이블로 명령어 생성 여부를 판정한다. 마지막에 임시 파드를 띄워 `wget` 으로 실제 통신을 검증한다.
 
-## session-2 — 2세션 시험 (30항목)
+## tutoring/session-2 — 2세션 시험 (30항목)
 
 네임스페이스를 지정해 만들 수 있는지, 설정 주입과 롤아웃을 다룰 수 있는지 본다.
 
@@ -63,7 +63,7 @@
 
 ---
 
-## session-3 — 3세션 시험 (32항목)
+## tutoring/session-3 — 3세션 시험 (32항목)
 
 환경(네임스페이스 · StorageClass · PV · Gateway API 컨트롤러)은 `exam-start.sh` 가 전부 준비한다.
 
@@ -79,7 +79,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 ---
 
-## session-4 — 4세션 시험 (33항목)
+## tutoring/session-4 — 4세션 시험 (33항목)
 
 환경(네임스페이스 · StorageClass · PV · Q2용 Deployment)은 `exam-start.sh` 가 준비한다. 외부 설치가 없어 오프라인에서도 동작한다.
 
@@ -197,7 +197,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q6 | 노드 drain | Architecture | 10 |
 | Q7 | Pod 트러블슈팅 | Troubleshooting | 25 |
 
-### mock-1-1 — mock-1 변형판 (목표 40분)
+### mock-2 — mock-1 변형판 (목표 40분)
 
 같은 7유형이지만 `retail` 네임스페이스에서 이름·값·조건이 전부 다르다. mock-1 답을 붙여넣으면 틀린다.
 
@@ -211,7 +211,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q6 | **worker-2** drain / uncordon | Architecture | 10 |
 | Q7 | `web-broken`(`nginz:1.24` 오타) → **nginx:1.24** 로 수정 | Troubleshooting | 25 |
 
-### mock-2-2 — 30분 속도 점검 (목표 30분)
+### mock-3 — 30분 속도 점검 (목표 30분)
 
 예상 출제 15선에서 기초~중급 6개를 골라 `store` 네임스페이스에서 순차 진행. **문제별 소요 시간**이 핵심 데이터.
 
@@ -224,7 +224,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q5 | PV `logs-pv` 직접 생성 → PVC Bound → 파드 마운트 | STORAGE | 20 |
 | Q6 | deny-all + allow-cache-to-catalog — **실제 통신으로 허용/차단 검증** | NET | 20 |
 
-### mock-2 — 목표 45분
+### mock-4 — 목표 45분
 
 | 문제 | 내용 | 도메인 | 배점 |
 |------|------|--------|------|
@@ -236,7 +236,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q6 | etcd 백업 | Architecture | 10 |
 | Q7 | Node NotReady 복구 | Troubleshooting | 10 |
 
-### mock-3 — 목표 50분
+### mock-5 — 목표 50분
 
 | 문제 | 내용 | 도메인 | 배점 |
 |------|------|--------|------|

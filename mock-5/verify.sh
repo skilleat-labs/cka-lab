@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# CKA Mock Exam 3 — 자동 채점 스크립트
+# CKA Mock Exam 5 — 자동 채점 스크립트
 # 실행: bash verify.sh
 # ============================================================
 set -uo pipefail
@@ -46,7 +46,7 @@ check_output() {
 
 echo -e "${BOLD}${BLUE}"
 hr
-echo "  CKA Mock Exam 3 — 채점 결과"
+echo "  CKA Mock Exam 5 — 채점 결과"
 hr
 echo -e "${NC}"
 

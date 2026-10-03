@@ -300,6 +300,55 @@ wait_ready() {
   return $rc
 }
 
+# ── 네임스페이스 삭제 완료 대기 ──────────────────────────────────
+#   cleanup 은 네임스페이스를 --wait=false 로 지운다. 지우는 중(Terminating)인 이름으로
+#   setup 이 같은 네임스페이스를 만들면 API 서버가 거부하고, 그 안의 리소스도 전부 실패한다.
+#   그 뒤 삭제가 끝나면 네임스페이스가 아예 없는 상태로 시험이 시작된다 (finaltest Q3 vault 사례).
+#   그래서 setup 전에 Terminating 이 사라질 때까지 기다린다. EXAM_NS_WAIT 초가 지나면 알리고 넘어간다.
+EXAM_NS_WAIT="${EXAM_NS_WAIT:-120}"
+_terminating_ns() {
+  kubectl get namespaces -o jsonpath='{range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{" "}{end}' 2>/dev/null
+}
+wait_ns_terminated() {
+  local ns waited=0
+  ns=$(_terminating_ns); [[ -z "$ns" ]] && return 0
+  echo -e "  ${DIM}삭제 중인 네임스페이스를 기다립니다: ${ns}${RESET}"
+  while [[ -n "$ns" ]]; do
+    if (( waited >= EXAM_NS_WAIT )); then
+      echo -e "  ${ORANGE}[주의] ${EXAM_NS_WAIT}초가 지나도 삭제 중: ${ns}${RESET}"
+      echo -e "  ${DIM}finalizer 에 걸렸을 수 있다 → kubectl get ns <이름> -o yaml 의 spec.finalizers · status.conditions 확인${RESET}"
+      return 1
+    fi
+    sleep 3; waited=$((waited + 3))
+    ns=$(_terminating_ns)
+  done
+  echo -e "  ${DIM}삭제 완료 (${waited}초)${RESET}"
+}
+
+# ── setup 실패를 드러낸다 ────────────────────────────────────────
+#   세트의 exam_setup 은 `kubectl apply ... &>/dev/null` 로 출력을 버린다. 실패해도 화면에 안 보여서
+#   리소스가 빠진 채 시험이 시작됐다. setup 동안만 kubectl 을 감싸 apply/create 의 실패를 모은다.
+#   AlreadyExists 는 실패로 보지 않는다 (남겨 두는 공용 리소스가 있다).
+SETUP_ERR="$WORK_DIR/.setup-errors"
+setup_guarded() {
+  : > "$SETUP_ERR"
+  kubectl() {
+    case "${1:-}" in
+      apply|create)
+        local e rc; e=$(mktemp)
+        command kubectl "$@" 2>"$e"; rc=$?
+        if (( rc != 0 )); then
+          grep -viE 'already ?exists' "$e" | grep -v '^[[:space:]]*$' >> "$SETUP_ERR"
+        fi
+        cat "$e" >&2; rm -f "$e"
+        return $rc ;;
+      *) command kubectl "$@" ;;
+    esac
+  }
+  exam_setup
+  unset -f kubectl
+}
+
 # ── etcdctl 준비 확인 ────────────────────────────────────────────
 #   kubeadm 클러스터에는 etcd 가 static pod 로만 있고, 호스트에 etcdctl 바이너리가
 #   없는 경우가 많다. 실제 시험 환경에는 깔려 있지만 우리 VM 은 직접 세운 것이라
@@ -451,9 +500,16 @@ cmd_start() {
     echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"; exit 1; }
   echo -e "\n${CYAN}[CLEAN] 이전 시험 리소스를 정리합니다...${RESET}"
   exam_cleanup; wait
+  wait_ns_terminated || true
   echo -e "\n${CYAN}[SETUP] 환경을 준비합니다...${RESET}"
-  exam_setup
-  echo -e "${GREEN}[SETUP] 완료${RESET}"
+  setup_guarded
+  if [[ -s "$SETUP_ERR" ]]; then
+    echo -e "${RED}[SETUP] 일부 리소스를 만들지 못했습니다${RESET} ${DIM}(전체: work/.setup-errors)${RESET}"
+    sort -u "$SETUP_ERR" | head -8 | sed 's/^/    /'
+    echo -e "  ${ORANGE}이대로 풀면 해당 문제의 리소스가 없습니다. 잠시 뒤 ${BOLD}bash exam.sh start${RESET}${ORANGE} 를 다시 실행하세요.${RESET}"
+  else
+    echo -e "${GREEN}[SETUP] 완료${RESET}"
+  fi
   state_set started "$(now)"
   state_set current 1
   state_set q1_start "$(now)"

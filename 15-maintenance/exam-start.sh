@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 9강 실습 초기화 스크립트 — 클러스터 유지보수
+# CKA 15강 실습 초기화 스크립트 — 클러스터 유지보수
 # 사용법: bash exam-start.sh [--hints]
 set -uo pipefail
 
@@ -10,7 +10,7 @@ WORK_DIR="$(cd "$(dirname "$0")" && pwd)/work"
 mkdir -p "$WORK_DIR"
 
 echo "================================================="
-echo " CKA 9강 실습: 클러스터 유지보수"
+echo " CKA 15강 실습: 클러스터 유지보수"
 echo "================================================="
 echo ""
 

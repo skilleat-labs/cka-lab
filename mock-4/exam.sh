@@ -1,594 +1,413 @@
 #!/usr/bin/env bash
-# CKA Mock Exam 4 — 2026 출제 주제 20분 점검 (100점 · 5문항)
+# CKA Mock Exam 4 — 순차 진행형 (100점 배점)
 # 사용법: bash exam.sh start → 풀고 → bash exam.sh check → ...
-#
-# 목적: 2026 합격 후기에서 확인된 13개 주제 중 5개를 20분 안에 푸는지 본다.
-#   Q1 PriorityClass · Q2 Helm template · Q3 네이티브 사이드카 · Q4 NetworkPolicy · Q5 기본 StorageClass
-# 문제마다 네임스페이스가 따로라 순서와 상관없이 풀 수 있다.
 set -uo pipefail
 EXAM_UNIT="점"
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA Mock Exam 4 — 2026 출제 주제 20분 점검 (100점 · 5문항)"
-EXAM_NQ=5
-EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-20}"   # 제한시간(분) — 0 이면 무제한
-
-HELM_OUT=/tmp/mock4-argocd.yaml
+EXAM_TITLE="CKA Mock Exam 4 — 스케줄링·네트워킹·운영 (100점 · 목표 45분)"
+EXAM_NQ=7
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-45}"   # 제한시간(분) — 0 이면 무제한
 
 exam_cleanup() {
-  local ns
-  for ns in analytics edge payments partner warehouse; do
-    kubectl get namespace $ns &>/dev/null && kubectl delete namespace $ns --wait=false &>/dev/null
-  done
-  kdel priorityclass team-high team-mid report-urgent
-  kdel storageclass legacy-std fast-local
-  rm -f "$HELM_OUT"
-  helm uninstall cd -n gitops &>/dev/null || true
-  kdel namespace gitops
-  # 네임스페이스가 다 지워져야 start 가 새로 만들 수 있다
-  for ns in analytics edge payments partner warehouse gitops; do
-    kubectl wait --for=delete namespace/$ns --timeout=90s &>/dev/null || true
-  done
-  echo "  analytics · edge · payments · partner · warehouse 네임스페이스"
-  echo "  PriorityClass team-high · team-mid · report-urgent / StorageClass legacy-std · fast-local / $HELM_OUT 삭제"
+  kubectl delete pod affinity-pod toleration-pod shop-backend api-backend --ignore-not-found --force --grace-period=0 &>/dev/null || true
+  kdel svc shop-svc api-svc mysql-headless
+  kdel networkpolicy deny-all allow-web
+  kdel ingress shop-ingress
+  kdel statefulset mysql-sts
+  kdel pvc -l app=mysql-sts
+  kdel pvc data-mysql-sts-0 data-mysql-sts-1
+  rm -f /tmp/mock2-etcd.db
+  kubectl label node worker-1 disktype- &>/dev/null || true
+  # worker-2 kubelet 복구 (시험 중단 시 NotReady 로 남지 않도록)
+  if kubectl get node worker-2 &>/dev/null; then
+    ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl start kubelet; systemctl enable kubelet' &>/dev/null \
+      && echo "  worker-2 kubelet 복구" || echo "  worker-2 kubelet 은 직접 확인 필요 (ssh 불가)"
+  fi
+  echo "  affinity/toleration 파드 · NetworkPolicy · Ingress · StatefulSet · 백엔드 · etcd 스냅샷 삭제, worker-1 레이블 제거"
 }
 
 exam_setup() {
-  # ── Q1: 기존 PriorityClass 두 개 + 우선순위 없는 Deployment
-  cat <<'YAML' | kubectl apply -f - &>/dev/null
-apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata: { name: team-high }
-value: 10000
-description: "existing — batch owners"
----
-apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata: { name: team-mid }
-value: 5000
-description: "existing — default tier"
----
-apiVersion: v1
-kind: Namespace
-metadata: { name: analytics }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: report-gen, namespace: analytics, labels: { app: report-gen } }
-spec:
-  replicas: 2
-  selector: { matchLabels: { app: report-gen } }
-  template:
-    metadata: { labels: { app: report-gen } }
-    spec:
-      containers:
-        - name: gen
-          image: busybox:1.36
-          command: ["sh", "-c", "sleep 3600"]
-          resources: { requests: { cpu: 10m, memory: 16Mi } }
-YAML
-  echo "  Q1  PriorityClass team-high(10000) · team-mid(5000), analytics/report-gen 배치"
-
-  # ── Q2: 준비할 것 없음 (helm 만 확인)
-  if command -v helm &>/dev/null; then
-    echo "  Q2  helm $(helm version --short 2>/dev/null) 확인"
-  else
-    echo -e "  ${RED}Q2  helm 이 없습니다.${RESET} 먼저 설치하세요:"
-    echo "      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+  # Q1: worker-1 에 disktype=ssd 레이블 (파드가 실제로 배치되도록)
+  kubectl label node worker-1 disktype=ssd --overwrite &>/dev/null && echo "  worker-1 에 disktype=ssd 레이블" || true
+  # Q4: Ingress 백엔드
+  kubectl run shop-backend --image=nginx:1.24 --labels="app=shop" --restart=Never &>/dev/null || true
+  kubectl expose pod shop-backend --name=shop-svc --port=80 &>/dev/null || true
+  kubectl run api-backend --image=nginx:1.24 --labels="app=api" --restart=Never &>/dev/null || true
+  kubectl expose pod api-backend --name=api-svc --port=8080 --target-port=80 &>/dev/null || true
+  echo "  Q4 용 shop-svc(80) / api-svc(8080) 백엔드 생성"
+  # Q7: worker-2 kubelet 정지 시도 (ssh 가능할 때만)
+  if kubectl get node worker-2 &>/dev/null; then
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl stop kubelet' &>/dev/null; then
+      echo "  Q7 용 worker-2 kubelet 정지 → 약 40초 후 NotReady 가 됩니다"
+    else
+      echo "  Q7: worker-2 에 ssh 로 kubelet 을 멈추지 못했습니다."
+      echo "      강사가 worker-2 에서 직접  systemctl stop kubelet  을 실행해 주세요."
+    fi
   fi
-
-  # ── Q3: 로그를 쓰는 앱 (사이드카만 붙이면 된다)
-  cat <<'YAML' | kubectl apply -f - &>/dev/null
-apiVersion: v1
-kind: Namespace
-metadata: { name: edge }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: audit-api, namespace: edge, labels: { app: audit-api } }
-spec:
-  replicas: 1
-  selector: { matchLabels: { app: audit-api } }
-  template:
-    metadata: { labels: { app: audit-api } }
-    spec:
-      containers:
-        - name: api
-          image: busybox:1.36
-          command: ["sh", "-c", "while true; do echo \"$(date) audit event\" >> /var/log/audit/api.log; sleep 3; done"]
-          volumeMounts:
-            - name: audit-logs
-              mountPath: /var/log/audit
-      volumes:
-        - name: audit-logs
-          emptyDir: {}
-YAML
-  echo "  Q3  edge/audit-api 배치 (/var/log/audit/api.log 에 기록 중)"
-
-  # ── Q4: 보호할 ledger 와 접속을 시도할 파드 세 개
-  cat <<'YAML' | kubectl apply -f - &>/dev/null
-apiVersion: v1
-kind: Namespace
-metadata: { name: payments }
----
-apiVersion: v1
-kind: Namespace
-metadata: { name: partner }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: ledger, namespace: payments, labels: { app: ledger } }
-spec:
-  replicas: 1
-  selector: { matchLabels: { app: ledger } }
-  template:
-    metadata: { labels: { app: ledger } }
-    spec:
-      containers:
-        - name: nginx
-          image: nginx:1.27
-          ports: [ { containerPort: 80 } ]
----
-apiVersion: v1
-kind: Service
-metadata: { name: ledger, namespace: payments }
-spec:
-  selector: { app: ledger }
-  ports: [ { port: 80, targetPort: 80 } ]
----
-apiVersion: v1
-kind: Pod
-metadata: { name: checkout, namespace: payments, labels: { app: checkout } }
-spec:
-  containers: [ { name: c, image: busybox:1.36, command: ["sh", "-c", "sleep 3600"] } ]
----
-apiVersion: v1
-kind: Pod
-metadata: { name: scanner, namespace: payments, labels: { app: scanner } }
-spec:
-  containers: [ { name: c, image: busybox:1.36, command: ["sh", "-c", "sleep 3600"] } ]
----
-apiVersion: v1
-kind: Pod
-metadata: { name: checkout, namespace: partner, labels: { app: checkout } }
-spec:
-  containers: [ { name: c, image: busybox:1.36, command: ["sh", "-c", "sleep 3600"] } ]
-YAML
-  echo "  Q4  payments/ledger(+Service) · payments/checkout · payments/scanner · partner/checkout 배치"
-
-  # ── Q5: 이미 기본으로 지정된 StorageClass 하나
-  cat <<'YAML' | kubectl apply -f - &>/dev/null
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: legacy-std
-  annotations: { storageclass.kubernetes.io/is-default-class: "true" }
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: Immediate
----
-apiVersion: v1
-kind: Namespace
-metadata: { name: warehouse }
-YAML
-  echo "  Q5  StorageClass legacy-std (현재 기본) · warehouse 네임스페이스"
-
-  local others
-  others=$(kubectl get sc -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' 2>/dev/null \
-           | grep '=true$' | cut -d= -f1 | grep -vx legacy-std | tr '\n' ' ')
-  [[ -n "$others" ]] && echo -e "  ${ORANGE}참고: 이 클러스터에는 다른 기본 StorageClass 도 있습니다 → ${others}(Q5 에서 함께 해제해야 합니다)${RESET}"
-  return 0
+  etcd_tool_check
 }
 
-# ══════════════════════════════════════════════════════════════
-# Q1 — PriorityClass 생성 · Deployment 연결
-# ══════════════════════════════════════════════════════════════
-q1_title() { echo "PriorityClass one below the highest [20 pts]"; }
+q1_title() { echo "Node affinity Pod [15 pts]"; }
 q1_text() { cat <<'EOF'
-Several user-defined PriorityClasses already exist in the cluster.
+Create a Pod with the following spec.
 
-  (a) Create a PriorityClass named report-urgent whose value is exactly
-      ONE LESS than the highest value among the existing user-defined
-      PriorityClasses (ignore the built-in system-* classes).
-      It must not be the global default.
+  name            affinity-pod
+  image           nginx:1.24
+  namespace       default
+  scheduling      must be placed on a node labelled disktype=ssd using
+                  requiredDuringSchedulingIgnoredDuringExecution
 
-  (b) Update the existing Deployment report-gen in the analytics namespace
-      so that its Pods use report-urgent. Do not delete the Deployment.
-
-All report-gen Pods must be Running with the new priority.
+Hint: kubectl explain pod.spec.affinity.nodeAffinity
 
 Verify:
-  kubectl get priorityclass
-  kubectl -n analytics get pods -l app=report-gen -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority
+  kubectl get pod affinity-pod -o wide    -> Running on the disktype=ssd node
 EOF
 }
-q1_title_ko() { echo "가장 높은 값보다 1 낮은 PriorityClass [20점]"; }
+q1_title_ko() { echo "Node Affinity Pod [15점]"; }
 q1_text_ko() { cat <<'EOF'
-클러스터에 사용자가 만든 PriorityClass 가 이미 몇 개 있다.
+다음 조건의 Pod 를 생성하시오.
 
-  (a) report-urgent PriorityClass 를 만든다.
-      값은 기존 사용자 정의 PriorityClass 중 가장 높은 값보다 정확히 1 작게.
-      (system- 으로 시작하는 기본 클래스는 제외)
-      globalDefault 가 되어서는 안 된다.
+  이름          affinity-pod
+  이미지        nginx:1.24
+  네임스페이스  default
+  스케줄링      disktype=ssd 레이블을 가진 노드에
+                requiredDuringSchedulingIgnoredDuringExecution 방식으로 배치
 
-  (b) analytics 네임스페이스의 기존 Deployment report-gen 이
-      report-urgent 를 쓰도록 수정한다. Deployment 를 지우고 다시 만들지 않는다.
-
-report-gen 파드가 모두 새 우선순위로 Running 이어야 한다.
+참고: kubectl explain pod.spec.affinity.nodeAffinity
 
 [확인]
-  kubectl get priorityclass
-  kubectl -n analytics get pods -l app=report-gen -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority
+  kubectl get pod affinity-pod -o wide    → disktype=ssd 노드에 Running
 EOF
 }
 q1_hint() { cat <<'EOF'
-kubectl get priorityclass --sort-by=.value          # system-* 를 빼고 가장 큰 값을 찾는다
-
-kubectl create priorityclass report-urgent --value=<그 값 - 1> --description="report jobs"
-
-# 파드 속성이므로 spec.template.spec 아래 — patch 하면 롤아웃으로 파드가 새로 뜬다
-kubectl -n analytics patch deployment report-gen \
-  -p '{"spec":{"template":{"spec":{"priorityClassName":"report-urgent"}}}}'
-kubectl -n analytics rollout status deployment report-gen
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - { key: disktype, operator: In, values: [ssd] }
 EOF
 }
 q1_grade() {
-  # 기대값은 채점 시점에 계산한다 — 다른 실습이 남긴 클래스가 있어도 "가장 높은 값 - 1" 이 기준
-  local max want
-  max=$(kubectl get priorityclass -o jsonpath='{range .items[*]}{.metadata.name} {.value}{"\n"}{end}' 2>/dev/null \
-        | grep -v '^system-' | grep -v '^report-urgent ' | awk '{print $2}' | sort -n | tail -1)
-  max="${max//[^0-9]/}"; max="${max:-10000}"; want=$((max - 1))
-
-  check "report-urgent 존재" "kubectl get priorityclass report-urgent" 3
-  check_output "값이 ${want} (가장 높은 사용자 정의 값 ${max} - 1)" \
-    "kubectl get priorityclass report-urgent -o jsonpath='{.value}'" "^${want}$" 5
-  check_output "globalDefault 가 아니다" \
-    "kubectl get priorityclass report-urgent -o jsonpath='{.globalDefault}'" "^(false)?$" 2
-  check_output "Deployment 템플릿에 priorityClassName: report-urgent" \
-    "kubectl -n analytics get deployment report-gen -o jsonpath='{.spec.template.spec.priorityClassName}'" "^report-urgent$" 4
-  wait_ready "-l app=report-gen" analytics || true
-  check_output "파드 2개가 Ready" \
-    "kubectl -n analytics get deployment report-gen -o jsonpath='{.status.readyReplicas}/{.status.updatedReplicas}'" "^2/2$" 2
-  local pr
-  pr=$(kubectl -n analytics get pods -l app=report-gen --field-selector=status.phase=Running \
-       -o jsonpath='{range .items[*]}{.spec.priority}{"\n"}{end}' 2>/dev/null | sort -u | tr '\n' ' ')
-  check_result "Running 파드가 모두 priority ${want} (현재: ${pr:-없음})" \
-    "$([[ "$pr" == "$want " ]] && echo 0 || echo 1)" "옛 파드가 남아 있으면 롤아웃이 끝났는지 확인" 4
+  check "affinity-pod 존재" "kubectl get pod affinity-pod -n default" 3
+  local aff; aff=$(kubectl get pod affinity-pod -n default -o jsonpath='{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution}' 2>/dev/null || echo "")
+  check_result "requiredDuringScheduling nodeAffinity 설정" "$([[ -n "$aff" ]] && echo 0 || echo 1)" "" 4
+  check_result "matchExpressions 에 disktype / ssd" "$(echo "$aff" | grep -q disktype && echo "$aff" | grep -q ssd && echo 0 || echo 1)" "" 4
+  wait_ready "affinity-pod" default || true
+  local node; node=$(kubectl get pod affinity-pod -n default -o jsonpath='{.spec.nodeName}' 2>/dev/null || echo "")
+  local lbl=""; [[ -n "$node" ]] && lbl=$(kubectl get node "$node" -o jsonpath='{.metadata.labels.disktype}' 2>/dev/null || echo "")
+  check_result "disktype=ssd 노드에 실제로 배치됨 (${node:-미배치})" "$([[ "$lbl" == "ssd" ]] && echo 0 || echo 1)" "" 4
 }
 
-# ══════════════════════════════════════════════════════════════
-# Q2 — Helm template (설치하지 않고 렌더링)
-# ══════════════════════════════════════════════════════════════
-q2_title() { echo "Render a Helm chart without installing it [20 pts]"; }
+q2_title() { echo "Taint and toleration [15 pts]"; }
 q2_text() { cat <<'EOF'
-The platform team wants the Argo CD manifests for review, NOT an install.
+Create a Pod with the following spec.
 
-  1) Add the Helm repository
-       name  argo
-       URL   https://argoproj.github.io/argo-helm
+  name            toleration-pod
+  image           busybox:1.36
+  command         sleep 3600
+  namespace       default
+  toleration      key: dedicated / value: gpu / effect: NoSchedule / operator: Equal
 
-  2) Render the chart argo/argo-cd to a file without installing it
-       chart version   7.7.0
-       release name    cd
-       namespace       gitops
-       output file     /tmp/mock4-argocd.yaml
-
-     The output must NOT contain any CustomResourceDefinition.
-
-Nothing may be installed in the cluster (no Helm release, no namespace gitops
-is required).
+Hint: kubectl explain pod.spec.tolerations
 
 Verify:
-  grep -c 'kind: CustomResourceDefinition' /tmp/mock4-argocd.yaml     -> 0
-  grep -m1 'helm.sh/chart' /tmp/mock4-argocd.yaml
-  helm list -A
+  kubectl get pod toleration-pod -o yaml | grep -A10 tolerations
 EOF
 }
-q2_title_ko() { echo "Helm 차트를 설치하지 않고 렌더링 [20점]"; }
+q2_title_ko() { echo "Taint + Toleration [15점]"; }
 q2_text_ko() { cat <<'EOF'
-플랫폼 팀이 Argo CD 매니페스트를 검토하려 한다. 설치가 아니다.
+다음 조건의 Pod 를 생성하시오.
 
-  1) Helm 저장소를 추가한다
-       이름  argo
-       주소  https://argoproj.github.io/argo-helm
+  이름          toleration-pod
+  이미지        busybox:1.36
+  명령          sleep 3600
+  네임스페이스  default
+  Toleration    key: dedicated / value: gpu / effect: NoSchedule / operator: Equal
 
-  2) argo/argo-cd 차트를 설치하지 말고 파일로 렌더링한다
-       차트 버전     7.7.0
-       릴리스 이름   cd
-       네임스페이스  gitops
-       저장 경로     /tmp/mock4-argocd.yaml
-
-     결과에 CustomResourceDefinition 이 하나도 없어야 한다.
-
-클러스터에는 아무것도 설치하지 않는다 (Helm 릴리스 없음, gitops 네임스페이스도 필요 없다).
+참고: kubectl explain pod.spec.tolerations
 
 [확인]
-  grep -c 'kind: CustomResourceDefinition' /tmp/mock4-argocd.yaml     → 0
-  grep -m1 'helm.sh/chart' /tmp/mock4-argocd.yaml
-  helm list -A
+  kubectl get pod toleration-pod -o yaml | grep -A10 tolerations
 EOF
 }
 q2_hint() { cat <<'EOF'
-helm repo add argo https://argoproj.github.io/argo-helm && helm repo update
-
-helm template cd argo/argo-cd --version 7.7.0 -n gitops --skip-crds > /tmp/mock4-argocd.yaml
-grep -c 'kind: CustomResourceDefinition' /tmp/mock4-argocd.yaml      # 0 이 아니면?
-
-# --skip-crds 는 차트의 crds/ 폴더만 뺀다. 이 차트는 CRD 를 templates/ 안에 둔다.
-helm show values argo/argo-cd --version 7.7.0 | grep -A3 '^crds:'   # 차트가 주는 스위치를 찾는다
+spec:
+  tolerations:
+  - { key: dedicated, operator: Equal, value: gpu, effect: NoSchedule }
 EOF
 }
 q2_grade() {
-  check "helm 이 설치돼 있다" "command -v helm" 1
-  check_output "argo 저장소가 추가됐다" "helm repo list 2>/dev/null" 'argoproj\.github\.io/argo-helm' 2
-  check "$HELM_OUT 이 있다" "test -s $HELM_OUT" 3
-  check_output "차트 버전 7.7.0 으로 렌더링했다" "grep -m1 'helm.sh/chart: argo-cd-' $HELM_OUT" 'argo-cd-7\.7\.0$' 3
-  check_output "네임스페이스 gitops 로 렌더링했다" "grep -m1 '^  namespace:' $HELM_OUT" 'namespace: gitops$' 2
-  check_output "릴리스 이름 cd 로 렌더링했다" "grep -m1 'app.kubernetes.io/instance:' $HELM_OUT" 'instance: cd$' 2
-  local n; n=$(grep -c 'kind: CustomResourceDefinition' "$HELM_OUT" 2>/dev/null); n="${n//[^0-9]/}"; n="${n:-0}"
-  local has=1; [[ -s "$HELM_OUT" ]] && has=0
-  check_result "CustomResourceDefinition 이 0개 (현재 ${n}개)" \
-    "$([[ $has == 0 && "$n" == "0" ]] && echo 0 || echo 1)" "--skip-crds 로 안 빠지면 차트 values 의 crds 설정을 본다" 5
-  local inst; inst=$(helm list -A -q 2>/dev/null | grep -cx cd); inst="${inst//[^0-9]/}"; inst="${inst:-0}"
-  check_result "클러스터에 설치하지 않았다 (helm 릴리스 cd 없음)" \
-    "$([[ "$inst" == "0" ]] && echo 0 || echo 1)" "릴리스 cd 가 설치돼 있다 — template 만 하면 된다" 2
+  check "toleration-pod 존재" "kubectl get pod toleration-pod -n default" 3
+  local t; t=$(kubectl get pod toleration-pod -n default -o jsonpath='{.spec.tolerations}' 2>/dev/null || echo "")
+  check_result "toleration key=dedicated" "$(echo "$t" | grep -q '"key":"dedicated"' && echo 0 || echo 1)" "" 3
+  check_result "toleration value=gpu" "$(echo "$t" | grep -q '"value":"gpu"' && echo 0 || echo 1)" "" 3
+  check_result "toleration effect=NoSchedule" "$(echo "$t" | grep -q '"effect":"NoSchedule"' && echo 0 || echo 1)" "" 3
+  wait_ready "toleration-pod" default || true
+  check_output "toleration-pod Running" "kubectl get pod toleration-pod -n default -o jsonpath='{.status.phase}'" "^Running$" 3
 }
 
-# ══════════════════════════════════════════════════════════════
-# Q3 — 네이티브 사이드카
-# ══════════════════════════════════════════════════════════════
-q3_title() { echo "Add a native sidecar that ships logs [20 pts]"; }
+q3_title() { echo "NetworkPolicy — deny-all and allow-web [20 pts]"; }
 q3_text() { cat <<'EOF'
-The Deployment audit-api in the edge namespace writes its log to
-/var/log/audit/api.log on the emptyDir volume audit-logs.
+Create the following two NetworkPolicies in the default namespace.
 
-Add a NATIVE sidecar container to this Deployment.
+(1) deny-all
+    - block all ingress traffic for every Pod
+    - podSelector: {}   (empty selector = applies to all)
+    - policyTypes: [Ingress]
 
-  name         audit-shipper
-  image        busybox:1.36
-  command      sh -c 'tail -F /var/log/audit/api.log'
-  mount        the existing volume audit-logs at /var/log/audit
-
-A native sidecar is declared under initContainers with restartPolicy: Always.
-After the change the Pod must show READY 2/2 and the sidecar must print the
-application's log lines.
+(2) allow-web
+    - applies to Pods labelled app=db
+    - allow only port 3306/TCP from Pods labelled app=web
+    - policyTypes: [Ingress]
 
 Verify:
-  kubectl -n edge get pods -l app=audit-api
-  kubectl -n edge logs deploy/audit-api -c audit-shipper --tail=3
+  kubectl describe networkpolicy deny-all
+  kubectl describe networkpolicy allow-web
 EOF
 }
-q3_title_ko() { echo "로그를 읽는 네이티브 사이드카 추가 [20점]"; }
+q3_title_ko() { echo "NetworkPolicy — deny-all + allow-web [20점]"; }
 q3_text_ko() { cat <<'EOF'
-edge 네임스페이스의 Deployment audit-api 는 emptyDir 볼륨 audit-logs 의
-/var/log/audit/api.log 에 로그를 쓴다.
+default 네임스페이스에 다음 두 가지 NetworkPolicy 를 생성하시오.
 
-이 Deployment 에 네이티브 사이드카를 추가한다.
+(1) deny-all
+    - 모든 Pod 에 대해 Ingress 트래픽 전체 차단
+    - podSelector: {}   (빈 selector = 전체 적용)
+    - policyTypes: [Ingress]
 
-  이름         audit-shipper
-  이미지       busybox:1.36
-  명령         sh -c 'tail -F /var/log/audit/api.log'
-  마운트       기존 볼륨 audit-logs 를 /var/log/audit 에
-
-네이티브 사이드카는 initContainers 아래에 restartPolicy: Always 로 선언한다.
-바꾼 뒤 파드가 READY 2/2 이고, 사이드카 로그에 앱의 로그가 보여야 한다.
+(2) allow-web
+    - app=db 레이블 Pod 가 수신 측
+    - app=web 레이블 Pod 에서 포트 3306/TCP 만 허용
+    - policyTypes: [Ingress]
 
 [확인]
-  kubectl -n edge get pods -l app=audit-api
-  kubectl -n edge logs deploy/audit-api -c audit-shipper --tail=3
+  kubectl describe networkpolicy deny-all
+  kubectl describe networkpolicy allow-web
 EOF
 }
 q3_hint() { cat <<'EOF'
-kubectl -n edge edit deployment audit-api
-# spec.template.spec 아래, containers 와 같은 높이에
-  initContainers:
-    - name: audit-shipper
-      image: busybox:1.36
-      restartPolicy: Always
-      command: ["sh", "-c", "tail -F /var/log/audit/api.log"]
-      volumeMounts:
-        - name: audit-logs
-          mountPath: /var/log/audit
+# allow-web
+spec:
+  podSelector: { matchLabels: { app: db } }
+  policyTypes: [Ingress]
+  ingress:
+  - from: [ { podSelector: { matchLabels: { app: web } } } ]
+    ports: [ { protocol: TCP, port: 3306 } ]
 EOF
 }
 q3_grade() {
-  local sel='?(@.name=="audit-shipper")'
-  check_output "initContainers 에 audit-shipper 가 있다" \
-    "kubectl -n edge get deployment audit-api -o jsonpath='{.spec.template.spec.initContainers[*].name}'" 'audit-shipper' 4
-  check_output "이미지 busybox:1.36" \
-    "kubectl -n edge get deployment audit-api -o jsonpath='{.spec.template.spec.initContainers[$sel].image}'" '^busybox:1\.36$' 2
-  check_output "restartPolicy: Always (네이티브 사이드카)" \
-    "kubectl -n edge get deployment audit-api -o jsonpath='{.spec.template.spec.initContainers[$sel].restartPolicy}'" '^Always$' 4
-  check_output "audit-logs 볼륨을 /var/log/audit 에 마운트" \
-    "kubectl -n edge get deployment audit-api -o jsonpath='{range .spec.template.spec.initContainers[$sel].volumeMounts[*]}{.name}:{.mountPath} {end}'" 'audit-logs:/var/log/audit' 3
-  check_output "본 컨테이너 api 는 그대로 남아 있다" \
-    "kubectl -n edge get deployment audit-api -o jsonpath='{.spec.template.spec.containers[*].name}'" '(^| )api( |$)' 1
-  wait_ready "-l app=audit-api" edge || true
-  local ready
-  ready=$(kubectl -n edge get pods -l app=audit-api --field-selector=status.phase=Running \
-          -o jsonpath='{range .items[*]}{range .status.initContainerStatuses[?(@.name=="audit-shipper")]}{.ready}{end}/{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null | head -1)
-  check_result "파드가 READY 2/2 (사이드카 ready=true · 본 컨테이너 ready=true)" \
-    "$([[ "$ready" == "true/true" ]] && echo 0 || echo 1)" "현재: ${ready:-파드 없음}" 3
-  check_output "사이드카 로그에 앱 로그가 보인다" \
-    "kubectl -n edge logs deploy/audit-api -c audit-shipper --tail=5" 'audit event' 3
+  check "NetworkPolicy deny-all 존재" "kubectl get networkpolicy deny-all -n default" 3
+  check_output "deny-all podSelector 가 비어 있다 (전체 적용)" \
+    "kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.podSelector}'" "^\{\}$" 3
+  check_output "deny-all policyTypes: Ingress" \
+    "kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.policyTypes}'" "Ingress" 2
+  check_result "deny-all 에 ingress 허용 규칙이 없다 (전부 차단)" \
+    "$(kubectl get networkpolicy deny-all -n default &>/dev/null && [[ -z "$(kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.ingress}' 2>/dev/null)" ]] && echo 0 || echo 1)" "" 2
+  check "NetworkPolicy allow-web 존재" "kubectl get networkpolicy allow-web -n default" 2
+  check_output "allow-web 대상이 app=db" \
+    "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.podSelector.matchLabels.app}'" "^db$" 2
+  check_output "allow-web from 이 app=web" \
+    "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.ingress[0].from[*].podSelector.matchLabels.app}'" "web" 3
+  check_output "allow-web 포트 3306/TCP" \
+    "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.ingress[0].ports[0].port}'" "^3306$" 3
 }
 
-# ══════════════════════════════════════════════════════════════
-# Q4 — NetworkPolicy
-# ══════════════════════════════════════════════════════════════
-q4_title() { echo "NetworkPolicy: only checkout may reach ledger [20 pts]"; }
+q4_title() { echo "Create an Ingress [15 pts]"; }
 q4_text() { cat <<'EOF'
-In the payments namespace, the Deployment ledger (label app=ledger) is exposed
-by the Service ledger on port 80. Lock it down with two NetworkPolicies.
+Create an Ingress with the following spec. The backends shop-svc and
+api-svc already exist.
 
-  (1) deny-all-ingress
-      - selects every Pod in payments and blocks all ingress
-
-  (2) allow-checkout
-      - applies to Pods labelled app=ledger
-      - allows TCP 80 ONLY from Pods labelled app=checkout
-        in the SAME namespace (payments)
-
-Test Pods already exist:
-  payments/checkout  (app=checkout)  -> must reach ledger
-  payments/scanner   (app=scanner)   -> must be blocked
-  partner/checkout   (app=checkout)  -> must be blocked (other namespace)
+  name            shop-ingress
+  namespace       default
+  pathType        Prefix
+  routing         /shop  ->  shop-svc : 80
+                  /api   ->  api-svc  : 8080
 
 Verify:
-  kubectl -n payments exec checkout -- wget -qO- -T 3 http://ledger
-  kubectl -n payments exec scanner  -- wget -qO- -T 3 http://ledger
-  kubectl -n partner  exec checkout -- wget -qO- -T 3 http://ledger.payments
+  kubectl describe ingress shop-ingress
 EOF
 }
-q4_title_ko() { echo "NetworkPolicy — checkout 만 ledger 로 [20점]"; }
+q4_title_ko() { echo "Ingress 생성 [15점]"; }
 q4_text_ko() { cat <<'EOF'
-payments 네임스페이스의 Deployment ledger(레이블 app=ledger)는
-Service ledger 의 80 포트로 노출돼 있다. NetworkPolicy 두 개로 잠근다.
+다음 조건으로 Ingress 를 생성하시오. (백엔드 shop-svc, api-svc 는 이미 있다)
 
-  (1) deny-all-ingress
-      - payments 의 모든 파드를 고르고 Ingress 를 전부 막는다
-
-  (2) allow-checkout
-      - 대상: app=ledger 파드
-      - 허용: 같은 네임스페이스(payments)의 app=checkout 파드에서 오는 TCP 80 만
-
-테스트 파드가 이미 있다.
-  payments/checkout  (app=checkout)  → ledger 에 닿아야 한다
-  payments/scanner   (app=scanner)   → 막혀야 한다
-  partner/checkout   (app=checkout)  → 막혀야 한다 (다른 네임스페이스)
+  이름          shop-ingress
+  네임스페이스  default
+  pathType      Prefix
+  라우팅        /shop  →  shop-svc : 80
+                /api   →  api-svc  : 8080
 
 [확인]
-  kubectl -n payments exec checkout -- wget -qO- -T 3 http://ledger
-  kubectl -n payments exec scanner  -- wget -qO- -T 3 http://ledger
-  kubectl -n partner  exec checkout -- wget -qO- -T 3 http://ledger.payments
+  kubectl describe ingress shop-ingress
 EOF
 }
-q4_hint() { cat <<'EOF'
-# (1)
-spec:
-  podSelector: {}
-  policyTypes: [Ingress]
-
-# (2) from 에 podSelector 만 쓰면 '같은 네임스페이스' 의 파드만 뜻한다.
-#     namespaceSelector: {} 를 함께 쓰면 모든 네임스페이스로 넓어진다 → partner 가 뚫린다
-spec:
-  podSelector: { matchLabels: { app: ledger } }
-  policyTypes: [Ingress]
-  ingress:
-    - from: [ { podSelector: { matchLabels: { app: checkout } } } ]
-      ports: [ { protocol: TCP, port: 80 } ]
-EOF
-}
+q4_hint() { echo 'kubectl create ingress shop-ingress --rule="/shop=shop-svc:80" --rule="/api=api-svc:8080"'; }
 q4_grade() {
-  check "deny-all-ingress 존재" "kubectl -n payments get networkpolicy deny-all-ingress" 2
-  check_output "deny-all-ingress 가 모든 파드를 고른다 (podSelector: {})" \
-    "kubectl -n payments get networkpolicy deny-all-ingress -o jsonpath='{.spec.podSelector}'" '^\{\}$' 2
-  check "allow-checkout 존재" "kubectl -n payments get networkpolicy allow-checkout" 2
-  check_output "allow-checkout 대상이 app=ledger" \
-    "kubectl -n payments get networkpolicy allow-checkout -o jsonpath='{.spec.podSelector.matchLabels.app}'" '^ledger$' 2
-  check_output "허용 포트 TCP 80" \
-    "kubectl -n payments get networkpolicy allow-checkout -o jsonpath='{.spec.ingress[*].ports[*].port}'" '(^| )80( |$)' 1
-
-  wait_ready "-l app=ledger" payments || true
-  local probe='wget -qO- -T 3 http://ledger.payments.svc.cluster.local 2>/dev/null'
-  local a b c
-  a=$(kubectl -n payments exec checkout -- sh -c "$probe" 2>/dev/null)
-  b=$(kubectl -n payments exec scanner  -- sh -c "$probe" 2>/dev/null)
-  c=$(kubectl -n partner  exec checkout -- sh -c "$probe" 2>/dev/null)
-  local served=1; echo "$a" | grep -qi nginx && served=0
-  check_result "payments/checkout → ledger 응답 (허용)" "$served" "응답 없음 — 허용 규칙 또는 ledger 파드 확인" 4
-  # 허용 경로가 살아 있을 때만 '막힘' 을 믿는다 (ledger 가 죽어서 안 닿는 것과 구분)
-  check_result "payments/scanner → ledger 차단" \
-    "$([[ $served == 0 ]] && ! echo "$b" | grep -qi nginx && echo 0 || echo 1)" "scanner 가 닿는다 — deny-all-ingress 확인" 3
-  check_result "partner/checkout → ledger 차단 (다른 네임스페이스)" \
-    "$([[ $served == 0 ]] && ! echo "$c" | grep -qi nginx && echo 0 || echo 1)" "다른 네임스페이스가 닿는다 — namespaceSelector 를 넓게 쓰지 않았는지 확인" 4
+  check "Ingress shop-ingress 존재" "kubectl get ingress shop-ingress -n default" 3
+  local rules; rules=$(kubectl get ingress shop-ingress -n default -o json 2>/dev/null || echo "{}")
+  local py='import sys,json; d=json.load(sys.stdin); ps=[(p.get("path"),p.get("pathType"),p["backend"]["service"]["name"],p["backend"]["service"]["port"].get("number")) for r in d.get("spec",{}).get("rules",[]) for p in r.get("http",{}).get("paths",[])]; print(ps)'
+  local paths; paths=$(echo "$rules" | python3 -c "$py" 2>/dev/null || echo "")
+  check_result "/shop → shop-svc:80" "$(echo "$paths" | grep -q "('/shop', 'Prefix', 'shop-svc', 80)" && echo 0 || echo 1)" "" 6
+  check_result "/api → api-svc:8080" "$(echo "$paths" | grep -q "('/api', 'Prefix', 'api-svc', 8080)" && echo 0 || echo 1)" "" 6
 }
 
-# ══════════════════════════════════════════════════════════════
-# Q5 — 기본 StorageClass 교체 + PVC
-# ══════════════════════════════════════════════════════════════
-q5_title() { echo "Replace the default StorageClass [20 pts]"; }
+q5_title() { echo "StatefulSet with a headless Service [15 pts]"; }
 q5_text() { cat <<'EOF'
-The cluster currently uses legacy-std as its default StorageClass.
+Create a StatefulSet and a headless Service in the default namespace.
 
-  (a) Create a StorageClass named fast-local
-        provisioner         kubernetes.io/no-provisioner
-        volumeBindingMode   WaitForFirstConsumer
-        reclaimPolicy       Retain
+StatefulSet
+  name            mysql-sts
+  image           mysql:8.0
+  replicas        2
+  environment     MYSQL_ROOT_PASSWORD=rootpass
+  serviceName     mysql-headless
+  volumeClaimTemplates   name data / 1Gi / ReadWriteOnce / mountPath /var/lib/mysql
 
-  (b) Make fast-local the ONLY default StorageClass of the cluster.
-      Do not delete legacy-std.
-
-  (c) In the warehouse namespace create a PVC named scratch
-        request 1Gi, access mode ReadWriteOnce
-      Do NOT set storageClassName in the PVC — it must receive fast-local
-      because it is the default.
+headless Service (clusterIP: None)
+  name            mysql-headless
+  port            3306
 
 Verify:
-  kubectl get storageclass                       -> only fast-local shows (default)
-  kubectl -n warehouse get pvc scratch -o jsonpath='{.spec.storageClassName}'
+  kubectl get statefulset mysql-sts
+  kubectl get pvc          -> data-mysql-sts-0, data-mysql-sts-1
 EOF
 }
-q5_title_ko() { echo "기본 StorageClass 교체 + PVC [20점]"; }
+q5_title_ko() { echo "StatefulSet + headless Service [15점]"; }
 q5_text_ko() { cat <<'EOF'
-지금 클러스터의 기본 StorageClass 는 legacy-std 다.
+default 네임스페이스에 다음 조건으로 StatefulSet 과 headless Service 를 생성하시오.
 
-  (a) fast-local StorageClass 를 만든다
-        provisioner         kubernetes.io/no-provisioner
-        volumeBindingMode   WaitForFirstConsumer
-        reclaimPolicy       Retain
+StatefulSet
+  이름          mysql-sts
+  이미지        mysql:8.0
+  복제본        2
+  환경변수      MYSQL_ROOT_PASSWORD=rootpass
+  serviceName   mysql-headless
+  volumeClaimTemplates   이름 data / 1Gi / ReadWriteOnce / mountPath /var/lib/mysql
 
-  (b) fast-local 을 클러스터의 유일한 기본 StorageClass 로 만든다.
-      legacy-std 는 지우지 않는다.
-
-  (c) warehouse 네임스페이스에 PVC scratch 를 만든다
-        요청 1Gi, 접근 모드 ReadWriteOnce
-      PVC 에 storageClassName 을 적지 않는다 — 기본이라서 fast-local 이 붙어야 한다.
+headless Service (clusterIP: None)
+  이름          mysql-headless
+  포트          3306
 
 [확인]
-  kubectl get storageclass                       → fast-local 에만 (default)
-  kubectl -n warehouse get pvc scratch -o jsonpath='{.spec.storageClassName}'
+  kubectl get statefulset mysql-sts
+  kubectl get pvc          → data-mysql-sts-0, data-mysql-sts-1
 EOF
 }
-q5_hint() { cat <<'EOF'
-# (a) 기본 지정은 애너테이션 한 줄
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-local
-  annotations:
-    storageclass.kubernetes.io/is-default-class: "true"
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Retain
-
-# (b) 기존 기본을 해제한다 — 둘 다 true 면 '유일한 기본' 이 아니다
-kubectl patch storageclass legacy-std \
-  -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
-
-# (c) PVC 는 기본 클래스가 정해진 '뒤에' 만든다. 먼저 만들면 legacy-std 가 붙는다
-# WaitForFirstConsumer 라 파드가 쓰기 전까지 Pending 이 정상이다
-EOF
-}
+q5_hint() { echo "StatefulSet 은 create 명령이 없다 → 공식 문서 예제(nginx StatefulSet)를 복사해서 수정"; }
 q5_grade() {
-  check "fast-local 존재" "kubectl get storageclass fast-local" 2
-  check_output "provisioner kubernetes.io/no-provisioner" \
-    "kubectl get storageclass fast-local -o jsonpath='{.provisioner}'" '^kubernetes\.io/no-provisioner$' 2
-  check_output "volumeBindingMode WaitForFirstConsumer" \
-    "kubectl get storageclass fast-local -o jsonpath='{.volumeBindingMode}'" '^WaitForFirstConsumer$' 2
-  check_output "reclaimPolicy Retain" \
-    "kubectl get storageclass fast-local -o jsonpath='{.reclaimPolicy}'" '^Retain$' 2
-  check_output "fast-local 이 기본으로 지정됐다" \
-    "kubectl get storageclass fast-local -o jsonpath='{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}'" '^true$' 3
-  check "legacy-std 는 지우지 않았다" "kubectl get storageclass legacy-std" 1
-  local defaults
-  defaults=$(kubectl get sc -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' 2>/dev/null \
-             | grep '=true$' | cut -d= -f1 | tr '\n' ' ')
-  check_result "기본 StorageClass 가 fast-local 하나뿐 (현재: ${defaults:-없음})" \
-    "$([[ "$defaults" == "fast-local " ]] && echo 0 || echo 1)" "다른 클래스의 is-default-class 를 false 로" 3
-  check_output "PVC scratch 가 1Gi · ReadWriteOnce" \
-    "kubectl -n warehouse get pvc scratch -o jsonpath='{.spec.resources.requests.storage}/{.spec.accessModes[0]}'" '^1Gi/ReadWriteOnce$' 2
-  check_output "PVC 에 기본 클래스 fast-local 이 붙었다" \
-    "kubectl -n warehouse get pvc scratch -o jsonpath='{.spec.storageClassName}'" '^fast-local$' 3
+  check "StatefulSet mysql-sts 존재" "kubectl get statefulset mysql-sts -n default" 3
+  check_output "이미지: mysql:8.0" \
+    "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" "^mysql:8\.0$" 2
+  check_output "복제본 2" "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.replicas}'" "^2$" 2
+  check_output "serviceName 이 mysql-headless" "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.serviceName}'" "^mysql-headless$" 2
+  check_output "volumeClaimTemplates data / 1Gi" \
+    "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.volumeClaimTemplates[0].metadata.name}{\" \"}{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}'" "^data 1Gi$" 2
+  check_output "환경변수 MYSQL_ROOT_PASSWORD=rootpass" \
+    "kubectl get statefulset mysql-sts -n default -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\" \"}{end}'" "MYSQL_ROOT_PASSWORD=rootpass" 1
+  check_output "headless Service mysql-headless (clusterIP: None)" \
+    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.clusterIP}'" "^None$" 2
+  check_output "Service 포트 3306" \
+    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.ports[0].port}'" "^3306$" 1
+}
+
+q6_title() { echo "etcd snapshot [10 pts]"; }
+q6_text() { cat <<'EOF'
+Save an etcd snapshot to /tmp/mock2-etcd.db.
+
+  endpoint      https://127.0.0.1:2379
+  CA cert       /etc/kubernetes/pki/etcd/ca.crt
+  cert          /etc/kubernetes/pki/etcd/server.crt
+  key           /etc/kubernetes/pki/etcd/server.key
+
+Verify:
+  ls -lh /tmp/mock2-etcd.db
+  ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db
+EOF
+}
+q6_title_ko() { echo "etcd 백업 [10점]"; }
+q6_text_ko() { cat <<'EOF'
+etcd 스냅샷을 /tmp/mock2-etcd.db 에 저장하시오.
+
+  endpoint      https://127.0.0.1:2379
+  CA cert       /etc/kubernetes/pki/etcd/ca.crt
+  Cert          /etc/kubernetes/pki/etcd/server.crt
+  Key           /etc/kubernetes/pki/etcd/server.key
+
+[확인]
+  ls -lh /tmp/mock2-etcd.db
+  ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db
+EOF
+}
+q6_hint() { cat <<'EOF'
+ETCDCTL_API=3 etcdctl snapshot save /tmp/mock2-etcd.db \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+EOF
+}
+q6_grade() {
+  check_result "/tmp/mock2-etcd.db 파일 존재" "$([[ -f /tmp/mock2-etcd.db ]] && echo 0 || echo 1)" "컨트롤플레인 노드에서 실행해야 함" 4
+  local sz; sz=$(stat -c%s /tmp/mock2-etcd.db 2>/dev/null || stat -f%z /tmp/mock2-etcd.db 2>/dev/null || echo 0)
+  check_result "스냅샷 크기 > 1MB (실제 etcd 데이터)" "$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1)" "${sz} bytes" 3
+  local st=1
+  if command -v etcdctl &>/dev/null; then ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db &>/dev/null && st=0
+  elif command -v etcdutl &>/dev/null; then etcdutl snapshot status /tmp/mock2-etcd.db &>/dev/null && st=0
+  else st=$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1); fi
+  check_result "스냅샷이 유효하다 (snapshot status)" "$st" "" 3
+}
+
+q7_title() { echo "Recover a NotReady node [10 pts]"; }
+q7_text() { cat <<'EOF'
+The node worker-2 is in NotReady state. Find the cause and fix it.
+After the fix, make sure kubelet starts automatically after a reboot.
+
+Suggested order:
+  kubectl describe node worker-2     -> Conditions
+  ssh worker-2
+  systemctl status kubelet
+  journalctl -u kubelet -n 50
+
+Verify:
+  kubectl get nodes                  -> worker-2 is Ready
+EOF
+}
+q7_title_ko() { echo "Node NotReady 복구 [10점]"; }
+q7_text_ko() { cat <<'EOF'
+worker-2 노드가 NotReady 상태다. 원인을 파악하고 복구하시오.
+복구 후 재부팅에도 kubelet 이 자동으로 뜨도록 설정하시오.
+
+진단 순서
+  kubectl describe node worker-2     → Conditions
+  ssh worker-2
+  systemctl status kubelet
+  journalctl -u kubelet -n 50
+
+[확인]
+  kubectl get nodes                  → worker-2 가 Ready
+EOF
+}
+q7_hint() { cat <<'EOF'
+ssh worker-2
+systemctl start kubelet && systemctl enable kubelet
+EOF
+}
+q7_grade() {
+  if ! kubectl get node worker-2 &>/dev/null; then
+    check_result "worker-2 노드 (이 클러스터에 없음 — 통과 처리)" 0 "" 10; return
+  fi
+  local i; for i in $(seq 1 10); do
+    [[ "$(kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]] && break; sleep 3
+  done
+  check_output "worker-2 Ready 상태" "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 7
+  local en; en=$(ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl is-enabled kubelet' 2>/dev/null || echo "unknown")
+  if [[ "$en" == "unknown" ]]; then
+    check_result "kubelet enabled (ssh 불가 — 확인 생략, 통과 처리)" 0 "" 3
+  else
+    check_result "kubelet 이 enabled 상태 (재부팅 후 자동 시작)" "$([[ "$en" == "enabled" ]] && echo 0 || echo 1)" "$en" 3
+  fi
 }
 
 exam_main "$@"

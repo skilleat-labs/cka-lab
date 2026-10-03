@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 10강 실습 초기화 스크립트 — 패키지 관리 (Helm/Kustomize)
+# CKA 17강 실습 초기화 스크립트 — 패키지 관리 (Helm/Kustomize)
 # 사용법: bash exam-start.sh [--hints]
 set -uo pipefail
 
@@ -10,7 +10,7 @@ WORK_DIR="$(cd "$(dirname "$0")" && pwd)/work"
 mkdir -p "$WORK_DIR"
 
 echo "================================================="
-echo " CKA 10강 실습: 패키지 관리 (Helm / Kustomize)"
+echo " CKA 17강 실습: 패키지 관리 (Helm / Kustomize)"
 echo "================================================="
 echo ""
 

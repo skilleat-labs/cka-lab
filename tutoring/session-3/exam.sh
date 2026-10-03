@@ -3,7 +3,7 @@
 # 사용법: bash exam.sh start → 풀고 → bash exam.sh check → ...
 # 환경 준비(StorageClass·PV·Gateway API 설치)는 start 에서 자동으로 한다.
 set -uo pipefail
-source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
+source "$(cd "$(dirname "$0")/../.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 3세션 시험 — Deployment+Service · StorageClass/PVC · Gateway API"
 EXAM_NQ=3

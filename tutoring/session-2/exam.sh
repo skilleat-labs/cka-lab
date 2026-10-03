@@ -2,7 +2,7 @@
 # CKA 2세션 시험 — 순차 진행형
 # 사용법: bash exam.sh start → 풀고 → bash exam.sh check → ...
 set -uo pipefail
-source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
+source "$(cd "$(dirname "$0")/../.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 2세션 시험 — 네임스페이스 · NodePort · ConfigMap · 롤아웃"
 EXAM_NQ=3

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 7강 자동 채점 스크립트 — Ingress와 보안 기초
+# CKA 11강 자동 채점 스크립트 — Ingress와 보안 기초
 set -uo pipefail
 
 PASS=0; FAIL=0
@@ -26,7 +26,7 @@ check_output() {
 }
 
 echo "================================================="
-echo " CKA 7강 채점 — Ingress와 보안 기초"
+echo " CKA 11강 채점 — Ingress와 보안 기초"
 echo "================================================="
 echo ""
 
@@ -178,7 +178,7 @@ echo ""
 echo "================================================="
 echo " 결과: ${PASS}개 통과 / $((PASS + FAIL))개 전체"
 if [[ $FAIL -eq 0 ]]; then
-  echo " 전체 통과! 7강 실습 완료."
+  echo " 전체 통과! 11강 실습 완료."
 else
   echo " ${FAIL}개 미통과 — 위 항목을 확인하세요."
 fi

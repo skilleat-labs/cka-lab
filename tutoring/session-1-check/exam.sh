@@ -5,7 +5,7 @@
 # 기존 exam-start.sh / verify.sh (한꺼번에 출제·채점) 와 같은 문제·같은 채점 기준.
 # 이 파일은 한 문제씩 풀고 채점하며 진행하는 방식이다.
 set -uo pipefail
-source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
+source "$(cd "$(dirname "$0")/../.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 1세션 점검 — 명령어로 만들 수 있는가"
 EXAM_NQ=3

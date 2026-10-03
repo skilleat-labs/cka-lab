@@ -1,174 +1,161 @@
 ================================================================
-  CKA Mock Exam 2 — 스케줄링 · 네트워킹 · 운영
-  7문항 · 100점 · 목표 시간 45분
+  CKA Mock Exam 2 — 기초 워크로드 (변형판)
+  7문항 · 100점 · 목표 시간 40분
 ================================================================
 
   환경 준비 :  bash exam-start.sh
-               (Q4용 백엔드 shop-svc / api-svc 가 미리 생성된다)
+               (retail 네임스페이스와 Q7용 고장난 파드가 생성된다)
   채점      :  bash verify.sh
 
-  모든 문제는 default 네임스페이스 기준이다.
+  mock-1 과 같은 유형이지만 이름·값·조건이 전부 다르다.
+  모든 문제는 retail 네임스페이스 기준이다.
 
 
 ----------------------------------------------------------------
- Q1. Node Affinity Pod                      [Workloads · 15점]
+ Q1. Deployment 생성                        [Workloads · 15점]
 ----------------------------------------------------------------
 
-  다음 조건의 Pod 를 생성하시오.
+  retail 네임스페이스에 다음 조건으로 Deployment 를 생성하시오.
 
-    이름          affinity-pod
-    이미지        nginx:latest
-    네임스페이스  default
-    스케줄링      disktype=ssd 레이블을 가진 노드에
-                  requiredDuringSchedulingIgnoredDuringExecution
-                  방식으로 배치
-
-  참고: kubectl explain pod.spec.affinity.nodeAffinity
+    이름            store-front
+    이미지          nginx:1.25
+    복제본          4
+    컨테이너 포트   80
 
   [확인]
-    kubectl get pod affinity-pod -o wide
-      → 해당 레이블의 노드에 스케줄됨 (노드가 없으면 Pending 이 정상)
-    kubectl get pod affinity-pod -o yaml | grep -A20 affinity
+    kubectl get deployment store-front -n retail   → READY 4/4
 
 
 ----------------------------------------------------------------
- Q2. Taint + Toleration                     [Workloads · 15점]
+ Q2. Service 생성                          [Networking · 10점]
 ----------------------------------------------------------------
 
-  다음 조건의 Pod 를 생성하시오.
+  Q1 의 Deployment 를 노출하는 Service 를 생성하시오.
 
-    이름          toleration-pod
-    이미지        busybox
-    명령          sleep 3600
-    네임스페이스  default
-    Toleration    key:      dedicated
-                  value:    gpu
-                  effect:   NoSchedule
-                  operator: Equal
-
-  참고: kubectl explain pod.spec.tolerations
+    이름            store-svc
+    타입            ClusterIP
+    port            8080  →  targetPort 80   (포트가 다르다)
+    셀렉터          app=store-front
+    네임스페이스    retail
 
   [확인]
-    kubectl get pod toleration-pod -o yaml | grep -A10 tolerations
+    kubectl get svc store-svc -n retail          → 8080/TCP
+    kubectl get endpoints store-svc -n retail    → Pod IP 4개
 
 
 ----------------------------------------------------------------
- Q3. NetworkPolicy                         [Networking · 20점]
+ Q3. ConfigMap + Pod                        [Workloads · 10점]
 ----------------------------------------------------------------
 
-  default 네임스페이스에 다음 두 가지 NetworkPolicy 를 생성하시오.
+  retail 네임스페이스에서 다음 두 가지 작업을 수행하시오.
 
-  (1) deny-all
-      - 모든 Pod 에 대해 Ingress 트래픽 전체 차단
-      - podSelector: {}   (빈 selector = 전체 적용)
-      - policyTypes: [Ingress]
+  (1) ConfigMap 생성
+    이름            store-config
+    데이터          APP_MODE=staging
+                    APP_PORT=9090
 
-  (2) allow-web
-      - app=db 레이블 Pod 가 수신 측
-      - app=web 레이블 Pod 에서 포트 3306/TCP 만 허용
-      - policyTypes: [Ingress]
+  (2) Pod 생성
+    이름            store-cfg
+    이미지          busybox:1.36
+    명령            sleep 7200
+    주입            store-config 전체를 envFrom 으로
 
   [확인]
-    kubectl get networkpolicy
-    kubectl describe networkpolicy deny-all
-    kubectl describe networkpolicy allow-web
+    kubectl exec store-cfg -n retail -- printenv APP_MODE   → staging
+    kubectl exec store-cfg -n retail -- printenv APP_PORT   → 9090
 
 
 ----------------------------------------------------------------
- Q4. Ingress 생성                          [Networking · 15점]
+ Q4. PersistentVolume + PVC                   [Storage · 15점]
 ----------------------------------------------------------------
 
-  다음 조건으로 Ingress 를 생성하시오.
-  (백엔드 서비스 shop-svc, api-svc 는 이미 존재한다)
+  다음 조건으로 PV 와 PVC 를 생성하고 Bound 시키시오.
 
-    이름          shop-ingress
-    네임스페이스  default
-    pathType      Prefix
-    라우팅        /shop  →  shop-svc : 80
-                  /api   →  api-svc  : 8080
+  PersistentVolume
+    이름              report-pv
+    용량              1Gi
+    접근 모드         ReadWriteMany
+    타입              hostPath, path=/tmp/report-data
+    storageClassName  local-manual
+
+  PersistentVolumeClaim
+    이름              report-pvc
+    네임스페이스      retail
+    용량 요청         1Gi
+    접근 모드         ReadWriteMany
+    storageClassName  local-manual
 
   [확인]
-    kubectl get ingress shop-ingress
-    kubectl describe ingress shop-ingress
+    kubectl get pv report-pv                     → Bound
+    kubectl get pvc report-pvc -n retail         → Bound
 
 
 ----------------------------------------------------------------
- Q5. StatefulSet                            [Workloads · 15점]
+ Q5. RBAC                                [Architecture · 15점]
 ----------------------------------------------------------------
 
-  다음 조건으로 StatefulSet 과 headless Service 를 생성하시오.
+  retail 네임스페이스에 다음 세 가지 RBAC 리소스를 생성하시오.
 
-  StatefulSet
-    이름          mysql-sts
-    이미지        mysql:8.0
-    복제본        2
-    네임스페이스  default
-    환경변수      MYSQL_ROOT_PASSWORD=rootpass
-    volumeClaimTemplates
-                  이름:       data
-                  용량:       1Gi
-                  accessMode: ReadWriteOnce
-                  mountPath:  /var/lib/mysql
+  ServiceAccount
+    이름            deploy-sa
 
-  headless Service (clusterIP: None)
-    이름          mysql-headless
-    포트          3306
+  Role
+    이름            deploy-reader
+    리소스          deployments   (apps API 그룹)
+    동사            get, list, watch
 
-  참고: StatefulSet 은 kubectl create 명령이 없다 → 문서에서 YAML 복사
+  RoleBinding
+    이름            deploy-reader-rb
+    Role            deploy-reader
+    Subject         ServiceAccount deploy-sa
 
   [확인]
-    kubectl get statefulset mysql-sts
-    kubectl get pvc          → data-mysql-sts-0, data-mysql-sts-1
+    kubectl auth can-i list deployments \
+      --as=system:serviceaccount:retail:deploy-sa -n retail   → yes
+    kubectl auth can-i list pods \
+      --as=system:serviceaccount:retail:deploy-sa -n retail   → no
 
 
 ----------------------------------------------------------------
- Q6. etcd 백업                           [Architecture · 10점]
+ Q6. 노드 drain                          [Architecture · 10점]
 ----------------------------------------------------------------
 
-  etcd 스냅샷을 /tmp/mock2-etcd.db 에 저장하시오.
+  다음 순서로 노드 유지보수 작업을 수행하시오.
 
-    endpoint      https://127.0.0.1:2379
-    CA cert       /etc/kubernetes/pki/etcd/ca.crt
-    Cert          /etc/kubernetes/pki/etcd/server.crt
-    Key           /etc/kubernetes/pki/etcd/server.key
+  (1) worker-2 노드를 drain 한다.
+      - DaemonSet Pod 는 무시
+      - emptyDir 데이터는 삭제 허용
+
+  (2) 유지보수 완료 후 worker-2 를 다시 스케줄 가능 상태로 전환한다.
 
   [확인]
-    ls -lh /tmp/mock2-etcd.db
-    ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db
+    kubectl get nodes   → worker-2 가 Ready, SchedulingDisabled 아님
 
 
 ----------------------------------------------------------------
- Q7. Node NotReady 복구                [Troubleshooting · 10점]
+ Q7. Pod 트러블슈팅                     [Troubleshooting · 25점]
 ----------------------------------------------------------------
 
-  worker-2 노드가 NotReady 상태다. 원인을 파악하고 복구하시오.
+  retail 네임스페이스의 web-broken Pod 가 ErrImagePull /
+  ImagePullBackOff 상태다.
 
-  진단 순서
-    (1) kubectl describe node worker-2      → Conditions 확인
-    (2) ssh worker-2
-    (3) systemctl status kubelet
-    (4) journalctl -u kubelet -n 50         → 에러 메시지 확인
-    (5) kubelet 을 정상화하고 재부팅에도 살아남도록 설정
-    (6) 컨트롤플레인으로 돌아와서 확인
+  원인을 파악하고, 이미지를 nginx:1.24 로 수정하여
+  Pod 가 Running 상태가 되도록 하시오.
 
   [확인]
-    kubectl get nodes                        → worker-2 가 Ready
-
-  ※ worker-2 가 실제로 NotReady 가 아니라면 현재 상태 확인만 한다.
+    kubectl get pod web-broken -n retail         → Running
 
 
 ================================================================
   배점
 ================================================================
 
-    Q1  Node Affinity Pod     Workloads          15
-    Q2  Taint + Toleration    Workloads          15
-    Q3  NetworkPolicy         Networking         20
-    Q4  Ingress               Networking         15
-    Q5  StatefulSet           Workloads          15
-    Q6  etcd 백업             Architecture       10
-    Q7  Node NotReady 복구    Troubleshooting    10
+    Q1  Deployment            Workloads          15
+    Q2  Service               Networking         10
+    Q3  ConfigMap + Pod       Workloads          10
+    Q4  PV + PVC              Storage            15
+    Q5  RBAC                  Architecture       15
+    Q6  노드 drain            Architecture       10
+    Q7  Pod 트러블슈팅        Troubleshooting    25
     ------------------------------------------------
     합계                                         100
-
-  힌트는 bash exam-start.sh 실행 시 터미널 출력에 포함되어 있다.

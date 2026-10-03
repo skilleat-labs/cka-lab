@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 10강 자동 채점 스크립트 — 패키지 관리 (Helm/Kustomize)
+# CKA 17강 자동 채점 스크립트 — 패키지 관리 (Helm/Kustomize)
 set -uo pipefail
 
 PASS=0; FAIL=0
@@ -26,7 +26,7 @@ check_output() {
 }
 
 echo "================================================="
-echo " CKA 10강 채점 — 패키지 관리 (Helm / Kustomize)"
+echo " CKA 17강 채점 — 패키지 관리 (Helm / Kustomize)"
 echo "================================================="
 echo ""
 
@@ -160,7 +160,7 @@ echo "================================================="
 TOTAL=$((PASS + FAIL))
 echo " 결과: ${PASS}/${TOTAL} 통과"
 if [ "$FAIL" -eq 0 ]; then
-  echo " ✓ 모든 항목 통과! 10강 실습 완료."
+  echo " ✓ 모든 항목 통과! 17강 실습 완료."
 else
   echo " ✗ ${FAIL}개 항목 실패. 위 [FAIL] 항목을 확인하세요."
 fi

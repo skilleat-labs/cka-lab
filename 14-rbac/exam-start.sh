@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 8강 실습 초기화 스크립트 — RBAC와 보안
+# CKA 14강 실습 초기화 스크립트 — RBAC와 보안
 # 사용법: bash exam-start.sh [--hints]
 set -euo pipefail
 
@@ -10,7 +10,7 @@ WORK_DIR="$(cd "$(dirname "$0")" && pwd)/work"
 mkdir -p "$WORK_DIR"
 
 echo "================================================="
-echo " CKA 8강 실습: RBAC와 보안"
+echo " CKA 14강 실습: RBAC와 보안"
 echo "================================================="
 echo ""
 

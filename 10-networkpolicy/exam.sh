@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 특강 실습 — NetworkPolicy (순차 진행형)
+# CKA 10강 실습 — NetworkPolicy (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 특강 실습 — NetworkPolicy (기본 거부 · 선택 허용 · Egress)"
+EXAM_TITLE="CKA 10강 실습 — NetworkPolicy (기본 거부 · 선택 허용 · Egress)"
 EXAM_NQ=5
 
 NS=netpol

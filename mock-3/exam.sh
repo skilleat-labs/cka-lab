@@ -1,403 +1,395 @@
 #!/usr/bin/env bash
-# CKA Mock Exam 3 — 순차 진행형 (100점 배점)
+# CKA Mock Exam 3 — 30분 속도 점검 (100점 · 6문항)
 # 사용법: bash exam.sh start → 풀고 → bash exam.sh check → ...
+#
+# 목적: 기초~중급 유형 6개를 30분 안에 푸는지 확인한다.
+# 모든 리소스는 store 네임스페이스에 격리된다.
 set -uo pipefail
 EXAM_UNIT="점"
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA Mock Exam 3 — 자동화·권한·트러블슈팅 (100점 · 목표 50분)"
-EXAM_NQ=7
-EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-50}"   # 제한시간(분) — 0 이면 무제한
+EXAM_TITLE="CKA Mock Exam 3 — 30분 속도 점검 (100점 · 6문항)"
+EXAM_NQ=6
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-30}"   # 제한시간(분) — 0 이면 무제한
+NS=store
 
 exam_cleanup() {
-  kdel deployment web-app broken-deploy
-  kdel hpa web-app
-  kdel svc broken-svc
-  kdel pvc fast-pvc
-  kdel pv fast-pv
-  kdel storageclass fast-ssd
-  kdel clusterrolebinding cluster-reader-crb
-  kdel clusterrole cluster-reader
-  kdel serviceaccount reader-sa
-  kdel daemonset log-collector
-  kubectl delete pod crash-pod --ignore-not-found --force --grace-period=0 &>/dev/null || true
-  rm -f /tmp/upgrade-plan.txt
-  echo "  web-app/HPA · fast-ssd/pv/pvc · RBAC · DaemonSet · broken-deploy/svc · crash-pod · upgrade-plan 삭제"
+  if kubectl get namespace $NS &>/dev/null; then
+    echo "  네임스페이스 $NS 삭제 중... (수십 초 걸릴 수 있음)"
+    kubectl delete namespace $NS --wait=true &>/dev/null || true
+  fi
+  kdel pv logs-pv
+  echo "  store 네임스페이스 · logs-pv 삭제"
 }
 
 exam_setup() {
-  # Q2: PVC 가 실제로 Bound 되도록 hostPath PV 준비 (StorageClass 는 학생이 만든다)
-  kubectl apply -f - &>/dev/null <<'EOF'
-apiVersion: v1
-kind: PersistentVolume
-metadata: { name: fast-pv }
-spec:
-  capacity: { storage: 1Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: fast-ssd
-  hostPath: { path: /mnt/fast-data, type: DirectoryOrCreate }
-EOF
-  echo "  Q2 용 PV fast-pv (sc fast-ssd, 1Gi) 준비"
-
-  # Q5: selector 가 틀린 Service
-  kubectl create deployment broken-deploy --image=nginx:1.24 --replicas=2 &>/dev/null || true
-  kubectl apply -f - &>/dev/null <<'EOF'
-apiVersion: v1
-kind: Service
-metadata: { name: broken-svc, namespace: default }
-spec:
-  selector: { app: broken-wrong }
-  ports: [ { port: 80, targetPort: 80 } ]
-EOF
-  echo "  Q5 용 broken-deploy + broken-svc (selector 불일치) 생성"
-
-  # Q6: 잘못된 command
-  kubectl apply -f - &>/dev/null <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata: { name: crash-pod, namespace: default }
-spec:
-  containers:
-  - { name: crash-pod, image: busybox:1.36, command: ["wrongcmd"] }
-EOF
-  echo "  Q6 용 crash-pod (CrashLoopBackOff) 생성"
+  kubectl create namespace $NS &>/dev/null || true
+  echo "  store 네임스페이스 생성 (모든 문제는 여기서)"
 }
 
-q1_title() { echo "Configure an HPA [10 pts]"; }
+# ══════════════════════════════════════════════════════════════
+q1_title() { echo "Create a Pod to spec [15 pts]"; }
 q1_text() { cat <<'EOF'
-Create a Deployment and an HPA with the following spec.
+In the store namespace, create a Pod with the following spec.
 
-Deployment
-  name          web-app
-  image         nginx:1.24
-  replicas      2
-
-HPA
-  target        deployment/web-app
-  min replicas  2
-  max replicas  5
-  CPU target    70%
+  name            edge-cache
+  image           nginx:1.25
+  container port  80
+  environment     CACHE_MODE=lru
+  labels          app=edge, tier=cache
 
 Verify:
-  kubectl get deployment web-app
-  kubectl get hpa web-app
+  kubectl get pod edge-cache -n store --show-labels
+  kubectl exec edge-cache -n store -- printenv CACHE_MODE
 EOF
 }
-q1_title_ko() { echo "HPA 설정 [10점]"; }
+q1_title_ko() { echo "조건대로 Pod 생성 [15점]"; }
 q1_text_ko() { cat <<'EOF'
-다음 조건으로 Deployment 와 HPA 를 생성하시오.
+store 네임스페이스에 다음 조건의 Pod 를 생성하시오.
+
+  이름            edge-cache
+  이미지          nginx:1.25
+  컨테이너 포트   80
+  환경변수        CACHE_MODE=lru
+  레이블          app=edge, tier=cache
+
+[확인]
+  kubectl get pod edge-cache -n store --show-labels
+  kubectl exec edge-cache -n store -- printenv CACHE_MODE
+EOF
+}
+q1_hint() { echo 'kubectl run edge-cache -n store --image=nginx:1.25 --port=80 --env=CACHE_MODE=lru --labels=app=edge,tier=cache'; }
+q1_grade() {
+  check "edge-cache Pod 가 store 네임스페이스에 존재" "kubectl get pod edge-cache -n $NS" 3
+  check_output "이미지 nginx:1.25" "kubectl get pod edge-cache -n $NS -o jsonpath='{.spec.containers[0].image}'" "^nginx:1\.25$" 2
+  check_output "containerPort 80" "kubectl get pod edge-cache -n $NS -o jsonpath='{.spec.containers[0].ports[0].containerPort}'" "^80$" 2
+  check_output "레이블 app=edge" "kubectl get pod edge-cache -n $NS -o jsonpath='{.metadata.labels.app}'" "^edge$" 2
+  check_output "레이블 tier=cache" "kubectl get pod edge-cache -n $NS -o jsonpath='{.metadata.labels.tier}'" "^cache$" 2
+  wait_ready "edge-cache" $NS || true
+  check_output "Running" "kubectl get pod edge-cache -n $NS -o jsonpath='{.status.phase}'" "^Running$" 2
+  check_output "파드 안에서 CACHE_MODE=lru (실제 exec)" "kubectl exec edge-cache -n $NS -- printenv CACHE_MODE" "^lru$" 2
+}
+
+# ══════════════════════════════════════════════════════════════
+q2_title() { echo "Deployment with a NodePort Service [15 pts]"; }
+q2_text() { cat <<'EOF'
+In the store namespace, create a Deployment and expose it with a NodePort
+Service.
 
 Deployment
-  이름          web-app
-  이미지        nginx:1.24
-  복제본        2
+  name            catalog
+  image           nginx:1.24
+  replicas        3
+  container port  80
 
-HPA
-  대상          deployment/web-app
-  최소 복제본   2
-  최대 복제본   5
-  CPU 임계값    70%
-
-[확인]
-  kubectl get deployment web-app
-  kubectl get hpa web-app
-EOF
-}
-q1_hint() { cat <<'EOF'
-kubectl create deployment web-app --image=nginx:1.24 --replicas=2
-kubectl autoscale deployment web-app --min=2 --max=5 --cpu-percent=70
-EOF
-}
-q1_grade() {
-  check_output "Deployment web-app 이미지 nginx:1.24" \
-    "kubectl get deployment web-app -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" "^nginx:1\.24$" 2
-  check "HPA web-app 존재" "kubectl get hpa web-app -n default" 2
-  check_output "HPA minReplicas=2" "kubectl get hpa web-app -n default -o jsonpath='{.spec.minReplicas}'" "^2$" 2
-  check_output "HPA maxReplicas=5" "kubectl get hpa web-app -n default -o jsonpath='{.spec.maxReplicas}'" "^5$" 2
-  check_output "HPA CPU 70%" \
-    "kubectl get hpa web-app -n default -o jsonpath='{.spec.metrics[0].resource.target.averageUtilization}'" "^70$" 2
-}
-
-q2_title() { echo "StorageClass and PVC [15 pts]"; }
-q2_text() { cat <<'EOF'
-Create a StorageClass and a PVC with the following spec.
-(A PV for the fast-ssd class has already been prepared.)
-
-StorageClass
-  name          fast-ssd
-  provisioner   kubernetes.io/no-provisioner
-  reclaimPolicy Delete
-
-PVC
-  name              fast-pvc
-  capacity          1Gi
-  accessMode        ReadWriteOnce
-  storageClassName  fast-ssd
-  namespace         default
+Service
+  name            catalog-svc
+  type            NodePort
+  port            80 -> targetPort 80
+  nodePort        30095
 
 Verify:
-  kubectl get storageclass fast-ssd
-  kubectl get pvc fast-pvc          -> Bound
+  kubectl get deploy,svc,endpoints -n store
+  curl http://<NodeIP>:30095
 EOF
 }
-q2_title_ko() { echo "StorageClass + PVC [15점]"; }
+q2_title_ko() { echo "Deployment + NodePort Service [15점]"; }
 q2_text_ko() { cat <<'EOF'
-다음 조건으로 StorageClass 와 PVC 를 생성하시오.
-(fast-ssd 클래스용 PV 는 미리 준비되어 있다)
+store 네임스페이스에 Deployment 를 만들고 NodePort 로 노출하시오.
 
-StorageClass
-  이름          fast-ssd
-  provisioner   kubernetes.io/no-provisioner
-  reclaimPolicy Delete
+Deployment
+  이름            catalog
+  이미지          nginx:1.24
+  복제본          3
+  컨테이너 포트   80
 
-PVC
-  이름              fast-pvc
-  용량              1Gi
-  accessMode        ReadWriteOnce
-  storageClassName  fast-ssd
-  네임스페이스      default
+Service
+  이름            catalog-svc
+  타입            NodePort
+  port            80 → targetPort 80
+  nodePort        30095
 
 [확인]
-  kubectl get storageclass fast-ssd
-  kubectl get pvc fast-pvc          → Bound
+  kubectl get deploy,svc,endpoints -n store
+  curl http://<NodeIP>:30095
 EOF
 }
 q2_hint() { cat <<'EOF'
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata: { name: fast-ssd }
-provisioner: kubernetes.io/no-provisioner
-reclaimPolicy: Delete
+kubectl create deployment catalog --image=nginx:1.24 --replicas=3 --port=80 -n store
+kubectl expose deployment catalog --name=catalog-svc --port=80 --target-port=80 --type=NodePort -n store
+kubectl patch svc catalog-svc -n store -p '{"spec":{"ports":[{"port":80,"targetPort":80,"nodePort":30095}]}}'
 EOF
 }
 q2_grade() {
-  check "StorageClass fast-ssd 존재" "kubectl get storageclass fast-ssd" 3
-  check_output "provisioner = kubernetes.io/no-provisioner" \
-    "kubectl get storageclass fast-ssd -o jsonpath='{.provisioner}'" "^kubernetes\.io/no-provisioner$" 3
-  check_output "reclaimPolicy = Delete" "kubectl get storageclass fast-ssd -o jsonpath='{.reclaimPolicy}'" "^Delete$" 2
-  check "PVC fast-pvc 존재" "kubectl get pvc fast-pvc -n default" 2
-  check_output "PVC storageClassName = fast-ssd" "kubectl get pvc fast-pvc -n default -o jsonpath='{.spec.storageClassName}'" "^fast-ssd$" 2
-  check_output "PVC 가 Bound 상태" "kubectl get pvc fast-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 3
+  check "catalog Deployment 존재" "kubectl get deployment catalog -n $NS" 2
+  check_output "이미지 nginx:1.24" "kubectl get deployment catalog -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}'" "^nginx:1\.24$" 2
+  wait_ready "-l app=catalog" $NS || true
+  check_output "Ready 복제본 3" "kubectl get deployment catalog -n $NS -o jsonpath='{.status.readyReplicas}'" "^3$" 3
+  check_output "catalog-svc NodePort 타입" "kubectl get svc catalog-svc -n $NS -o jsonpath='{.spec.type}'" "^NodePort$" 2
+  check_output "nodePort 30095" "kubectl get svc catalog-svc -n $NS -o jsonpath='{.spec.ports[0].nodePort}'" "^30095$" 3
+  local ep; ep=$(kubectl get endpoints catalog-svc -n $NS -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | wc -w | tr -d ' ')
+  check_result "Endpoints 에 파드 IP 3개" "$([[ "$ep" == "3" ]] && echo 0 || echo 1)" "실제 ${ep}개" 3
 }
 
-q3_title() { echo "RBAC with a ClusterRole [20 pts]"; }
+# ══════════════════════════════════════════════════════════════
+q3_title() { echo "Secret as env, ConfigMap as volume [15 pts]"; }
 q3_text() { cat <<'EOF'
-Create the following three RBAC resources.
+Perform the following in the store namespace.
 
-ServiceAccount        reader-sa (default namespace)
-ClusterRole           cluster-reader
-                      resources pods, nodes, services / verbs get, list, watch
-ClusterRoleBinding    cluster-reader-crb
-                      ClusterRole cluster-reader -> ServiceAccount default:reader-sa
+(1) Create a generic Secret
+  name            db-cred
+  data            user=admin, pass=s3cret
+
+(2) Create a ConfigMap
+  name            app-cfg
+  data            key config.properties with the value "mode=prod"
+
+(3) Create a Pod
+  name            worker
+  image           busybox:1.36
+  command         sleep 3600
+  environment     DB_USER from key user of Secret db-cred
+  volume mount    ConfigMap app-cfg mounted at /etc/app
 
 Verify:
-  kubectl auth can-i list nodes --as=system:serviceaccount:default:reader-sa   -> yes
-  kubectl auth can-i list pods  --as=system:serviceaccount:default:reader-sa   -> yes
+  kubectl exec worker -n store -- printenv DB_USER          -> admin
+  kubectl exec worker -n store -- cat /etc/app/config.properties   -> mode=prod
 EOF
 }
-q3_title_ko() { echo "RBAC ClusterRole [20점]"; }
+q3_title_ko() { echo "Secret 은 환경변수로, ConfigMap 은 볼륨으로 [15점]"; }
 q3_text_ko() { cat <<'EOF'
-다음 세 가지 RBAC 리소스를 생성하시오.
+store 네임스페이스에서 다음을 수행하시오.
 
-ServiceAccount        reader-sa (default 네임스페이스)
-ClusterRole           cluster-reader
-                      리소스 pods, nodes, services / 동사 get, list, watch
-ClusterRoleBinding    cluster-reader-crb
-                      ClusterRole cluster-reader → ServiceAccount default:reader-sa
+(1) Secret 생성 (generic)
+  이름            db-cred
+  데이터          user=admin, pass=s3cret
+
+(2) ConfigMap 생성
+  이름            app-cfg
+  데이터          config.properties 키에 값 "mode=prod"
+
+(3) Pod 생성
+  이름            worker
+  이미지          busybox:1.36
+  명령            sleep 3600
+  환경변수        DB_USER ← Secret db-cred 의 user 키
+  볼륨 마운트     ConfigMap app-cfg 를 /etc/app 에
 
 [확인]
-  kubectl auth can-i list nodes --as=system:serviceaccount:default:reader-sa   → yes
-  kubectl auth can-i list pods  --as=system:serviceaccount:default:reader-sa   → yes
+  kubectl exec worker -n store -- printenv DB_USER          → admin
+  kubectl exec worker -n store -- cat /etc/app/config.properties   → mode=prod
 EOF
 }
 q3_hint() { cat <<'EOF'
-kubectl create serviceaccount reader-sa
-kubectl create clusterrole cluster-reader --verb=get,list,watch --resource=pods,nodes,services
-kubectl create clusterrolebinding cluster-reader-crb --clusterrole=cluster-reader --serviceaccount=default:reader-sa
+kubectl create secret generic db-cred -n store --from-literal=user=admin --from-literal=pass=s3cret
+kubectl create configmap app-cfg -n store --from-literal=config.properties=mode=prod
+# Pod YAML: env[0].valueFrom.secretKeyRef {name: db-cred, key: user} / volumes[0].configMap {name: app-cfg} → /etc/app
 EOF
 }
 q3_grade() {
-  check "ServiceAccount reader-sa 존재" "kubectl get serviceaccount reader-sa -n default" 3
-  check "ClusterRole cluster-reader 존재" "kubectl get clusterrole cluster-reader" 3
-  local res verbs
-  res=$(kubectl get clusterrole cluster-reader -o jsonpath='{.rules[*].resources}' 2>/dev/null || echo "")
-  verbs=$(kubectl get clusterrole cluster-reader -o jsonpath='{.rules[*].verbs}' 2>/dev/null || echo "")
-  check_result "리소스에 pods · nodes · services 모두 포함" \
-    "$(echo "$res" | grep -q pods && echo "$res" | grep -q nodes && echo "$res" | grep -q services && echo 0 || echo 1)" "" 3
-  check_result "verbs 에 get · list · watch 모두 포함" \
-    "$(echo "$verbs" | grep -q get && echo "$verbs" | grep -q list && echo "$verbs" | grep -q watch && echo 0 || echo 1)" "" 3
-  check "ClusterRoleBinding cluster-reader-crb 존재" "kubectl get clusterrolebinding cluster-reader-crb" 3
-  check_output "권한: list nodes = yes" "kubectl auth can-i list nodes --as=system:serviceaccount:default:reader-sa" "^yes$" 3
-  check_output "권한: list pods = yes" "kubectl auth can-i list pods --as=system:serviceaccount:default:reader-sa" "^yes$" 2
+  check_output "Secret db-cred 의 user 가 admin" "kubectl get secret db-cred -n $NS -o jsonpath='{.data.user}' | base64 -d" "^admin$" 2
+  check_output "ConfigMap app-cfg 의 config.properties" "kubectl get configmap app-cfg -n $NS -o jsonpath='{.data.config\.properties}'" "mode=prod" 2
+  check "worker Pod 존재" "kubectl get pod worker -n $NS" 2
+  wait_ready "worker" $NS || true
+  check_output "worker Running" "kubectl get pod worker -n $NS -o jsonpath='{.status.phase}'" "^Running$" 2
+  check_output "DB_USER 가 secretKeyRef 로 주입됨" "kubectl get pod worker -n $NS -o jsonpath='{.spec.containers[0].env[?(@.name==\"DB_USER\")].valueFrom.secretKeyRef.key}'" "^user$" 2
+  check_output "파드 안에서 DB_USER=admin (실제 exec)" "kubectl exec worker -n $NS -- printenv DB_USER" "^admin$" 2
+  check_output "/etc/app/config.properties 내용 (실제 exec)" "kubectl exec worker -n $NS -- cat /etc/app/config.properties" "mode=prod" 3
 }
 
-q4_title() { echo "Create a DaemonSet [15 pts]"; }
+# ══════════════════════════════════════════════════════════════
+q4_title() { echo "Scale, rolling update and rollback [15 pts]"; }
 q4_text() { cat <<'EOF'
-Create a DaemonSet with the following spec.
+In the store namespace, create a Deployment named orders (nginx:1.24,
+replicas 2), then perform the following in order.
 
-  name          log-collector
-  namespace     default
-  image         busybox:1.36
-  command       ["sh", "-c", "while true; do echo $(date); sleep 60; done"]
-  labels        app=log-collector  (in both selector and template)
+  (a) scale to 3 replicas
+  (b) rolling update to nginx:1.25 and wait until it completes
+  (c) roll back to the previous revision
 
-Note: there is no kubectl create command for a DaemonSet — write the YAML.
+Final state: nginx:1.24 / replicas 3 / all Ready.
+You must actually go through all three steps (creating it with 1.24 and
+only scaling does not count).
 
 Verify:
-  kubectl get daemonset log-collector    -> DESIRED == READY (number of worker nodes)
+  kubectl rollout history deployment/orders -n store   -> at least three revisions
+  kubectl get rs -n store
 EOF
 }
-q4_title_ko() { echo "DaemonSet 생성 [15점]"; }
+q4_title_ko() { echo "스케일 · 롤링 업데이트 · 롤백 [15점]"; }
 q4_text_ko() { cat <<'EOF'
-다음 조건으로 DaemonSet 을 생성하시오.
+store 네임스페이스에 Deployment orders (nginx:1.24, replicas 2) 를 만든 뒤
+순서대로 수행하시오.
 
-  이름          log-collector
-  네임스페이스  default
-  이미지        busybox:1.36
-  command       ["sh", "-c", "while true; do echo $(date); sleep 60; done"]
-  레이블        app=log-collector  (selector 와 template 모두)
+  (a) replicas 를 3 으로 스케일
+  (b) 이미지를 nginx:1.25 로 롤링 업데이트하고 완료될 때까지 대기
+  (c) 이전 리비전으로 롤백
 
-참고: DaemonSet 은 kubectl create 명령이 없다 → YAML 작성
+최종 상태: nginx:1.24 / replicas 3 / 전부 Ready
+세 단계를 실제로 거쳐야 한다 (처음부터 1.24 로 두고 스케일만 하면 오답).
 
 [확인]
-  kubectl get daemonset log-collector    → DESIRED == READY (워커 노드 수)
+  kubectl rollout history deployment/orders -n store   → 리비전 3개 이상
+  kubectl get rs -n store
 EOF
 }
-q4_hint() { echo "kubectl create deployment 로 뼈대를 뽑아 kind 를 DaemonSet 으로 바꾸고 replicas/strategy 를 지운다"; }
+q4_hint() { cat <<'EOF'
+kubectl create deployment orders --image=nginx:1.24 --replicas=2 -n store
+kubectl scale deployment orders --replicas=3 -n store
+kubectl set image deployment/orders nginx=nginx:1.25 -n store && kubectl rollout status deployment/orders -n store
+kubectl rollout undo deployment/orders -n store && kubectl rollout status deployment/orders -n store
+EOF
+}
 q4_grade() {
-  check "DaemonSet log-collector 존재" "kubectl get daemonset log-collector -n default" 4
-  check_output "이미지: busybox" "kubectl get daemonset log-collector -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" "busybox" 3
-  check_output "selector app=log-collector" "kubectl get daemonset log-collector -n default -o jsonpath='{.spec.selector.matchLabels.app}'" "^log-collector$" 3
-  local i; for i in $(seq 1 10); do
-    local d r; d=$(kubectl get daemonset log-collector -n default -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo 0)
-    r=$(kubectl get daemonset log-collector -n default -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
-    [[ "$d" != "0" && "$d" == "$r" ]] && break; sleep 3
-  done
-  local d r; d=$(kubectl get daemonset log-collector -n default -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo 0)
-  r=$(kubectl get daemonset log-collector -n default -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
-  check_result "DESIRED(${d}) == READY(${r}) — 노드마다 1개씩 기동" "$([[ "$d" != "0" && "$d" == "$r" ]] && echo 0 || echo 1)" "" 5
+  check "orders Deployment 존재" "kubectl get deployment orders -n $NS" 2
+  check_output "replicas 3" "kubectl get deployment orders -n $NS -o jsonpath='{.spec.replicas}'" "^3$" 2
+  wait_ready "-l app=orders" $NS || true
+  check_output "Ready 3" "kubectl get deployment orders -n $NS -o jsonpath='{.status.readyReplicas}'" "^3$" 2
+  check_output "최종 이미지 nginx:1.24 (롤백 완료)" "kubectl get deployment orders -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}'" "^nginx:1\.24$" 3
+  check_output "nginx:1.25 ReplicaSet 이력 존재 (업데이트를 실제로 함)" \
+    "kubectl get rs -n $NS -l app=orders -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].image}{\"\\n\"}{end}'" "^nginx:1\.25$" 3
+  local rev; rev=$(kubectl get deployment orders -n $NS -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null || echo 0)
+  check_result "revision ≥ 3 (생성→업데이트→롤백)" "$([[ "$rev" =~ ^[0-9]+$ && "$rev" -ge 3 ]] && echo 0 || echo 1)" "현재 ${rev:-0}" 3
 }
 
-q5_title() { echo "Fix an empty Service endpoint [20 pts]"; }
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "Create a PV, bind a PVC, mount it [20 pts]"; }
 q5_text() { cat <<'EOF'
-The Endpoints of broken-svc are empty, while broken-deploy is running
-normally with two pods.
+Create a PV with the following spec, bind it with a PVC, then mount it in
+a Pod.
 
-Diagnose the cause and fix broken-svc so that it sends traffic to the pods
-of broken-deploy.
+PersistentVolume
+  name              logs-pv
+  capacity          1Gi
+  access mode       ReadWriteOnce
+  type              hostPath, path=/mnt/logs
+  storageClassName  local-logs
 
-Useful commands:
-  kubectl get endpoints broken-svc
-  kubectl get svc broken-svc -o yaml
-  kubectl get pod -l app=broken-deploy --show-labels
+PersistentVolumeClaim
+  name              logs-pvc  (store namespace)
+  request           500Mi
+  access mode       ReadWriteOnce
+  storageClassName  local-logs
+
+Pod
+  name              log-writer / busybox:1.36 / sleep 3600
+  mount             logs-pvc at /var/log/app
 
 Verify:
-  kubectl get endpoints broken-svc         -> two Pod IPs
+  kubectl get pv logs-pv ; kubectl get pvc logs-pvc -n store   -> both Bound
+  kubectl exec log-writer -n store -- touch /var/log/app/ok
 EOF
 }
-q5_title_ko() { echo "Service Endpoint 수정 [20점]"; }
+q5_title_ko() { echo "PV 직접 생성 → PVC Bound → 파드 마운트 [20점]"; }
 q5_text_ko() { cat <<'EOF'
-현재 broken-svc 의 Endpoints 가 비어 있다. broken-deploy 는 정상 실행 중
-(파드 2개)이다.
+다음 조건으로 PV 를 만들고, PVC 로 Bound 시킨 뒤, 파드에 마운트하시오.
 
-원인을 진단하고 broken-svc 가 broken-deploy 의 파드로 트래픽을 보내도록
-수정하시오.
+PersistentVolume
+  이름              logs-pv
+  용량              1Gi
+  접근 모드         ReadWriteOnce
+  타입              hostPath, path=/mnt/logs
+  storageClassName  local-logs
 
-진단에 쓸 명령
-  kubectl get endpoints broken-svc
-  kubectl get svc broken-svc -o yaml
-  kubectl get pod -l app=broken-deploy --show-labels
+PersistentVolumeClaim
+  이름              logs-pvc  (store 네임스페이스)
+  용량 요청         500Mi
+  접근 모드         ReadWriteOnce
+  storageClassName  local-logs
+
+Pod
+  이름              log-writer / busybox:1.36 / sleep 3600
+  마운트            logs-pvc 를 /var/log/app 에
 
 [확인]
-  kubectl get endpoints broken-svc         → Pod IP 2개
+  kubectl get pv logs-pv ; kubectl get pvc logs-pvc -n store   → 둘 다 Bound
+  kubectl exec log-writer -n store -- touch /var/log/app/ok
 EOF
 }
-q5_hint() { echo "kubectl patch svc broken-svc -p '{\"spec\":{\"selector\":{\"app\":\"broken-deploy\"}}}'"; }
+q5_hint() { echo "PV 와 PVC 의 storageClassName·accessModes 가 같아야 하고 PVC 요청 ≤ PV 용량이어야 Bound 된다"; }
 q5_grade() {
-  check_output "broken-svc selector 가 app=broken-deploy" \
-    "kubectl get svc broken-svc -n default -o jsonpath='{.spec.selector.app}'" "^broken-deploy$" 8
-  local ep; ep=$(kubectl get endpoints broken-svc -n default -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | wc -w | tr -d ' ')
-  check_result "broken-svc Endpoints 에 Pod IP 2개" "$([[ "$ep" == "2" ]] && echo 0 || echo 1)" "실제 ${ep}개" 6
-  kubectl delete pod ep-probe -n default --ignore-not-found &>/dev/null || true
-  local out; out=$(kubectl run ep-probe -n default --image=busybox:1.36 --restart=Never --rm -i --timeout=60s --command -- wget -qO- --timeout=5 http://broken-svc 2>/dev/null || echo "")
-  kubectl delete pod ep-probe -n default --ignore-not-found &>/dev/null || true
-  check_result "http://broken-svc 로 실제 응답 (통신 검증)" "$(echo "$out" | grep -qi nginx && echo 0 || echo 1)" "" 6
+  check_output "PV logs-pv 용량 1Gi" "kubectl get pv logs-pv -o jsonpath='{.spec.capacity.storage}'" "^1Gi$" 2
+  check_output "PV accessMode RWO" "kubectl get pv logs-pv -o jsonpath='{.spec.accessModes[0]}'" "^ReadWriteOnce$" 2
+  check_output "PV hostPath /mnt/logs" "kubectl get pv logs-pv -o jsonpath='{.spec.hostPath.path}'" "^/mnt/logs$" 2
+  check_output "PV storageClassName local-logs" "kubectl get pv logs-pv -o jsonpath='{.spec.storageClassName}'" "^local-logs$" 2
+  check_output "PVC logs-pvc 요청 500Mi" "kubectl get pvc logs-pvc -n $NS -o jsonpath='{.spec.resources.requests.storage}'" "^500Mi$" 2
+  check_output "PVC Bound" "kubectl get pvc logs-pvc -n $NS -o jsonpath='{.status.phase}'" "^Bound$" 3
+  check_output "PVC 가 logs-pv 에 바인딩" "kubectl get pvc logs-pvc -n $NS -o jsonpath='{.spec.volumeName}'" "^logs-pv$" 2
+  wait_ready "log-writer" $NS || true
+  check_output "log-writer 가 logs-pvc 를 /var/log/app 에 마운트" \
+    "kubectl get pod log-writer -n $NS -o jsonpath='{.spec.volumes[?(@.persistentVolumeClaim.claimName==\"logs-pvc\")].name}'" "." 2
+  local out; out=$(kubectl exec log-writer -n $NS -- sh -c 'echo ok > /var/log/app/.probe && cat /var/log/app/.probe' 2>/dev/null || echo "")
+  check_result "파드 안 /var/log/app 에 실제 쓰기·읽기" "$([[ "$out" == "ok" ]] && echo 0 || echo 1)" "" 3
 }
 
-q6_title() { echo "Fix a CrashLoopBackOff [10 pts]"; }
+# ══════════════════════════════════════════════════════════════
+q6_title() { echo "NetworkPolicy — only tier=cache may reach catalog [20 pts]"; }
 q6_text() { cat <<'EOF'
-The Pod crash-pod is in CrashLoopBackOff state.
-Find the cause and make the Pod reach Running state. Keep the same image.
+Create two NetworkPolicies in the store namespace.
 
-Useful commands:
-  kubectl logs crash-pod --previous
-  kubectl describe pod crash-pod
+(1) deny-all
+    - block all ingress for every Pod  (podSelector: {} / policyTypes: [Ingress])
+
+(2) allow-cache-to-catalog
+    - target: Pods labelled app=catalog
+    - allow: TCP 80 only from Pods labelled tier=cache
+
+Result: from a tier=cache Pod (edge-cache from task 1) catalog-svc must
+answer, and from a Pod without that label it must time out.
 
 Verify:
-  kubectl get pod crash-pod                -> Running, no further restarts
-
-Note: the command of a running Pod cannot be edited — delete and recreate it.
+  kubectl describe networkpolicy -n store
+  kubectl exec edge-cache -n store -- curl -s --max-time 3 http://catalog-svc      -> answers
+  kubectl run t -n store --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- --timeout=3 http://catalog-svc   -> timeout
 EOF
 }
-q6_title_ko() { echo "CrashLoopBackOff 수정 [10점]"; }
+q6_title_ko() { echo "NetworkPolicy — tier=cache 에서만 catalog 로 [20점]"; }
 q6_text_ko() { cat <<'EOF'
-crash-pod 가 CrashLoopBackOff 상태다.
-원인을 파악하고 Pod 가 Running 이 되도록 수정하시오. (이미지는 그대로)
+store 네임스페이스에 NetworkPolicy 두 개를 만드시오.
 
-진단에 쓸 명령
-  kubectl logs crash-pod --previous
-  kubectl describe pod crash-pod
+(1) deny-all
+    - 모든 파드의 Ingress 전체 차단  (podSelector: {} / policyTypes: [Ingress])
+
+(2) allow-cache-to-catalog
+    - 대상: app=catalog 파드
+    - 허용: tier=cache 레이블 파드에서 오는 TCP 80 만
+
+결과: tier=cache 파드(Q1 의 edge-cache)에서는 catalog-svc 가 응답하고,
+      레이블 없는 파드에서는 timeout 이어야 한다.
 
 [확인]
-  kubectl get pod crash-pod                → Running, RESTARTS 증가 없음
-
-※ Pod 의 command 는 실행 중 수정할 수 없다. 삭제 후 재생성한다.
+  kubectl describe networkpolicy -n store
+  kubectl exec edge-cache -n store -- curl -s --max-time 3 http://catalog-svc      → 응답
+  kubectl run t -n store --rm -it --image=busybox:1.36 --restart=Never -- wget -qO- --timeout=3 http://catalog-svc   → timeout
 EOF
 }
 q6_hint() { cat <<'EOF'
-kubectl delete pod crash-pod --force --grace-period=0
-kubectl run crash-pod --image=busybox:1.36 --command -- sleep 3600
+# allow-cache-to-catalog
+spec:
+  podSelector: { matchLabels: { app: catalog } }
+  policyTypes: [Ingress]
+  ingress:
+  - from: [ { podSelector: { matchLabels: { tier: cache } } } ]
+    ports: [ { protocol: TCP, port: 80 } ]
 EOF
 }
 q6_grade() {
-  wait_ready "crash-pod" default || true
-  check_output "crash-pod STATUS=Running" "kubectl get pod crash-pod -n default -o jsonpath='{.status.phase}'" "^Running$" 4
-  check_output "crash-pod Ready" "kubectl get pod crash-pod -n default -o jsonpath='{.status.containerStatuses[0].ready}'" "^true$" 3
-  local cmd; cmd=$(kubectl get pod crash-pod -n default -o jsonpath='{.spec.containers[0].command}' 2>/dev/null || echo "")
-  check_result "command 가 wrongcmd 가 아님" "$(kubectl get pod crash-pod -n default &>/dev/null && ! echo "$cmd" | grep -q wrongcmd && echo 0 || echo 1)" "" 3
-}
-
-q7_title() { echo "Cluster upgrade plan [10 pts]"; }
-q7_text() { cat <<'EOF'
-Check the kubeadm cluster upgrade plan and save the output to the file
-/tmp/upgrade-plan.txt.
-
-  - it must be run on the control plane node
-  - capture both standard output and standard error into the file
-
-Verify:
-  cat /tmp/upgrade-plan.txt     -> contains the Kubernetes version information
-EOF
-}
-q7_title_ko() { echo "클러스터 업그레이드 계획 [10점]"; }
-q7_text_ko() { cat <<'EOF'
-kubeadm 으로 클러스터 업그레이드 계획을 확인하고 결과를
-/tmp/upgrade-plan.txt 파일에 저장하시오.
-
-  - 컨트롤플레인 노드에서 실행해야 한다
-  - 표준 출력과 표준 에러를 모두 파일에 담는다
-
-[확인]
-  cat /tmp/upgrade-plan.txt     → 쿠버네티스 버전 정보 포함
-EOF
-}
-q7_hint() { echo "kubeadm upgrade plan > /tmp/upgrade-plan.txt 2>&1"; }
-q7_grade() {
-  check_result "/tmp/upgrade-plan.txt 파일 존재" "$([[ -f /tmp/upgrade-plan.txt ]] && echo 0 || echo 1)" "컨트롤플레인에서 실행" 4
-  local sz; sz=$(stat -c%s /tmp/upgrade-plan.txt 2>/dev/null || stat -f%z /tmp/upgrade-plan.txt 2>/dev/null || echo 0)
-  check_result "파일 내용 있음" "$([[ "$sz" -gt 0 ]] && echo 0 || echo 1)" "" 3
-  check_output "버전 정보(v1.x) 포함" "cat /tmp/upgrade-plan.txt" "v1\.[0-9]+" 3
+  check "deny-all 존재" "kubectl get networkpolicy deny-all -n $NS" 2
+  check_output "deny-all podSelector 비어 있음" "kubectl get networkpolicy deny-all -n $NS -o jsonpath='{.spec.podSelector}'" "^\{\}$" 2
+  check_output "deny-all policyTypes Ingress" "kubectl get networkpolicy deny-all -n $NS -o jsonpath='{.spec.policyTypes}'" "Ingress" 1
+  check "allow-cache-to-catalog 존재" "kubectl get networkpolicy allow-cache-to-catalog -n $NS" 2
+  check_output "대상 app=catalog" "kubectl get networkpolicy allow-cache-to-catalog -n $NS -o jsonpath='{.spec.podSelector.matchLabels.app}'" "^catalog$" 2
+  check_output "from tier=cache" "kubectl get networkpolicy allow-cache-to-catalog -n $NS -o jsonpath='{.spec.ingress[0].from[*].podSelector.matchLabels.tier}'" "cache" 2
+  check_output "포트 80" "kubectl get networkpolicy allow-cache-to-catalog -n $NS -o jsonpath='{.spec.ingress[0].ports[0].port}'" "^80$" 1
+  # 실제 통신 — 허용 경로 (edge-cache 는 tier=cache)
+  local ok; ok=$(kubectl exec edge-cache -n $NS -- sh -c 'wget -qO- --timeout=3 http://catalog-svc 2>/dev/null || curl -s --max-time 3 http://catalog-svc' 2>/dev/null || echo "")
+  check_result "tier=cache 파드에서 catalog-svc 응답 (허용 경로)" "$(echo "$ok" | grep -qi nginx && echo 0 || echo 1)" "edge-cache 가 없거나 통신 실패" 4
+  # 실제 통신 — 차단 경로 (레이블 없는 임시 파드)
+  kubectl delete pod np-probe -n $NS --ignore-not-found &>/dev/null || true
+  local blocked; blocked=$(kubectl run np-probe -n $NS --image=busybox:1.36 --restart=Never --rm -i --timeout=60s --command -- wget -qO- --timeout=3 http://catalog-svc 2>/dev/null || echo "")
+  kubectl delete pod np-probe -n $NS --ignore-not-found &>/dev/null || true
+  local gate=1; kubectl get networkpolicy deny-all -n $NS &>/dev/null && kubectl get svc catalog-svc -n $NS &>/dev/null && gate=0
+  check_result "레이블 없는 파드에서는 차단됨 (timeout)" "$([[ $gate == 0 ]] && ! echo "$blocked" | grep -qi nginx && echo 0 || echo 1)" "차단되지 않음 — CNI 또는 정책 확인" 4
 }
 
 exam_main "$@"

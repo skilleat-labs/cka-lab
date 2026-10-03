@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 8강 실습 — RBAC (순차 진행형)
+# CKA 14강 실습 — RBAC (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 8강 실습 — RBAC (ServiceAccount · Role · ClusterRole)"
+EXAM_TITLE="CKA 14강 실습 — RBAC (ServiceAccount · Role · ClusterRole)"
 EXAM_NQ=4
 
 exam_cleanup() {

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 9강 실습 — 클러스터 유지보수 (순차 진행형)
+# CKA 15강 실습 — 클러스터 유지보수 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 9강 실습 — 유지보수 (drain · etcd 백업 · 업그레이드 계획 · 인증서)"
+EXAM_TITLE="CKA 15강 실습 — 유지보수 (drain · etcd 백업 · 업그레이드 계획 · 인증서)"
 EXAM_NQ=4
 
 exam_cleanup() {

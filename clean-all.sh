@@ -23,7 +23,7 @@ for a in "$@"; do
 done
 
 sets=()
-for d in */; do
+for d in */ tutoring/*/; do
   [[ -f "$d/exam.sh" ]] && sets+=("${d%/}")
 done
 (( ${#sets[@]} == 0 )) && { echo "실습 세트를 찾지 못했습니다."; exit 1; }

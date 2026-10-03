@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 6강 실습 채점 스크립트
+# CKA 9강 실습 채점 스크립트
 # 사용법: bash verify.sh
 set -uo pipefail
 
@@ -39,7 +39,7 @@ check_output() {
 
 echo ""
 sep
-echo -e "  ${BOLD}CKA 6강 실습 채점${RESET}"
+echo -e "  ${BOLD}CKA 9강 실습 채점${RESET}"
 sep
 
 # ════════════════════════════════════════════════════════════════

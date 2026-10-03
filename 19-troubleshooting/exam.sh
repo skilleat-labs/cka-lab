@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 11강 실습 — 트러블슈팅 (순차 진행형)
+# CKA 19강 실습 — 트러블슈팅 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 11강 실습 — 트러블슈팅 (CrashLoop · ImagePull · Endpoints · 노드)"
+EXAM_TITLE="CKA 19강 실습 — 트러블슈팅 (CrashLoop · ImagePull · Endpoints · 노드)"
 EXAM_NQ=4
 
 exam_cleanup() {

@@ -12,17 +12,15 @@ SCORE=0
 TOTAL=100
 PASS=0
 FAIL=0
+NS=retail
 
 hr() { printf '%0.s─' {1..70}; echo; }
 
 check() {
-  local desc="$1"
-  local pts="$2"
-  local result="$3"
+  local desc="$1" pts="$2" result="$3"
   if [ "$result" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} [+${pts}점] ${desc}"
-    SCORE=$((SCORE + pts))
-    PASS=$((PASS + 1))
+    SCORE=$((SCORE + pts)); PASS=$((PASS + 1))
   else
     echo -e "  ${RED}FAIL${NC} [ 0점] ${desc}"
     FAIL=$((FAIL + 1))
@@ -30,26 +28,14 @@ check() {
 }
 
 check_output() {
-  local desc="$1"
-  local pts="$2"
-  local actual="$3"
-  local expected="$4"
-  if echo "$actual" | grep -q "$expected" 2>/dev/null; then
+  local desc="$1" pts="$2" actual="$3" expected="$4"
+  if echo "$actual" | grep -qE "$expected" 2>/dev/null; then
     echo -e "  ${GREEN}PASS${NC} [+${pts}점] ${desc}"
-    SCORE=$((SCORE + pts))
-    PASS=$((PASS + 1))
+    SCORE=$((SCORE + pts)); PASS=$((PASS + 1))
   else
     echo -e "  ${RED}FAIL${NC} [ 0점] ${desc}  (기대: '${expected}', 실제: '${actual}')"
     FAIL=$((FAIL + 1))
   fi
-}
-
-skip_score() {
-  local desc="$1"
-  local pts="$2"
-  echo -e "  ${YELLOW}SKIP${NC} [+${pts}점] ${desc} (환경 미지원 — 점수 자동 부여)"
-  SCORE=$((SCORE + pts))
-  PASS=$((PASS + 1))
 }
 
 echo -e "${BOLD}${BLUE}"
@@ -59,116 +45,141 @@ hr
 echo -e "${NC}"
 
 # ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q1. Node Affinity Pod [15점]${NC}"
+echo -e "${BOLD}Q1. Deployment 생성 [15점]${NC}"
 hr
 
-# affinity-pod 존재
-POD1=$(kubectl get pod affinity-pod -n default -o name 2>/dev/null || echo '')
-check "affinity-pod 존재" 5 $([ -n "$POD1" ] && echo 0 || echo 1)
+DEP=$(kubectl get deployment store-front -n $NS -o name 2>/dev/null || echo '')
+check "Deployment store-front 가 retail 네임스페이스에 존재" 4 $([ -n "$DEP" ] && echo 0 || echo 1)
 
-# affinity 필드 확인
-AFF=$(kubectl get pod affinity-pod -n default -o jsonpath='{.spec.affinity}' 2>/dev/null || echo '')
-check "spec.affinity 필드 존재" 5 $([ -n "$AFF" ] && [ "$AFF" != "null" ] && echo 0 || echo 1)
+check_output "이미지: nginx:1.25" 4 \
+  "$(kubectl get deployment store-front -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo '')" \
+  "^nginx:1\.25$"
 
-# requiredDuring 확인
-check_output "requiredDuringScheduling 설정" 5 "$AFF" "requiredDuring"
+check_output "containerPort 80" 2 \
+  "$(kubectl get deployment store-front -n $NS -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}' 2>/dev/null || echo '')" \
+  "^80$"
+
+READY=$(kubectl get deployment store-front -n $NS -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo '0')
+check "Ready 복제본 4개" 5 $([ "$READY" = "4" ] && echo 0 || echo 1)
 
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q2. Taint + Toleration [15점]${NC}"
+echo -e "${BOLD}Q2. Service 생성 [10점]${NC}"
 hr
 
-POD2=$(kubectl get pod toleration-pod -n default -o name 2>/dev/null || echo '')
-check "toleration-pod 존재" 5 $([ -n "$POD2" ] && echo 0 || echo 1)
+SVC_TYPE=$(kubectl get svc store-svc -n $NS -o jsonpath='{.spec.type}' 2>/dev/null || echo '')
+check "Service store-svc 존재 + ClusterIP 타입" 3 $([ "$SVC_TYPE" = "ClusterIP" ] && echo 0 || echo 1)
 
-TOL=$(kubectl get pod toleration-pod -n default -o jsonpath='{.spec.tolerations}' 2>/dev/null || echo '')
-check_output "toleration key=dedicated 설정" 5 "$TOL" "dedicated"
-check_output "toleration effect=NoSchedule 설정" 5 "$TOL" "NoSchedule"
+check_output "port 8080" 2 \
+  "$(kubectl get svc store-svc -n $NS -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo '')" "^8080$"
+
+check_output "targetPort 80" 2 \
+  "$(kubectl get svc store-svc -n $NS -o jsonpath='{.spec.ports[0].targetPort}' 2>/dev/null || echo '')" "^80$"
+
+EP_CNT=$(kubectl get endpoints store-svc -n $NS -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | wc -w | tr -d ' ')
+check "Endpoints 에 Pod IP 4개 등록" 3 $([ "$EP_CNT" = "4" ] && echo 0 || echo 1)
 
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q3. NetworkPolicy [20점]${NC}"
+echo -e "${BOLD}Q3. ConfigMap + Pod [10점]${NC}"
 hr
 
-# deny-all
-NP_DENY=$(kubectl get networkpolicy deny-all -n default -o name 2>/dev/null || echo '')
-check "NetworkPolicy deny-all 존재" 5 $([ -n "$NP_DENY" ] && echo 0 || echo 1)
+check_output "ConfigMap store-config / APP_MODE=staging" 2 \
+  "$(kubectl get configmap store-config -n $NS -o jsonpath='{.data.APP_MODE}' 2>/dev/null || echo '')" "^staging$"
 
-DENY_PT=$(kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.policyTypes}' 2>/dev/null || echo '')
-check_output "deny-all policyTypes: Ingress" 5 "$DENY_PT" "Ingress"
+check_output "ConfigMap store-config / APP_PORT=9090" 2 \
+  "$(kubectl get configmap store-config -n $NS -o jsonpath='{.data.APP_PORT}' 2>/dev/null || echo '')" "^9090$"
 
-# allow-web
-NP_ALLOW=$(kubectl get networkpolicy allow-web -n default -o name 2>/dev/null || echo '')
-check "NetworkPolicy allow-web 존재" 5 $([ -n "$NP_ALLOW" ] && echo 0 || echo 1)
+POD_STATUS=$(kubectl get pod store-cfg -n $NS -o jsonpath='{.status.phase}' 2>/dev/null || echo '')
+check "store-cfg Running" 2 $([ "$POD_STATUS" = "Running" ] && echo 0 || echo 1)
 
-ALLOW_INGRESS=$(kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.ingress}' 2>/dev/null || echo '')
-check_output "allow-web ingress 규칙 (포트 3306)" 5 "$ALLOW_INGRESS" "3306"
+check_output "store-cfg 내부 APP_MODE=staging (실제 exec)" 2 \
+  "$(kubectl exec store-cfg -n $NS -- printenv APP_MODE 2>/dev/null || echo '')" "^staging$"
+
+check_output "store-cfg 내부 APP_PORT=9090 (실제 exec)" 2 \
+  "$(kubectl exec store-cfg -n $NS -- printenv APP_PORT 2>/dev/null || echo '')" "^9090$"
 
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q4. Ingress [15점]${NC}"
+echo -e "${BOLD}Q4. PV + PVC [15점]${NC}"
 hr
 
-ING=$(kubectl get ingress shop-ingress -n default -o name 2>/dev/null || echo '')
-check "Ingress shop-ingress 존재" 5 $([ -n "$ING" ] && echo 0 || echo 1)
+check_output "PV report-pv 용량 1Gi" 3 \
+  "$(kubectl get pv report-pv -o jsonpath='{.spec.capacity.storage}' 2>/dev/null || echo '')" "^1Gi$"
 
-ING_RULES=$(kubectl get ingress shop-ingress -n default -o jsonpath='{.spec.rules}' 2>/dev/null || echo '')
-check_output "Ingress /shop 경로 규칙" 5 "$ING_RULES" "shop"
-check_output "Ingress /api 경로 규칙" 5 "$ING_RULES" "api"
+check_output "PV accessMode ReadWriteMany" 3 \
+  "$(kubectl get pv report-pv -o jsonpath='{.spec.accessModes[0]}' 2>/dev/null || echo '')" "^ReadWriteMany$"
+
+check_output "PV hostPath /tmp/report-data" 2 \
+  "$(kubectl get pv report-pv -o jsonpath='{.spec.hostPath.path}' 2>/dev/null || echo '')" "^/tmp/report-data$"
+
+check_output "PV storageClassName local-manual" 2 \
+  "$(kubectl get pv report-pv -o jsonpath='{.spec.storageClassName}' 2>/dev/null || echo '')" "^local-manual$"
+
+PVC_STATUS=$(kubectl get pvc report-pvc -n $NS -o jsonpath='{.status.phase}' 2>/dev/null || echo '')
+check "PVC report-pvc STATUS=Bound (retail 네임스페이스)" 5 $([ "$PVC_STATUS" = "Bound" ] && echo 0 || echo 1)
 
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q5. StatefulSet [15점]${NC}"
+echo -e "${BOLD}Q5. RBAC [15점]${NC}"
 hr
 
-STS=$(kubectl get statefulset mysql-sts -n default -o name 2>/dev/null || echo '')
-check "StatefulSet mysql-sts 존재" 4 $([ -n "$STS" ] && echo 0 || echo 1)
+SA=$(kubectl get serviceaccount deploy-sa -n $NS -o name 2>/dev/null || echo '')
+check "ServiceAccount deploy-sa 존재" 2 $([ -n "$SA" ] && echo 0 || echo 1)
 
-STS_IMG=$(kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo '')
-check_output "이미지: mysql:8.0" 3 "$STS_IMG" "mysql:8.0"
+ROLE_JSON=$(kubectl get role deploy-reader -n $NS -o json 2>/dev/null || echo '{}')
+ROLE_VERBS=$(echo "$ROLE_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(v for r in d.get("rules",[]) for v in r.get("verbs",[])))' 2>/dev/null || echo '')
+ROLE_RES=$(echo "$ROLE_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(v for r in d.get("rules",[]) for v in r.get("resources",[])))' 2>/dev/null || echo '')
+ROLE_GRP=$(echo "$ROLE_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(v for r in d.get("rules",[]) for v in r.get("apiGroups",[])))' 2>/dev/null || echo '')
 
-STS_REP=$(kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '')
-check "복제본 2개" 3 $([ "$STS_REP" = "2" ] && echo 0 || echo 1)
+check_output "Role deploy-reader 리소스: deployments" 2 "$ROLE_RES" "deployments"
+check_output "Role deploy-reader apiGroup: apps" 2 "$ROLE_GRP" "apps"
+check_output "Role verbs 에 get·list·watch 포함" 2 "$ROLE_VERBS" "get.*list.*watch|list.*get.*watch|watch.*get.*list|get.*watch.*list|list.*watch.*get|watch.*list.*get"
 
-VCT=$(kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.volumeClaimTemplates}' 2>/dev/null || echo '')
-check "volumeClaimTemplates 존재" 5 $([ -n "$VCT" ] && [ "$VCT" != "null" ] && echo 0 || echo 1)
+RB=$(kubectl get rolebinding deploy-reader-rb -n $NS -o name 2>/dev/null || echo '')
+check "RoleBinding deploy-reader-rb 존재" 2 $([ -n "$RB" ] && echo 0 || echo 1)
+
+AUTH_DEP=$(kubectl auth can-i list deployments --as=system:serviceaccount:$NS:deploy-sa -n $NS 2>/dev/null || echo 'no')
+check "권한 검증: list deployments = yes" 3 $([ "$AUTH_DEP" = "yes" ] && echo 0 || echo 1)
+
+AUTH_POD=$(kubectl auth can-i list pods --as=system:serviceaccount:$NS:deploy-sa -n $NS 2>/dev/null || echo 'yes')
+# SA·RoleBinding 이 실제로 있을 때만 "과잉 권한 없음"을 인정한다
+check "권한 검증: list pods = no (필요한 권한만 부여)" 2 \
+  $([ -n "$SA" ] && [ -n "$RB" ] && [ "$AUTH_POD" = "no" ] && echo 0 || echo 1)
 
 echo ""
 
 # ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q6. etcd 백업 [10점]${NC}"
+echo -e "${BOLD}Q6. 노드 drain [10점]${NC}"
 hr
 
-if [ -f /tmp/mock2-etcd.db ]; then
-  check "/tmp/mock2-etcd.db 파일 존재" 5 0
-  # 파일 크기 > 0
-  FSIZE=$(stat -f%z /tmp/mock2-etcd.db 2>/dev/null || stat -c%s /tmp/mock2-etcd.db 2>/dev/null || echo 0)
-  check "스냅샷 파일 크기 > 0 bytes" 5 $([ "$FSIZE" -gt 0 ] && echo 0 || echo 1)
-else
-  # 컨트롤플레인이 아닌 환경에서는 etcd에 접근 불가 — 스킵
-  echo -e "  ${YELLOW}INFO${NC}  /tmp/mock2-etcd.db 파일 없음"
-  echo -e "  ${YELLOW}SKIP${NC}  etcd 백업은 컨트롤플레인 노드에서 직접 실행해야 합니다."
-  SCORE=$((SCORE + 10))
-  PASS=$((PASS + 1))
-fi
-
-echo ""
-
-# ─────────────────────────────────────────────────────────────
-echo -e "${BOLD}Q7. Node NotReady 복구 [10점]${NC}"
-hr
-
-WORKER2=$(kubectl get node worker-2 --ignore-not-found=true -o name 2>/dev/null || echo '')
+WORKER2=$(kubectl get node worker-2 -o name 2>/dev/null || echo '')
 if [ -z "$WORKER2" ]; then
-  skip_score "worker-2 노드 없음 (단일 노드 환경)" 10
+  echo -e "  ${YELLOW}SKIP${NC} [worker-2 노드가 이 클러스터에 없음]"
+  SCORE=$((SCORE + 10)); PASS=$((PASS + 1))
 else
-  W2_STATUS=$(kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo 'False')
-  check "worker-2 Ready 상태" 10 $([ "$W2_STATUS" = "True" ] && echo 0 || echo 1)
+  UNSCHED=$(kubectl get node worker-2 -o jsonpath='{.spec.unschedulable}' 2>/dev/null || echo '')
+  check "worker-2 스케줄 가능 (uncordon 완료)" 5 $([ "$UNSCHED" != "true" ] && echo 0 || echo 1)
+  NODE_READY=$(kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo '')
+  check "worker-2 Ready 상태" 5 $([ "$NODE_READY" = "True" ] && echo 0 || echo 1)
 fi
+
+echo ""
+
+# ─────────────────────────────────────────────────────────────
+echo -e "${BOLD}Q7. Pod 트러블슈팅 [25점]${NC}"
+hr
+
+BROKEN_STATUS=$(kubectl get pod web-broken -n $NS -o jsonpath='{.status.phase}' 2>/dev/null || echo '')
+check "web-broken STATUS=Running" 13 $([ "$BROKEN_STATUS" = "Running" ] && echo 0 || echo 1)
+
+check_output "web-broken 이미지가 nginx:1.24 로 수정됨" 12 \
+  "$(kubectl get pod web-broken -n $NS -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo 'nginz:1.24')" \
+  "^nginx:1\.24$"
 
 echo ""
 
@@ -176,13 +187,15 @@ echo ""
 echo -e "${BOLD}${CYAN}"
 hr
 printf "  최종 점수: %d / %d 점\n" "$SCORE" "$TOTAL"
-printf "  통과: %d문항  실패: %d문항\n" "$PASS" "$FAIL"
+printf "  통과: %d항목  실패: %d항목\n" "$PASS" "$FAIL"
 hr
 echo -e "${NC}"
 
 if [ "$SCORE" -ge 66 ]; then
-  echo -e "${BOLD}${GREEN}  합격 기준(66점) 통과! CKA 합격권입니다.${NC}"
+  echo -e "${BOLD}${GREEN}  합격 기준(66점) 통과! CKA 합격권입니다. ${NC}"
 else
   echo -e "${BOLD}${RED}  합격 기준(66점) 미달. 틀린 문제를 복습하세요.${NC}"
 fi
 echo ""
+
+exit $FAIL

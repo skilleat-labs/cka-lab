@@ -51,6 +51,9 @@ _job_seq = [0]
 
 
 # ── 세트 ────────────────────────────────────────────────────────────
+SUBDIRS = ("tutoring",)   # 한 단계 안쪽에 세트를 모아 둔 폴더 (과외 전용 세트)
+
+
 def list_sets():
     out = []
     for name in sorted(os.listdir(ROOT)):
@@ -59,6 +62,13 @@ def list_sets():
             continue
         if os.path.isfile(os.path.join(d, "exam.sh")):
             out.append(name)
+    for sub in SUBDIRS:
+        base = os.path.join(ROOT, sub)
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            if os.path.isfile(os.path.join(base, name, "exam.sh")):
+                out.append(f"{sub}/{name}")
     return out
 
 

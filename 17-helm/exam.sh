@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 10강 실습 — Helm 과 Kustomize (순차 진행형)
+# CKA 17강 실습 — Helm 과 Kustomize (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 10강 실습 — Helm (install · upgrade · rollback) · Kustomize"
+EXAM_TITLE="CKA 17강 실습 — Helm (install · upgrade · rollback) · Kustomize"
 EXAM_NQ=5
 
 exam_cleanup() {

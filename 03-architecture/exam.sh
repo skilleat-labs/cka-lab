@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 1강 실습 — 아키텍처 (순차 진행형)
+# CKA 3강 실습 — 아키텍처 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 1강 실습 — 아키텍처 (컨트롤플레인 · 노드 · 선언적 관리)"
+EXAM_TITLE="CKA 3강 실습 — 아키텍처 (컨트롤플레인 · 노드 · 선언적 관리)"
 EXAM_NQ=4
 
 exam_cleanup() {

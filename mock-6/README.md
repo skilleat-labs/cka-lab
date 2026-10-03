@@ -1,4 +1,4 @@
-# Mock Exam 4 — 2026 출제 주제 20분 점검 (강사용)
+# Mock Exam 6 — 2026 출제 주제 20분 점검 (강사용)
 
 > **문제만 보려면 `QUESTIONS.txt`.** 이 파일에는 정답이 들어 있다.
 >
@@ -50,8 +50,8 @@ kubectl -n analytics get pods -l app=report-gen -o custom-columns=NAME:.metadata
 # Q2
 helm repo add argo https://argoproj.github.io/argo-helm && helm repo update
 helm template cd argo/argo-cd --version 7.7.0 -n gitops \
-  --skip-crds --set crds.install=false > /tmp/mock4-argocd.yaml
-grep -c 'kind: CustomResourceDefinition' /tmp/mock4-argocd.yaml      # 0
+  --skip-crds --set crds.install=false > /tmp/mock6-argocd.yaml
+grep -c 'kind: CustomResourceDefinition' /tmp/mock6-argocd.yaml      # 0
 
 # Q3
 kubectl -n edge edit deployment audit-api

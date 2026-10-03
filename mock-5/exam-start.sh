@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# CKA Mock Exam 3 — 종합 심화
+# CKA Mock Exam 5 — 종합 심화
 # 실행: bash exam-start.sh
 # ============================================================
 set -euo pipefail
@@ -12,7 +12,7 @@ hr() { printf '%0.s─' {1..70}; echo; }
 
 echo -e "${BOLD}${BLUE}"
 hr
-echo "  CKA Mock Exam 3 — 종합 심화"
+echo "  CKA Mock Exam 5 — 종합 심화"
 echo "  문제 수: 7문항  |  총 배점: 100점  |  목표 시간: 50분"
 hr
 echo -e "${NC}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 6강 실습 — 서비스와 네트워킹
+# CKA 9강 실습 — 서비스와 네트워킹
 # 사용법: bash exam-start.sh [--hints]
 set -euo pipefail
 
@@ -16,7 +16,7 @@ sep() { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━�
 
 echo ""
 sep
-echo -e "  ${BOLD}CKA 6강 실습 — 서비스와 네트워킹${RESET}"
+echo -e "  ${BOLD}CKA 9강 실습 — 서비스와 네트워킹${RESET}"
 echo -e "  ClusterIP · NodePort · NetworkPolicy · DNS"
 sep
 

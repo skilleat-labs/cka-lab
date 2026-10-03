@@ -1,4 +1,4 @@
-# Mock Exam 1-1 — mock-1 변형판 (강사용)
+# Mock Exam 2 — mock-1 변형판 (강사용)
 
 > **한 문제씩 풀기:** `bash exam.sh start` → 풀고 → `bash exam.sh check` (만점이면 자동으로 다음 문제). 진행 현황 `bash exam.sh status`.
 >
@@ -10,7 +10,7 @@ mock-1 정답을 메모해뒀다가 붙여넣으면 틀리도록 만들었다. "
 
 ## mock-1 과 달라진 점 (함정)
 
-| 문제 | mock-1 | mock-1-1 | 붙여넣기하면 |
+| 문제 | mock-1 | mock-2 | 붙여넣기하면 |
 |------|--------|----------|-------------|
 | 공통 | `default` | **`retail`** 네임스페이스 | `-n retail` 없으면 전부 FAIL |
 | Q1 | nginx:1.24 / replicas 3 | **nginx:1.25 / replicas 4** / port 80 | 이미지·개수 불일치 |

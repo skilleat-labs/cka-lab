@@ -1,413 +1,352 @@
 #!/usr/bin/env bash
-# CKA Mock Exam 2 — 순차 진행형 (100점 배점)
+# CKA Mock Exam 2 — 순차 진행형 (100점 배점) · mock-1 변형판
 # 사용법: bash exam.sh start → 풀고 → bash exam.sh check → ...
 set -uo pipefail
 EXAM_UNIT="점"
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA Mock Exam 2 — 스케줄링·네트워킹·운영 (100점 · 목표 45분)"
+EXAM_TITLE="CKA Mock Exam 2 — 기초 워크로드 변형판 (100점 · 목표 40분)"
 EXAM_NQ=7
-EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-45}"   # 제한시간(분) — 0 이면 무제한
+EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-40}"   # 제한시간(분) — 0 이면 무제한
+NS=retail
 
 exam_cleanup() {
-  kubectl delete pod affinity-pod toleration-pod shop-backend api-backend --ignore-not-found --force --grace-period=0 &>/dev/null || true
-  kdel svc shop-svc api-svc mysql-headless
-  kdel networkpolicy deny-all allow-web
-  kdel ingress shop-ingress
-  kdel statefulset mysql-sts
-  kdel pvc -l app=mysql-sts
-  kdel pvc data-mysql-sts-0 data-mysql-sts-1
-  rm -f /tmp/mock2-etcd.db
-  kubectl label node worker-1 disktype- &>/dev/null || true
-  # worker-2 kubelet 복구 (시험 중단 시 NotReady 로 남지 않도록)
-  if kubectl get node worker-2 &>/dev/null; then
-    ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl start kubelet; systemctl enable kubelet' &>/dev/null \
-      && echo "  worker-2 kubelet 복구" || echo "  worker-2 kubelet 은 직접 확인 필요 (ssh 불가)"
+  if kubectl get namespace retail &>/dev/null; then
+    echo "  네임스페이스 retail 삭제 중..."
+    kubectl delete namespace retail --wait=true &>/dev/null || true
   fi
-  echo "  affinity/toleration 파드 · NetworkPolicy · Ingress · StatefulSet · 백엔드 · etcd 스냅샷 삭제, worker-1 레이블 제거"
+  kdel pv report-pv
+  kubectl uncordon worker-2 &>/dev/null || true
+  echo "  retail 네임스페이스 · report-pv 삭제, worker-2 uncordon"
 }
 
 exam_setup() {
-  # Q1: worker-1 에 disktype=ssd 레이블 (파드가 실제로 배치되도록)
-  kubectl label node worker-1 disktype=ssd --overwrite &>/dev/null && echo "  worker-1 에 disktype=ssd 레이블" || true
-  # Q4: Ingress 백엔드
-  kubectl run shop-backend --image=nginx:1.24 --labels="app=shop" --restart=Never &>/dev/null || true
-  kubectl expose pod shop-backend --name=shop-svc --port=80 &>/dev/null || true
-  kubectl run api-backend --image=nginx:1.24 --labels="app=api" --restart=Never &>/dev/null || true
-  kubectl expose pod api-backend --name=api-svc --port=8080 --target-port=80 &>/dev/null || true
-  echo "  Q4 용 shop-svc(80) / api-svc(8080) 백엔드 생성"
-  # Q7: worker-2 kubelet 정지 시도 (ssh 가능할 때만)
-  if kubectl get node worker-2 &>/dev/null; then
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl stop kubelet' &>/dev/null; then
-      echo "  Q7 용 worker-2 kubelet 정지 → 약 40초 후 NotReady 가 됩니다"
-    else
-      echo "  Q7: worker-2 에 ssh 로 kubelet 을 멈추지 못했습니다."
-      echo "      강사가 worker-2 에서 직접  systemctl stop kubelet  을 실행해 주세요."
-    fi
-  fi
-  etcd_tool_check
+  kubectl create namespace retail &>/dev/null || true
+  echo "  retail 네임스페이스 생성"
+  kubectl run web-broken --image=nginz:1.24 --restart=Never -n retail &>/dev/null || true
+  echo "  Q7 용 web-broken 파드 생성 (이미지 저장소 오타)"
 }
 
-q1_title() { echo "Node affinity Pod [15 pts]"; }
+q1_title() { echo "Create a Deployment [15 pts]"; }
 q1_text() { cat <<'EOF'
-Create a Pod with the following spec.
+In the retail namespace, create a Deployment with the following spec.
 
-  name            affinity-pod
-  image           nginx:1.24
-  namespace       default
-  scheduling      must be placed on a node labelled disktype=ssd using
-                  requiredDuringSchedulingIgnoredDuringExecution
-
-Hint: kubectl explain pod.spec.affinity.nodeAffinity
+  name            store-front
+  image           nginx:1.25
+  replicas        4
+  container port  80
 
 Verify:
-  kubectl get pod affinity-pod -o wide    -> Running on the disktype=ssd node
+  kubectl get deployment store-front -n retail   -> READY 4/4
 EOF
 }
-q1_title_ko() { echo "Node Affinity Pod [15점]"; }
+q1_title_ko() { echo "Deployment 생성 [15점]"; }
 q1_text_ko() { cat <<'EOF'
-다음 조건의 Pod 를 생성하시오.
+retail 네임스페이스에 다음 조건으로 Deployment 를 생성하시오.
 
-  이름          affinity-pod
-  이미지        nginx:1.24
-  네임스페이스  default
-  스케줄링      disktype=ssd 레이블을 가진 노드에
-                requiredDuringSchedulingIgnoredDuringExecution 방식으로 배치
-
-참고: kubectl explain pod.spec.affinity.nodeAffinity
+  이름            store-front
+  이미지          nginx:1.25
+  복제본          4
+  컨테이너 포트   80
 
 [확인]
-  kubectl get pod affinity-pod -o wide    → disktype=ssd 노드에 Running
+  kubectl get deployment store-front -n retail   → READY 4/4
 EOF
 }
-q1_hint() { cat <<'EOF'
-spec:
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - { key: disktype, operator: In, values: [ssd] }
-EOF
-}
+q1_hint() { echo "kubectl create deployment store-front --image=nginx:1.25 --replicas=4 --port=80 -n retail"; }
 q1_grade() {
-  check "affinity-pod 존재" "kubectl get pod affinity-pod -n default" 3
-  local aff; aff=$(kubectl get pod affinity-pod -n default -o jsonpath='{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution}' 2>/dev/null || echo "")
-  check_result "requiredDuringScheduling nodeAffinity 설정" "$([[ -n "$aff" ]] && echo 0 || echo 1)" "" 4
-  check_result "matchExpressions 에 disktype / ssd" "$(echo "$aff" | grep -q disktype && echo "$aff" | grep -q ssd && echo 0 || echo 1)" "" 4
-  wait_ready "affinity-pod" default || true
-  local node; node=$(kubectl get pod affinity-pod -n default -o jsonpath='{.spec.nodeName}' 2>/dev/null || echo "")
-  local lbl=""; [[ -n "$node" ]] && lbl=$(kubectl get node "$node" -o jsonpath='{.metadata.labels.disktype}' 2>/dev/null || echo "")
-  check_result "disktype=ssd 노드에 실제로 배치됨 (${node:-미배치})" "$([[ "$lbl" == "ssd" ]] && echo 0 || echo 1)" "" 4
+  check "Deployment store-front 가 retail 네임스페이스에 존재" "kubectl get deployment store-front -n $NS" 4
+  check_output "이미지: nginx:1.25" \
+    "kubectl get deployment store-front -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}'" "^nginx:1\.25$" 4
+  check_output "containerPort 80" \
+    "kubectl get deployment store-front -n $NS -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}'" "^80$" 2
+  wait_ready "-l app=store-front" $NS || true
+  check_output "Ready 복제본 4개" \
+    "kubectl get deployment store-front -n $NS -o jsonpath='{.status.readyReplicas}'" "^4$" 5
 }
 
-q2_title() { echo "Taint and toleration [15 pts]"; }
+q2_title() { echo "Create a Service — 8080 to 80 [10 pts]"; }
 q2_text() { cat <<'EOF'
-Create a Pod with the following spec.
+Create a Service that exposes the Deployment from the previous task.
 
-  name            toleration-pod
-  image           busybox:1.36
-  command         sleep 3600
-  namespace       default
-  toleration      key: dedicated / value: gpu / effect: NoSchedule / operator: Equal
-
-Hint: kubectl explain pod.spec.tolerations
+  name            store-svc
+  type            ClusterIP
+  port            8080  ->  targetPort 80   (the ports differ)
+  selector        app=store-front
+  namespace       retail
 
 Verify:
-  kubectl get pod toleration-pod -o yaml | grep -A10 tolerations
+  kubectl get svc store-svc -n retail          -> 8080/TCP
+  kubectl get endpoints store-svc -n retail    -> four Pod IPs
 EOF
 }
-q2_title_ko() { echo "Taint + Toleration [15점]"; }
+q2_title_ko() { echo "Service 생성 — 8080 → 80 [10점]"; }
 q2_text_ko() { cat <<'EOF'
-다음 조건의 Pod 를 생성하시오.
+Q1 의 Deployment 를 노출하는 Service 를 생성하시오.
 
-  이름          toleration-pod
-  이미지        busybox:1.36
-  명령          sleep 3600
-  네임스페이스  default
-  Toleration    key: dedicated / value: gpu / effect: NoSchedule / operator: Equal
-
-참고: kubectl explain pod.spec.tolerations
+  이름            store-svc
+  타입            ClusterIP
+  port            8080  →  targetPort 80   (포트가 다르다)
+  셀렉터          app=store-front
+  네임스페이스    retail
 
 [확인]
-  kubectl get pod toleration-pod -o yaml | grep -A10 tolerations
+  kubectl get svc store-svc -n retail          → 8080/TCP
+  kubectl get endpoints store-svc -n retail    → Pod IP 4개
 EOF
 }
-q2_hint() { cat <<'EOF'
-spec:
-  tolerations:
-  - { key: dedicated, operator: Equal, value: gpu, effect: NoSchedule }
-EOF
-}
+q2_hint() { echo "kubectl expose deployment store-front --name=store-svc --port=8080 --target-port=80 -n retail"; }
 q2_grade() {
-  check "toleration-pod 존재" "kubectl get pod toleration-pod -n default" 3
-  local t; t=$(kubectl get pod toleration-pod -n default -o jsonpath='{.spec.tolerations}' 2>/dev/null || echo "")
-  check_result "toleration key=dedicated" "$(echo "$t" | grep -q '"key":"dedicated"' && echo 0 || echo 1)" "" 3
-  check_result "toleration value=gpu" "$(echo "$t" | grep -q '"value":"gpu"' && echo 0 || echo 1)" "" 3
-  check_result "toleration effect=NoSchedule" "$(echo "$t" | grep -q '"effect":"NoSchedule"' && echo 0 || echo 1)" "" 3
-  wait_ready "toleration-pod" default || true
-  check_output "toleration-pod Running" "kubectl get pod toleration-pod -n default -o jsonpath='{.status.phase}'" "^Running$" 3
+  check_output "Service store-svc 존재 + ClusterIP 타입" \
+    "kubectl get svc store-svc -n $NS -o jsonpath='{.spec.type}'" "^ClusterIP$" 3
+  check_output "port 8080" "kubectl get svc store-svc -n $NS -o jsonpath='{.spec.ports[0].port}'" "^8080$" 2
+  check_output "targetPort 80" "kubectl get svc store-svc -n $NS -o jsonpath='{.spec.ports[0].targetPort}'" "^80$" 2
+  local ep; ep=$(kubectl get endpoints store-svc -n $NS -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | wc -w | tr -d ' ')
+  check_result "Endpoints 에 Pod IP 4개 등록" "$([[ "$ep" == "4" ]] && echo 0 || echo 1)" "실제 ${ep}개" 3
 }
 
-q3_title() { echo "NetworkPolicy — deny-all and allow-web [20 pts]"; }
+q3_title() { echo "ConfigMap and Pod [10 pts]"; }
 q3_text() { cat <<'EOF'
-Create the following two NetworkPolicies in the default namespace.
+Perform both tasks in the retail namespace.
 
-(1) deny-all
-    - block all ingress traffic for every Pod
-    - podSelector: {}   (empty selector = applies to all)
-    - policyTypes: [Ingress]
+(1) Create a ConfigMap
+  name            store-config
+  data            APP_MODE=staging
+                  APP_PORT=9090
 
-(2) allow-web
-    - applies to Pods labelled app=db
-    - allow only port 3306/TCP from Pods labelled app=web
-    - policyTypes: [Ingress]
+(2) Create a Pod
+  name            store-cfg
+  image           busybox:1.36
+  command         sleep 7200
+  injection       all keys of store-config through envFrom
 
 Verify:
-  kubectl describe networkpolicy deny-all
-  kubectl describe networkpolicy allow-web
+  kubectl exec store-cfg -n retail -- printenv APP_MODE   -> staging
+  kubectl exec store-cfg -n retail -- printenv APP_PORT   -> 9090
 EOF
 }
-q3_title_ko() { echo "NetworkPolicy — deny-all + allow-web [20점]"; }
+q3_title_ko() { echo "ConfigMap + Pod [10점]"; }
 q3_text_ko() { cat <<'EOF'
-default 네임스페이스에 다음 두 가지 NetworkPolicy 를 생성하시오.
+retail 네임스페이스에서 다음 두 가지 작업을 수행하시오.
 
-(1) deny-all
-    - 모든 Pod 에 대해 Ingress 트래픽 전체 차단
-    - podSelector: {}   (빈 selector = 전체 적용)
-    - policyTypes: [Ingress]
+(1) ConfigMap 생성
+  이름            store-config
+  데이터          APP_MODE=staging
+                  APP_PORT=9090
 
-(2) allow-web
-    - app=db 레이블 Pod 가 수신 측
-    - app=web 레이블 Pod 에서 포트 3306/TCP 만 허용
-    - policyTypes: [Ingress]
+(2) Pod 생성
+  이름            store-cfg
+  이미지          busybox:1.36
+  명령            sleep 7200
+  주입            store-config 전체를 envFrom 으로
 
 [확인]
-  kubectl describe networkpolicy deny-all
-  kubectl describe networkpolicy allow-web
+  kubectl exec store-cfg -n retail -- printenv APP_MODE   → staging
+  kubectl exec store-cfg -n retail -- printenv APP_PORT   → 9090
 EOF
 }
 q3_hint() { cat <<'EOF'
-# allow-web
-spec:
-  podSelector: { matchLabels: { app: db } }
-  policyTypes: [Ingress]
-  ingress:
-  - from: [ { podSelector: { matchLabels: { app: web } } } ]
-    ports: [ { protocol: TCP, port: 3306 } ]
+kubectl create configmap store-config -n retail --from-literal=APP_MODE=staging --from-literal=APP_PORT=9090
+# 파드 YAML containers[0] 에:  envFrom: [ { configMapRef: { name: store-config } } ]
 EOF
 }
 q3_grade() {
-  check "NetworkPolicy deny-all 존재" "kubectl get networkpolicy deny-all -n default" 3
-  check_output "deny-all podSelector 가 비어 있다 (전체 적용)" \
-    "kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.podSelector}'" "^\{\}$" 3
-  check_output "deny-all policyTypes: Ingress" \
-    "kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.policyTypes}'" "Ingress" 2
-  check_result "deny-all 에 ingress 허용 규칙이 없다 (전부 차단)" \
-    "$(kubectl get networkpolicy deny-all -n default &>/dev/null && [[ -z "$(kubectl get networkpolicy deny-all -n default -o jsonpath='{.spec.ingress}' 2>/dev/null)" ]] && echo 0 || echo 1)" "" 2
-  check "NetworkPolicy allow-web 존재" "kubectl get networkpolicy allow-web -n default" 2
-  check_output "allow-web 대상이 app=db" \
-    "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.podSelector.matchLabels.app}'" "^db$" 2
-  check_output "allow-web from 이 app=web" \
-    "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.ingress[0].from[*].podSelector.matchLabels.app}'" "web" 3
-  check_output "allow-web 포트 3306/TCP" \
-    "kubectl get networkpolicy allow-web -n default -o jsonpath='{.spec.ingress[0].ports[0].port}'" "^3306$" 3
+  check_output "ConfigMap store-config / APP_MODE=staging" \
+    "kubectl get configmap store-config -n $NS -o jsonpath='{.data.APP_MODE}'" "^staging$" 2
+  check_output "ConfigMap store-config / APP_PORT=9090" \
+    "kubectl get configmap store-config -n $NS -o jsonpath='{.data.APP_PORT}'" "^9090$" 2
+  wait_ready "store-cfg" $NS || true
+  check_output "store-cfg Running" "kubectl get pod store-cfg -n $NS -o jsonpath='{.status.phase}'" "^Running$" 2
+  check_output "store-cfg 내부 APP_MODE=staging (실제 exec)" "kubectl exec store-cfg -n $NS -- printenv APP_MODE" "^staging$" 2
+  check_output "store-cfg 내부 APP_PORT=9090 (실제 exec)" "kubectl exec store-cfg -n $NS -- printenv APP_PORT" "^9090$" 2
 }
 
-q4_title() { echo "Create an Ingress [15 pts]"; }
+q4_title() { echo "PV and PVC — ReadWriteMany [15 pts]"; }
 q4_text() { cat <<'EOF'
-Create an Ingress with the following spec. The backends shop-svc and
-api-svc already exist.
+Create a PV and a PVC with the following spec and make them Bound.
 
-  name            shop-ingress
-  namespace       default
-  pathType        Prefix
-  routing         /shop  ->  shop-svc : 80
-                  /api   ->  api-svc  : 8080
+PersistentVolume
+  name              report-pv
+  capacity          1Gi
+  access mode       ReadWriteMany
+  type              hostPath, path=/tmp/report-data
+  storageClassName  local-manual
+
+PersistentVolumeClaim
+  name              report-pvc
+  namespace         retail
+  request           1Gi
+  access mode       ReadWriteMany
+  storageClassName  local-manual
 
 Verify:
-  kubectl describe ingress shop-ingress
+  kubectl get pv report-pv                     -> Bound
+  kubectl get pvc report-pvc -n retail         -> Bound
 EOF
 }
-q4_title_ko() { echo "Ingress 생성 [15점]"; }
+q4_title_ko() { echo "PV + PVC — ReadWriteMany [15점]"; }
 q4_text_ko() { cat <<'EOF'
-다음 조건으로 Ingress 를 생성하시오. (백엔드 shop-svc, api-svc 는 이미 있다)
+다음 조건으로 PV 와 PVC 를 생성하고 Bound 시키시오.
 
-  이름          shop-ingress
-  네임스페이스  default
-  pathType      Prefix
-  라우팅        /shop  →  shop-svc : 80
-                /api   →  api-svc  : 8080
+PersistentVolume
+  이름              report-pv
+  용량              1Gi
+  접근 모드         ReadWriteMany
+  타입              hostPath, path=/tmp/report-data
+  storageClassName  local-manual
+
+PersistentVolumeClaim
+  이름              report-pvc
+  네임스페이스      retail
+  용량 요청         1Gi
+  접근 모드         ReadWriteMany
+  storageClassName  local-manual
 
 [확인]
-  kubectl describe ingress shop-ingress
+  kubectl get pv report-pv                     → Bound
+  kubectl get pvc report-pvc -n retail         → Bound
 EOF
 }
-q4_hint() { echo 'kubectl create ingress shop-ingress --rule="/shop=shop-svc:80" --rule="/api=api-svc:8080"'; }
+q4_hint() { echo "accessModes 가 ReadWriteMany 여야 한다. RWO 로 만들면 Bound 되지 않는다."; }
 q4_grade() {
-  check "Ingress shop-ingress 존재" "kubectl get ingress shop-ingress -n default" 3
-  local rules; rules=$(kubectl get ingress shop-ingress -n default -o json 2>/dev/null || echo "{}")
-  local py='import sys,json; d=json.load(sys.stdin); ps=[(p.get("path"),p.get("pathType"),p["backend"]["service"]["name"],p["backend"]["service"]["port"].get("number")) for r in d.get("spec",{}).get("rules",[]) for p in r.get("http",{}).get("paths",[])]; print(ps)'
-  local paths; paths=$(echo "$rules" | python3 -c "$py" 2>/dev/null || echo "")
-  check_result "/shop → shop-svc:80" "$(echo "$paths" | grep -q "('/shop', 'Prefix', 'shop-svc', 80)" && echo 0 || echo 1)" "" 6
-  check_result "/api → api-svc:8080" "$(echo "$paths" | grep -q "('/api', 'Prefix', 'api-svc', 8080)" && echo 0 || echo 1)" "" 6
+  check_output "PV report-pv 용량 1Gi" "kubectl get pv report-pv -o jsonpath='{.spec.capacity.storage}'" "^1Gi$" 3
+  check_output "PV accessMode ReadWriteMany" "kubectl get pv report-pv -o jsonpath='{.spec.accessModes[0]}'" "^ReadWriteMany$" 3
+  check_output "PV hostPath /tmp/report-data" "kubectl get pv report-pv -o jsonpath='{.spec.hostPath.path}'" "^/tmp/report-data$" 2
+  check_output "PV storageClassName local-manual" "kubectl get pv report-pv -o jsonpath='{.spec.storageClassName}'" "^local-manual$" 2
+  check_output "PVC report-pvc STATUS=Bound (retail)" "kubectl get pvc report-pvc -n $NS -o jsonpath='{.status.phase}'" "^Bound$" 5
 }
 
-q5_title() { echo "StatefulSet with a headless Service [15 pts]"; }
+q5_title() { echo "RBAC — deployments only [15 pts]"; }
 q5_text() { cat <<'EOF'
-Create a StatefulSet and a headless Service in the default namespace.
+Create the following three RBAC resources in the retail namespace.
 
-StatefulSet
-  name            mysql-sts
-  image           mysql:8.0
-  replicas        2
-  environment     MYSQL_ROOT_PASSWORD=rootpass
-  serviceName     mysql-headless
-  volumeClaimTemplates   name data / 1Gi / ReadWriteOnce / mountPath /var/lib/mysql
-
-headless Service (clusterIP: None)
-  name            mysql-headless
-  port            3306
+ServiceAccount   name deploy-sa
+Role             name deploy-reader / resources deployments (apps group)
+                 verbs get, list, watch
+RoleBinding      name deploy-reader-rb / Role deploy-reader
+                 -> Subject ServiceAccount deploy-sa
 
 Verify:
-  kubectl get statefulset mysql-sts
-  kubectl get pvc          -> data-mysql-sts-0, data-mysql-sts-1
+  kubectl auth can-i list deployments \
+    --as=system:serviceaccount:retail:deploy-sa -n retail   -> yes
+  kubectl auth can-i list pods \
+    --as=system:serviceaccount:retail:deploy-sa -n retail   -> no
 EOF
 }
-q5_title_ko() { echo "StatefulSet + headless Service [15점]"; }
+q5_title_ko() { echo "RBAC — deployments 만 [15점]"; }
 q5_text_ko() { cat <<'EOF'
-default 네임스페이스에 다음 조건으로 StatefulSet 과 headless Service 를 생성하시오.
+retail 네임스페이스에 다음 세 가지 RBAC 리소스를 생성하시오.
 
-StatefulSet
-  이름          mysql-sts
-  이미지        mysql:8.0
-  복제본        2
-  환경변수      MYSQL_ROOT_PASSWORD=rootpass
-  serviceName   mysql-headless
-  volumeClaimTemplates   이름 data / 1Gi / ReadWriteOnce / mountPath /var/lib/mysql
-
-headless Service (clusterIP: None)
-  이름          mysql-headless
-  포트          3306
+ServiceAccount   이름 deploy-sa
+Role             이름 deploy-reader / 리소스 deployments (apps 그룹)
+                 동사 get, list, watch
+RoleBinding      이름 deploy-reader-rb / Role deploy-reader
+                 → Subject ServiceAccount deploy-sa
 
 [확인]
-  kubectl get statefulset mysql-sts
-  kubectl get pvc          → data-mysql-sts-0, data-mysql-sts-1
+  kubectl auth can-i list deployments \
+    --as=system:serviceaccount:retail:deploy-sa -n retail   → yes
+  kubectl auth can-i list pods \
+    --as=system:serviceaccount:retail:deploy-sa -n retail   → no
 EOF
 }
-q5_hint() { echo "StatefulSet 은 create 명령이 없다 → 공식 문서 예제(nginx StatefulSet)를 복사해서 수정"; }
+q5_hint() { cat <<'EOF'
+kubectl create serviceaccount deploy-sa -n retail
+kubectl create role deploy-reader --verb=get,list,watch --resource=deployments -n retail
+kubectl create rolebinding deploy-reader-rb --role=deploy-reader --serviceaccount=retail:deploy-sa -n retail
+# pods 를 같이 넣으면 과잉 권한으로 감점
+EOF
+}
 q5_grade() {
-  check "StatefulSet mysql-sts 존재" "kubectl get statefulset mysql-sts -n default" 3
-  check_output "이미지: mysql:8.0" \
-    "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" "^mysql:8\.0$" 2
-  check_output "복제본 2" "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.replicas}'" "^2$" 2
-  check_output "serviceName 이 mysql-headless" "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.serviceName}'" "^mysql-headless$" 2
-  check_output "volumeClaimTemplates data / 1Gi" \
-    "kubectl get statefulset mysql-sts -n default -o jsonpath='{.spec.volumeClaimTemplates[0].metadata.name}{\" \"}{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}'" "^data 1Gi$" 2
-  check_output "환경변수 MYSQL_ROOT_PASSWORD=rootpass" \
-    "kubectl get statefulset mysql-sts -n default -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\" \"}{end}'" "MYSQL_ROOT_PASSWORD=rootpass" 1
-  check_output "headless Service mysql-headless (clusterIP: None)" \
-    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.clusterIP}'" "^None$" 2
-  check_output "Service 포트 3306" \
-    "kubectl get svc mysql-headless -n default -o jsonpath='{.spec.ports[0].port}'" "^3306$" 1
+  local sa rb; sa=$(kubectl get serviceaccount deploy-sa -n $NS -o name 2>/dev/null || echo ""); rb=$(kubectl get rolebinding deploy-reader-rb -n $NS -o name 2>/dev/null || echo "")
+  check_result "ServiceAccount deploy-sa 존재" "$([[ -n "$sa" ]] && echo 0 || echo 1)" "" 2
+  local j; j=$(kubectl get role deploy-reader -n $NS -o json 2>/dev/null || echo '{}')
+  local verbs res grp
+  verbs=$(echo "$j" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(v for r in d.get("rules",[]) for v in r.get("verbs",[])))' 2>/dev/null || echo "")
+  res=$(echo "$j" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(v for r in d.get("rules",[]) for v in r.get("resources",[])))' 2>/dev/null || echo "")
+  grp=$(echo "$j" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(v for r in d.get("rules",[]) for v in r.get("apiGroups",[])))' 2>/dev/null || echo "")
+  check_result "Role deploy-reader 리소스: deployments" "$(echo "$res" | grep -q deployments && echo 0 || echo 1)" "" 2
+  check_result "Role deploy-reader apiGroup: apps" "$(echo "$grp" | grep -q apps && echo 0 || echo 1)" "" 2
+  check_result "Role verbs 에 get·list·watch 포함" "$(echo "$verbs" | grep -q get && echo "$verbs" | grep -q list && echo "$verbs" | grep -q watch && echo 0 || echo 1)" "" 2
+  check_result "RoleBinding deploy-reader-rb 존재" "$([[ -n "$rb" ]] && echo 0 || echo 1)" "" 2
+  check_output "권한 검증: list deployments = yes" \
+    "kubectl auth can-i list deployments --as=system:serviceaccount:$NS:deploy-sa -n $NS" "^yes$" 3
+  # auth can-i 는 권한이 없으면 "no" 를 찍고 exit 1 을 낸다. 그래서 || 로 기본값을 붙이면
+  # 정답(권한 없음)일 때 값이 "no\nyes" 가 되어 비교가 깨진다 — 출력만 보고 판정한다.
+  local ap; ap=$(kubectl auth can-i list pods --as=system:serviceaccount:$NS:deploy-sa -n $NS 2>/dev/null | head -1 | tr -d '[:space:]')
+  [[ -z "$ap" ]] && ap=yes        # 명령 자체가 실패해 판정할 수 없으면 감점 쪽으로 둔다
+  check_result "권한 검증: list pods = no (필요한 권한만)" "$([[ -n "$sa" && -n "$rb" && "$ap" == "no" ]] && echo 0 || echo 1)" "" 2
 }
 
-q6_title() { echo "etcd snapshot [10 pts]"; }
+q6_title() { echo "Drain a node — worker-2 [10 pts]"; }
 q6_text() { cat <<'EOF'
-Save an etcd snapshot to /tmp/mock2-etcd.db.
-
-  endpoint      https://127.0.0.1:2379
-  CA cert       /etc/kubernetes/pki/etcd/ca.crt
-  cert          /etc/kubernetes/pki/etcd/server.crt
-  key           /etc/kubernetes/pki/etcd/server.key
+(1) Drain the node worker-2.
+    - ignore DaemonSet pods
+    - allow deletion of emptyDir data
+(2) When the maintenance is done, make worker-2 schedulable again.
 
 Verify:
-  ls -lh /tmp/mock2-etcd.db
-  ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db
+  kubectl get nodes   -> worker-2 is Ready and not SchedulingDisabled
 EOF
 }
-q6_title_ko() { echo "etcd 백업 [10점]"; }
+q6_title_ko() { echo "노드 drain — worker-2 [10점]"; }
 q6_text_ko() { cat <<'EOF'
-etcd 스냅샷을 /tmp/mock2-etcd.db 에 저장하시오.
-
-  endpoint      https://127.0.0.1:2379
-  CA cert       /etc/kubernetes/pki/etcd/ca.crt
-  Cert          /etc/kubernetes/pki/etcd/server.crt
-  Key           /etc/kubernetes/pki/etcd/server.key
+(1) worker-2 노드를 drain 한다.
+    - DaemonSet Pod 는 무시
+    - emptyDir 데이터는 삭제 허용
+(2) 유지보수 완료 후 worker-2 를 다시 스케줄 가능 상태로 전환한다.
 
 [확인]
-  ls -lh /tmp/mock2-etcd.db
-  ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db
+  kubectl get nodes   → worker-2 가 Ready, SchedulingDisabled 아님
 EOF
 }
 q6_hint() { cat <<'EOF'
-ETCDCTL_API=3 etcdctl snapshot save /tmp/mock2-etcd.db \
-  --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-  --cert=/etc/kubernetes/pki/etcd/server.crt \
-  --key=/etc/kubernetes/pki/etcd/server.key
+kubectl drain worker-2 --ignore-daemonsets --delete-emptydir-data
+kubectl uncordon worker-2
 EOF
 }
 q6_grade() {
-  check_result "/tmp/mock2-etcd.db 파일 존재" "$([[ -f /tmp/mock2-etcd.db ]] && echo 0 || echo 1)" "컨트롤플레인 노드에서 실행해야 함" 4
-  local sz; sz=$(stat -c%s /tmp/mock2-etcd.db 2>/dev/null || stat -f%z /tmp/mock2-etcd.db 2>/dev/null || echo 0)
-  check_result "스냅샷 크기 > 1MB (실제 etcd 데이터)" "$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1)" "${sz} bytes" 3
-  local st=1
-  if command -v etcdctl &>/dev/null; then ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db &>/dev/null && st=0
-  elif command -v etcdutl &>/dev/null; then etcdutl snapshot status /tmp/mock2-etcd.db &>/dev/null && st=0
-  else st=$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1); fi
-  check_result "스냅샷이 유효하다 (snapshot status)" "$st" "" 3
-}
-
-q7_title() { echo "Recover a NotReady node [10 pts]"; }
-q7_text() { cat <<'EOF'
-The node worker-2 is in NotReady state. Find the cause and fix it.
-After the fix, make sure kubelet starts automatically after a reboot.
-
-Suggested order:
-  kubectl describe node worker-2     -> Conditions
-  ssh worker-2
-  systemctl status kubelet
-  journalctl -u kubelet -n 50
-
-Verify:
-  kubectl get nodes                  -> worker-2 is Ready
-EOF
-}
-q7_title_ko() { echo "Node NotReady 복구 [10점]"; }
-q7_text_ko() { cat <<'EOF'
-worker-2 노드가 NotReady 상태다. 원인을 파악하고 복구하시오.
-복구 후 재부팅에도 kubelet 이 자동으로 뜨도록 설정하시오.
-
-진단 순서
-  kubectl describe node worker-2     → Conditions
-  ssh worker-2
-  systemctl status kubelet
-  journalctl -u kubelet -n 50
-
-[확인]
-  kubectl get nodes                  → worker-2 가 Ready
-EOF
-}
-q7_hint() { cat <<'EOF'
-ssh worker-2
-systemctl start kubelet && systemctl enable kubelet
-EOF
-}
-q7_grade() {
   if ! kubectl get node worker-2 &>/dev/null; then
     check_result "worker-2 노드 (이 클러스터에 없음 — 통과 처리)" 0 "" 10; return
   fi
-  local i; for i in $(seq 1 10); do
-    [[ "$(kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]] && break; sleep 3
-  done
-  check_output "worker-2 Ready 상태" "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 7
-  local en; en=$(ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl is-enabled kubelet' 2>/dev/null || echo "unknown")
-  if [[ "$en" == "unknown" ]]; then
-    check_result "kubelet enabled (ssh 불가 — 확인 생략, 통과 처리)" 0 "" 3
-  else
-    check_result "kubelet 이 enabled 상태 (재부팅 후 자동 시작)" "$([[ "$en" == "enabled" ]] && echo 0 || echo 1)" "$en" 3
-  fi
+  check_output "worker-2 스케줄 가능 (uncordon 완료)" "kubectl get node worker-2 -o jsonpath='{.spec.unschedulable}'" "^$|^false$" 5
+  check_output "worker-2 Ready 상태" "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 5
+}
+
+q7_title() { echo "Troubleshoot a Pod [25 pts]"; }
+q7_text() { cat <<'EOF'
+The Pod web-broken in the retail namespace is in ErrImagePull /
+ImagePullBackOff state.
+
+Find the cause and fix the image to nginx:1.24 so that the Pod reaches
+Running state.
+
+Verify:
+  kubectl get pod web-broken -n retail         -> Running
+EOF
+}
+q7_title_ko() { echo "Pod 트러블슈팅 [25점]"; }
+q7_text_ko() { cat <<'EOF'
+retail 네임스페이스의 web-broken Pod 가 ErrImagePull / ImagePullBackOff
+상태다.
+
+원인을 파악하고, 이미지를 nginx:1.24 로 수정하여 Pod 가 Running 상태가
+되도록 하시오.
+
+[확인]
+  kubectl get pod web-broken -n retail         → Running
+EOF
+}
+q7_hint() { cat <<'EOF'
+kubectl describe pod web-broken -n retail      # 이미지 이름 오타(nginz) 확인
+kubectl set image pod/web-broken web-broken=nginx:1.24 -n retail
+EOF
+}
+q7_grade() {
+  wait_ready "web-broken" $NS || true
+  check_output "web-broken STATUS=Running" "kubectl get pod web-broken -n $NS -o jsonpath='{.status.phase}'" "^Running$" 13
+  check_output "web-broken 이미지가 nginx:1.24 로 수정됨" \
+    "kubectl get pod web-broken -n $NS -o jsonpath='{.spec.containers[0].image}'" "^nginx:1\.24$" 12
 }
 
 exam_main "$@"

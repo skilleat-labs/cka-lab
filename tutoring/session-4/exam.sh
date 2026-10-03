@@ -2,7 +2,7 @@
 # CKA 4세션 시험 — 순차 진행형
 # 사용법: bash exam.sh start → 풀고 → bash exam.sh check → ...
 set -uo pipefail
-source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
+source "$(cd "$(dirname "$0")/../.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 4세션 시험 — PVC/Deployment YAML · Requests/Limits · Probe"
 EXAM_NQ=3
