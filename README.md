@@ -43,7 +43,7 @@ bash setup-shell.sh       # ~/.bashrc 에 한 줄 추가 — 웹 패널 터미�
 ### 한 문제씩 풀기 (`exam.sh` — 모든 세트)
 
 ```bash
-cd 03-architecture
+cd 03-cluster-setup
 bash exam.sh start      # 환경 준비 + 1번 문제
 bash exam.sh check      # 채점 → 만점이면 자동으로 다음 문제
 bash exam.sh status     # 진행 현황 (점수·소요 시간)
@@ -53,8 +53,8 @@ bash exam.sh status     # 진행 현황 (점수·소요 시간)
 문제 사이는 자유롭게 오간다 — `bash exam.sh go 3` (또는 `next` / `prev`).
 되돌아가 다시 채점하면 점수가 갱신되고, 시간은 그 문제에 머문 만큼만 누적된다. 마지막 문제를 통과하면 최종 리포트가 나온다.
 끝나고 클러스터를 원래대로 돌리려면 `bash exam.sh clean` — 시험에서 만든 리소스(네임스페이스·PV·노드 레이블 등)를 전부 지운다.
-세션 시험 4개 · 모의고사 5개 · 강의 실습 10개 — **전체 19세트 84문항**에 적용돼 있다.
-모의고사는 100점 배점, 세션 시험은 항목 수로 채점된다. 강의 실습(13-cluster-setup ~ 11)은 아직 한꺼번에 방식만 있다.
+강의 실습 13개 · 모의고사 6개 · Final Test · 과외 세션 시험 4개 — **전체 24세트 123문항**에 적용돼 있다.
+모의고사는 100점 배점, 세션 시험은 항목 수로 채점된다. 
 
 ### 한꺼번에 풀기 (모든 세트)
 
@@ -80,27 +80,28 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 
 > 각 폴더에 어떤 문제가 들어 있는지 자세한 내용은 [PROBLEMS.md](PROBLEMS.md) 참고.
 
-**폴더 앞 번호 = 강의 번호입니다.** 7강을 봤다면 `07-scheduling` 을 풉니다. 번호가 비는 강의(1·2·4·5·12·18강)는 실습 세트가 없고, 20강(모의고사)은 `mock-*` 을 풉니다.
+**폴더 앞 번호 = 온라인 강의 번호입니다.** 10강을 봤다면 `10-scheduling` 을 풉니다. 위에서부터 순서대로 풀면 강의 순서와 같습니다.
+번호가 비는 강의(1·2·4·6·7·8·11·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
 
 ### 강의별 실습
 
 | 폴더 | 강의 | 핵심 |
 |------|------|------|
-| `03-architecture` | 3강 아키텍처 | 컨트롤플레인 구성, etcd 연결, 노드 구성, 선언적 모델 |
-| `06-workloads` | 6강 워크로드 | Deployment 롤백, ConfigMap, CronJob, DaemonSet, 네이티브 사이드카 |
-| `07-scheduling` | 7강 스케줄링 | Requests/Limits, Affinity, Taint/Toleration, HPA, PriorityClass |
-| `08-storage` | 8강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |
-| `09-networking` | 9강 서비스와 내부 통신 | ClusterIP, NodePort, NetworkPolicy, DNS |
-| `10-networkpolicy` | 10강 NetworkPolicy | 기본 거부, 선택 허용, 네임스페이스 허용, Egress |
-| `11-ingress` | 11강 Ingress | 경로·호스트 라우팅, TLS, 네임스페이스 격리 |
-| `13-cluster-setup` | 13강 클러스터 구축 | kubeadm join, crictl, CNI |
-| `14-rbac` | 14강 RBAC | ServiceAccount, Role, ClusterRole, 권한 검증 |
-| `15-maintenance` | 15강 유지보수 | drain/cordon, etcd 백업, 업그레이드 계획, 인증서 |
-| `16-node-ops` | 16강 노드 운영 | drain/uncordon, etcd 백업, 업그레이드 확인, static pod |
-| `17-helm` | 17강 Helm과 Kustomize | install/upgrade/rollback, Kustomize, helm template |
-| `19-troubleshooting` | 19강 트러블슈팅 | CrashLoopBackOff, ImagePull, Endpoints, 노드 |
+| `03-cluster-setup` | 3강 내 클러스터 만들기 | kubeadm join, crictl, CNI, CRI |
+| `05-networking` | 5강 서비스 | ClusterIP, NodePort, NetworkPolicy, DNS, 이름 붙은 포트 |
+| `09-workloads` | 9강 Deployment 로는 안 되는 일 | Deployment 롤백, ConfigMap, CronJob, DaemonSet, 네이티브 사이드카 |
+| `10-scheduling` | 10강 스케줄링 | Requests/Limits, Affinity, Taint/Toleration, HPA, PriorityClass |
+| `12-storage` | 12강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |
+| `13-networkpolicy` | 13강 NetworkPolicy | 기본 거부, 선택 허용, 네임스페이스 허용, Egress |
+| `14-ingress` | 14강 Ingress → Gateway API | 경로·호스트 라우팅, TLS, 네임스페이스 격리, Gateway 이전 |
+| `15-rbac` | 15강 인증 · RBAC · ServiceAccount | ServiceAccount, Role, ClusterRole, 권한 검증 |
+| `16-helm` | 16강 Helm · Kustomize | install/upgrade/rollback, Kustomize, helm template, CRD |
+| `18-architecture` | 18강 컨트롤플레인 안을 열어 보기 | 컨트롤플레인 구성, etcd 연결, 노드 구성, 선언적 모델 |
+| `19-node-ops` | 19강 노드 안을 열어 보기 | drain/uncordon, etcd 백업, 업그레이드 확인, static pod |
+| `20-maintenance` | 20강 노드 비우기 · 업그레이드 · 인증서 | drain/cordon, etcd 백업, 업그레이드 계획, 인증서 |
+| `22-troubleshooting` | 22강 앱이 안 뜰 때 · 23강 클러스터가 아플 때 | CrashLoopBackOff, ImagePull, Endpoints, 노드, 컨트롤플레인 |
 
-### 모의고사 (20강)
+### 모의고사 (24강)
 
 | 폴더 | 내용 | 시간 |
 |------|------|------|
@@ -110,7 +111,10 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | `mock-4` | 스케줄링 · 네트워킹 · 운영 | 45분 |
 | `mock-5` | 자동화 · 권한 · 트러블슈팅 | 50분 |
 | `mock-6` | 2026 출제 주제 — PriorityClass · Helm template · 사이드카 · NetworkPolicy · 기본 StorageClass | 20분 |
-| `finaltest` | 출제 주제 13선 나머지 — HPA 안정화 · nodePort · Egress·DNS · Pending PVC · etcd 스냅샷 · 파드 목록 파일 | 30분 |
+
+### Final Test (`final-test`)
+
+모든 강의와 모의고사를 마친 뒤 마지막으로 푸는 점검. 출제 주제 13선 나머지 — HPA 안정화 · nodePort · Egress·DNS · Pending PVC · etcd 스냅샷 · 파드 목록 파일 (30분)
 
 ### 1:1 과외 전용 (`tutoring/`)
 
@@ -124,6 +128,10 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 > **2026-09-30 번호 개편:** 모의고사 이름이 바뀌었습니다. 옛 이름 → 새 이름: `mock-1-1` → `mock-2`, `mock-2-2` → `mock-3`, `mock-2` → `mock-4`, `mock-3` → `mock-5`, `mock-4` → `mock-6`. `session-*` 은 `tutoring/` 안으로 옮겼습니다.
 > 옛 폴더에서 풀던 기록이 있다면 `bash clean-all.sh` 로 한 번 정리하고 다시 시작하세요.
 
+> **2026-10-04 순서 개편:** 강의 실습 폴더 번호를 온라인 강의 번호에 맞췄습니다. 문제는 그대로이고 이름만 바뀌었습니다.
+> `13-cluster-setup`→`03-cluster-setup`, `09-networking`→`05-networking`, `06-workloads`→`09-workloads`, `07-scheduling`→`10-scheduling`, `08-storage`→`12-storage`, `10-networkpolicy`→`13-networkpolicy`, `11-ingress`→`14-ingress`, `14-rbac`→`15-rbac`, `17-helm`→`16-helm`, `03-architecture`→`18-architecture`, `16-node-ops`→`19-node-ops`, `15-maintenance`→`20-maintenance`, `19-troubleshooting`→`22-troubleshooting`, `finaltest`→`final-test`.
+> 풀던 기록은 **옛 폴더를 지우기 전에** 옛 폴더에서 `bash exam.sh clean` 을 먼저 하세요. `git pull` 뒤에 옛 폴더가 `work/` 만 남은 채로 보이면 지워도 됩니다.
+
 ## 개념 문서
 
 | 문서 | 내용 |
@@ -134,7 +142,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 
 ## 참고
 
-- `13-cluster-setup` 실습은 worker 노드 IP 가 `192.168.56.12` 로 지정되어 있습니다. 다른 IP 로 VM 을 구성했다면 스크립트를 수정하세요.
+- `03-cluster-setup` 실습은 worker 노드 IP 가 `192.168.56.12` 로 지정되어 있습니다. 다른 IP 로 VM 을 구성했다면 스크립트를 수정하세요.
 - 실습 중 만든 리소스는 클러스터에 그대로 남습니다. 정리는 각 폴더의 `exam-start.sh` 를 다시 실행하면 됩니다.
 - 문제가 풀리지 않을 때는 `bash exam-start.sh --hints` 로 힌트를 먼저 확인하세요. 정답 명령어까지 들어 있습니다.
 

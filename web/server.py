@@ -52,6 +52,8 @@ _job_seq = [0]
 
 # ── 세트 ────────────────────────────────────────────────────────────
 SUBDIRS = ("tutoring",)   # 한 단계 안쪽에 세트를 모아 둔 폴더 (과외 전용 세트)
+LAST = ("final-test",)    # 목록 맨 아래에 둘 세트
+HIDE_ID = ("final-test",) # 목록에 폴더 이름 없이 제목만 ("Final Test — ...")
 
 
 def list_sets():
@@ -69,7 +71,7 @@ def list_sets():
         for name in sorted(os.listdir(base)):
             if os.path.isfile(os.path.join(base, name, "exam.sh")):
                 out.append(f"{sub}/{name}")
-    return out
+    return [s for s in out if s not in LAST] + [s for s in LAST if s in out]
 
 
 def run_exam_stream(set_id, args, job, timeout=900):
@@ -457,7 +459,7 @@ class Handler(BaseHTTPRequestHandler):
                     m = meta(s)
                     pr = progress(s)
                     cur = int(pr.get("current") or 0)
-                    out.append({"id": s, "title": m["title"], "nq": m["nq"],
+                    out.append({"id": s, "label": "" if s in HIDE_ID else s, "title": m["title"], "nq": m["nq"],
                                 "unit": m["unit"], "current": cur,
                                 "running": bool(cur and cur <= m["nq"]),
                                 "done": bool(cur and cur > m["nq"])})

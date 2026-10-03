@@ -1,0 +1,561 @@
+#!/usr/bin/env bash
+# CKA 9강 실습 — 워크로드 배포와 관리 (순차 진행형)
+# 사용법: bash exam.sh start  →  풀고  →  bash exam.sh check  →  ...
+set -uo pipefail
+source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
+
+EXAM_TITLE="CKA 9강 실습 — 워크로드 배포와 관리"
+EXAM_NQ=6
+
+# ══════════════════════════════════════════════════════════════
+exam_cleanup() {
+  kdel deployment log-app -n logging
+  kdel namespace logging
+  kdel deployment web-app -n default
+  kdel pod db-client -n default
+  kdel configmap db-config -n default
+  kdel cronjob date-printer -n default
+  kubectl get jobs -n default -o name 2>/dev/null | grep "date-printer" | xargs -r kubectl delete -n default &>/dev/null || true
+  kdel namespace monitoring
+  kdel namespace billing          # Q6 — immutable ConfigMap 도 네임스페이스와 함께 지워진다
+  rm -f "$WORK_DIR/.q6-baseline"
+  echo "  web-app / db-client / db-config / date-printer / monitoring ns / billing ns 삭제"
+}
+exam_setup() {
+  # Q5(사이드카) 용 — 로그를 계속 쓰는 앱을 미리 띄워 둔다. 사이드카만 붙이면 되게.
+  kubectl create namespace logging &>/dev/null
+  cat <<'YAML' | kubectl apply -f - &>/dev/null
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-app
+  namespace: logging
+  labels: { app: log-app }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: log-app } }
+  template:
+    metadata:
+      labels: { app: log-app }
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo \"$(date) hello from log-app\" >> /var/log/app/app.log; sleep 2; done"]
+          volumeMounts:
+            - name: applogs
+              mountPath: /var/log/app
+      volumes:
+        - name: applogs
+          emptyDir: {}
+YAML
+  echo "  logging 네임스페이스에 log-app 배치 (Q5 에서 사이드카를 붙인다)"
+
+  # Q6(ConfigMap 수정 → 재배포 → immutable) 용 — 값을 env 로 읽는 Deployment
+  kubectl create namespace billing &>/dev/null
+  cat <<'YAML' | kubectl apply -f - &>/dev/null
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-config
+  namespace: billing
+data:
+  PAYMENT_MODE: sandbox
+  CURRENCY: KRW
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoice-api
+  namespace: billing
+  labels: { app: invoice-api }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: invoice-api } }
+  template:
+    metadata:
+      labels: { app: invoice-api }
+    spec:
+      terminationGracePeriodSeconds: 2      # sh 는 SIGTERM 을 무시한다 — 재시작이 30초씩 걸리지 않게
+      containers:
+        - name: api
+          image: busybox:1.36
+          command: ["sh", "-c", "echo \"mode=$PAYMENT_MODE currency=$CURRENCY\"; sleep 3600"]
+          env:
+            - name: PAYMENT_MODE
+              valueFrom: { configMapKeyRef: { name: billing-config, key: PAYMENT_MODE } }
+            - name: CURRENCY
+              valueFrom: { configMapKeyRef: { name: billing-config, key: CURRENCY } }
+YAML
+  # 처음 뜬 파드의 생성 시각(API 서버 기준)을 기록해 둔다 — 채점 때 "그 뒤에 새로 만든 파드인가" 를 본다.
+  # 노드·채점 머신 시계가 달라도 상관없게 date 가 아니라 creationTimestamp 끼리 비교한다.
+  local i out cnt base=""
+  for i in $(seq 1 20); do
+    out=$(kubectl -n billing get pods -l app=invoice-api \
+      -o jsonpath='{range .items[*]}{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null)
+    cnt=$(printf '%s\n' "$out" | grep -c 'T'); cnt=${cnt//[^0-9]/}; cnt=${cnt:-0}
+    base=$(printf '%s\n' "$out" | grep 'T' | sort | tail -1)
+    (( cnt >= 2 )) && break
+    sleep 1
+  done
+  if [[ -n "$base" ]]; then
+    echo "$base" > "$WORK_DIR/.q6-baseline"
+  else
+    rm -f "$WORK_DIR/.q6-baseline"
+  fi
+  echo "  billing 네임스페이스에 billing-config(ConfigMap) + invoice-api(Deployment) 배치 (Q6)"
+}
+
+# ══════════════════════════════════════════════════════════════
+# Q1 — Deployment 생성 · 스케일 · 롤링 업데이트 · 롤백
+# ══════════════════════════════════════════════════════════════
+q1_title() { echo "Deployment: create, scale, update, rollback"; }
+q1_text() { cat <<'EOF'
+In the default namespace, create a Deployment named web-app using image
+nginx:1.24 with 3 replicas, then perform the following in order:
+
+  (a) scale to 5 replicas
+  (b) rolling update to image nginx:1.25, wait until the rollout completes
+  (c) roll back to the previous revision
+
+Final state: image nginx:1.24 with 5 replicas, all Ready.
+You must really go through all three steps — creating it with 1.24 and only
+scaling does not count.
+
+Verify:
+  kubectl get deployment web-app
+  kubectl rollout history deployment/web-app
+  kubectl get rs
+EOF
+}
+q1_title_ko() { echo "Deployment 생성 · 스케일 · 롤링 업데이트 · 롤백"; }
+q1_text_ko() { cat <<'EOF'
+default 네임스페이스에 web-app Deployment 를 nginx:1.24 / replicas 3 으로
+만든 뒤 순서대로 수행하시오.
+
+  (a) 레플리카를 5 로 스케일
+  (b) 이미지를 nginx:1.25 로 롤링 업데이트하고 완료될 때까지 대기
+  (c) 이전 리비전으로 롤백
+
+최종 상태: nginx:1.24 / replicas 5 / 전부 Ready
+세 단계를 실제로 거쳐야 한다 (처음부터 1.24 로 두고 스케일만 하면 오답).
+
+[확인]
+  kubectl get deployment web-app
+  kubectl rollout history deployment/web-app
+  kubectl get rs
+EOF
+}
+q1_grade() {
+  check "web-app Deployment 존재" \
+    "kubectl get deployment web-app -n default"
+  check_output "replicas 5" \
+    "kubectl get deployment web-app -n default -o jsonpath='{.spec.replicas}'" '^5$'
+  wait_ready "-l app=web-app" default
+  check_output "파드 5개가 Ready" \
+    "kubectl get deployment web-app -n default -o jsonpath='{.status.readyReplicas}'" '^5$'
+  check_output "롤백 후 이미지가 nginx:1.24" \
+    "kubectl get deployment web-app -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" '^nginx:1\.24$'
+  local rev; rev=$(kubectl get deployment web-app -n default -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null || echo 0)
+  rev="${rev//[^0-9]/}"; rev="${rev:-0}"      # 숫자만 남긴다 (설명 문구에 그대로 들어가므로)
+  check_result "업데이트 후 롤백한 이력 (revision ${rev:-0} ≥ 3)" \
+    "$([[ "${rev:-0}" -ge 3 ]] && echo 0 || echo 1)" "revision=${rev:-0} — 1.25 로 올렸다가 되돌렸는지 확인"
+  check_output "이전 ReplicaSet(nginx:1.25)이 남아 있다" \
+    "kubectl get rs -n default -l app=web-app -o jsonpath='{.items[*].spec.template.spec.containers[0].image}'" 'nginx:1\.25'
+}
+q1_hint() { cat <<'EOF'
+kubectl create deployment web-app --image=nginx:1.24 --replicas=3
+kubectl scale deployment web-app --replicas=5
+kubectl set image deployment/web-app nginx=nginx:1.25    # 컨테이너명은 describe 로 확인
+kubectl rollout status deployment/web-app
+kubectl rollout undo deployment/web-app
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+# Q2 — ConfigMap + envFrom
+# ══════════════════════════════════════════════════════════════
+q2_title() { echo "ConfigMap injected as environment variables"; }
+q2_text() { cat <<'EOF'
+Create a ConfigMap named db-config in the default namespace with the keys
+DB_HOST=mysql and DB_PORT=3306.
+
+Then create a Pod named db-client (image busybox) that injects every key of
+that ConfigMap as environment variables using envFrom.
+
+  command   ["sh","-c","env | grep DB && sleep 3600"]
+
+The Pod must be Running and both variables must be visible inside it.
+
+Verify:
+  kubectl exec db-client -- env | grep DB
+EOF
+}
+q2_title_ko() { echo "ConfigMap 생성 + 파드에 환경변수로 주입"; }
+q2_text_ko() { cat <<'EOF'
+default 네임스페이스에 db-config ConfigMap 을 만드시오.
+데이터: DB_HOST=mysql, DB_PORT=3306
+
+그다음 db-client 파드(이미지 busybox)를 만들어 이 ConfigMap 전체를
+envFrom 으로 환경변수에 주입하시오.
+
+  command   ["sh","-c","env | grep DB && sleep 3600"]
+
+파드는 Running 이어야 하고 두 환경변수가 파드 안에서 보여야 한다.
+
+[확인]
+  kubectl exec db-client -- env | grep DB
+EOF
+}
+q2_grade() {
+  check "ConfigMap db-config 존재" "kubectl get configmap db-config -n default"
+  check_output "DB_HOST=mysql" \
+    "kubectl get configmap db-config -n default -o jsonpath='{.data.DB_HOST}'" '^mysql$'
+  check_output "DB_PORT=3306" \
+    "kubectl get configmap db-config -n default -o jsonpath='{.data.DB_PORT}'" '^3306$'
+  check "파드 db-client 존재" "kubectl get pod db-client -n default"
+  wait_ready "db-client" default
+  check_output "db-client Running" \
+    "kubectl get pod db-client -n default -o jsonpath='{.status.phase}'" '^Running$'
+  if kubectl get pod db-client -n default &>/dev/null; then
+    check_output "파드 안에서 DB_HOST=mysql (실제 exec)" \
+      "kubectl exec db-client -n default -- env 2>/dev/null" 'DB_HOST=mysql'
+    check_output "파드 안에서 DB_PORT=3306 (실제 exec)" \
+      "kubectl exec db-client -n default -- env 2>/dev/null" 'DB_PORT=3306'
+    check_output "env 하나씩이 아니라 envFrom 으로 주입했는가" \
+      "kubectl get pod db-client -n default -o jsonpath='{.spec.containers[0].envFrom[*].configMapRef.name}'" 'db-config'
+  else
+    check_result "파드 안에서 DB_HOST=mysql (실제 exec)" 1 "파드가 없음"
+    check_result "파드 안에서 DB_PORT=3306 (실제 exec)" 1 "파드가 없음"
+    check_result "envFrom 으로 주입" 1 "파드가 없음"
+  fi
+}
+q2_hint() { cat <<'EOF'
+kubectl create configmap db-config --from-literal=DB_HOST=mysql --from-literal=DB_PORT=3306
+
+# 파드 YAML 뼈대를 뽑고 envFrom 을 넣는다
+kubectl run db-client --image=busybox --restart=Never $do \
+  -- sh -c 'env | grep DB && sleep 3600' > pod.yaml
+#   spec.containers[0] 아래에:
+#   envFrom:
+#   - configMapRef:
+#       name: db-config
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+# Q3 — CronJob
+# ══════════════════════════════════════════════════════════════
+q3_title() { echo "CronJob that prints the date every minute"; }
+q3_text() { cat <<'EOF'
+Create a CronJob named date-printer in the default namespace that runs
+every minute and prints the date.
+
+  schedule   */1 * * * *
+  image      busybox
+  command    ["date"]
+
+Wait one or two minutes so that at least one Job is created by the CronJob.
+
+Verify:
+  kubectl get cronjob date-printer
+  kubectl get jobs | grep date-printer
+EOF
+}
+q3_title_ko() { echo "매 분마다 date 를 출력하는 CronJob"; }
+q3_text_ko() { cat <<'EOF'
+default 네임스페이스에 매 분마다 date 를 출력하는 CronJob 을 만드시오.
+
+  이름       date-printer
+  schedule   */1 * * * *
+  이미지     busybox
+  명령       ["date"]
+
+CronJob 이 Job 을 최소 1개 만들 때까지 1~2분 기다린다.
+
+[확인]
+  kubectl get cronjob date-printer
+  kubectl get jobs | grep date-printer
+EOF
+}
+q3_grade() {
+  check "CronJob date-printer 존재" "kubectl get cronjob date-printer -n default"
+  check_output "schedule 이 */1 * * * *" \
+    "kubectl get cronjob date-printer -n default -o jsonpath='{.spec.schedule}'" '^\*/1 \* \* \* \*$'
+  check_output "이미지 busybox" \
+    "kubectl get cronjob date-printer -n default -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}'" 'busybox'
+  check_output "command 가 date" \
+    "kubectl get cronjob date-printer -n default -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].command[*]}'" 'date'
+  local n; n=$(kubectl get jobs -n default --no-headers 2>/dev/null | grep -c "date-printer"); n=${n//[^0-9]/}; n=${n:-0}
+  check_result "CronJob 이 만든 Job 이 1개 이상 (현재 ${n}개)" \
+    "$([[ "$n" -ge 1 ]] && echo 0 || echo 1)" "1~2분 기다렸다가 다시 채점하세요"
+}
+q3_hint() { cat <<'EOF'
+kubectl create cronjob date-printer --image=busybox --schedule='*/1 * * * *' -- date
+
+# 1~2분 뒤
+kubectl get job | grep date-printer
+kubectl logs job/<생성된-job-이름>
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+# Q4 — DaemonSet
+# ══════════════════════════════════════════════════════════════
+q4_title() { echo "DaemonSet in the monitoring namespace"; }
+q4_text() { cat <<'EOF'
+Create a namespace named monitoring and, inside it, a DaemonSet named
+node-exporter.
+
+  image          prom/node-exporter:latest
+  hostNetwork    true
+  hostPID        true
+  labels         app=node-exporter  (in both selector and template)
+
+At least one Pod must be Running.
+Note: there is no kubectl create command for a DaemonSet — write the YAML
+(tip: generate a Deployment with --dry-run and change kind, remove replicas
+and strategy).
+
+Verify:
+  kubectl get daemonset -n monitoring
+  kubectl get pods -n monitoring -o wide
+EOF
+}
+q4_title_ko() { echo "monitoring 네임스페이스에 DaemonSet 생성"; }
+q4_text_ko() { cat <<'EOF'
+monitoring 네임스페이스를 만들고 그 안에 node-exporter DaemonSet 을
+생성하시오.
+
+  이미지         prom/node-exporter:latest
+  hostNetwork    true
+  hostPID        true
+  레이블         app=node-exporter  (selector 와 template 양쪽)
+
+파드가 최소 1개 Running 이어야 한다.
+DaemonSet 은 kubectl create 명령이 없다 — YAML 을 직접 쓴다
+(Deployment 를 --dry-run 으로 뽑아 kind 를 바꾸고 replicas·strategy 를 지우면 빠르다).
+
+[확인]
+  kubectl get daemonset -n monitoring
+  kubectl get pods -n monitoring -o wide
+EOF
+}
+q4_grade() {
+  check "monitoring 네임스페이스 존재" "kubectl get namespace monitoring"
+  check "DaemonSet node-exporter 존재" "kubectl get daemonset node-exporter -n monitoring"
+  check_output "이미지 prom/node-exporter" \
+    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.template.spec.containers[0].image}'" 'node-exporter'
+  check_output "hostNetwork: true" \
+    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.template.spec.hostNetwork}'" '^true$'
+  check_output "hostPID: true" \
+    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.template.spec.hostPID}'" '^true$'
+  check_output "selector 가 app=node-exporter" \
+    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.selector.matchLabels.app}'" '^node-exporter$'
+  local ready; ready=$(kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
+  check_result "파드가 1개 이상 Ready (현재 ${ready:-0}개)" \
+    "$([[ "${ready:-0}" -ge 1 ]] && echo 0 || echo 1)" "이미지 pull 에 시간이 걸릴 수 있습니다"
+}
+q4_hint() { cat <<'EOF'
+kubectl create namespace monitoring
+
+# Deployment 뼈대를 뽑아 DaemonSet 으로 고친다
+kubectl create deployment node-exporter -n monitoring \
+  --image=prom/node-exporter:latest $do > ds.yaml
+#   kind: Deployment  →  DaemonSet
+#   spec.replicas / spec.strategy 줄 삭제
+#   spec.template.spec 에 hostNetwork: true, hostPID: true 추가
+kubectl apply -f ds.yaml
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "Native sidecar — a logging container"; }
+q5_text() { cat <<'EOF'
+A Deployment named log-app already exists in the logging namespace.
+Its main container writes to /var/log/app/app.log on a shared emptyDir volume.
+
+Add a native sidecar named log-sidecar to that Deployment.
+
+  image        busybox:1.36
+  command      sh -c 'tail -F /var/log/app/app.log'
+  mountPath    /var/log/app   (the same emptyDir volume)
+
+It must be a NATIVE sidecar:
+  - declared under initContainers
+  - with restartPolicy: Always
+
+After the change each Pod must show READY 2/2.
+
+Verify:
+  kubectl -n logging get pods
+  kubectl -n logging logs deploy/log-app -c log-sidecar
+EOF
+}
+q5_title_ko() { echo "네이티브 사이드카 — 로그 수집 컨테이너"; }
+q5_text_ko() { cat <<'EOF'
+logging 네임스페이스에 log-app Deployment 가 이미 있다.
+본 컨테이너가 공유 emptyDir 볼륨의 /var/log/app/app.log 에 로그를 쓴다.
+
+여기에 log-sidecar 라는 네이티브 사이드카를 추가한다.
+
+  이미지       busybox:1.36
+  명령         sh -c 'tail -F /var/log/app/app.log'
+  마운트 경로  /var/log/app   (같은 emptyDir 볼륨)
+
+반드시 네이티브 사이드카여야 한다.
+  - initContainers 아래에 선언
+  - restartPolicy: Always
+
+바꾸고 나면 각 파드가 READY 2/2 로 보여야 한다.
+
+[확인]
+  kubectl -n logging get pods
+  kubectl -n logging logs deploy/log-app -c log-sidecar
+EOF
+}
+q5_grade() {
+  check "Deployment log-app 존재" "kubectl -n logging get deployment log-app"
+  check_output "initContainers 에 log-sidecar 가 있다" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{.spec.template.spec.initContainers[*].name}'" 'log-sidecar'
+  check_output "사이드카 이미지가 busybox:1.36" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.image}{end}'" '^busybox:1\.36$'
+  check_output "restartPolicy: Always (네이티브 사이드카의 조건)" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.restartPolicy}{end}'" '^Always$'
+  check_output "같은 볼륨을 /var/log/app 에 마운트" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{range .volumeMounts[*]}{.mountPath}{\" \"}{end}{end}'" '/var/log/app'
+  wait_ready "-l app=log-app" logging
+  check_output "파드가 READY 2/2 (사이드카가 살아 있다)" \
+    "kubectl -n logging get deployment log-app -o jsonpath='{.status.readyReplicas}'" '^1$'
+  check_output "사이드카가 본 컨테이너의 로그를 읽고 있다" \
+    "kubectl -n logging logs deploy/log-app -c log-sidecar --tail=5 2>/dev/null" '.'
+}
+q5_hint() { cat <<'EOF'
+kubectl -n logging edit deployment log-app
+
+# spec.template.spec 아래, containers 와 나란히 initContainers 를 둔다
+  initContainers:
+    - name: log-sidecar
+      image: busybox:1.36
+      restartPolicy: Always          # ← 이 한 줄이 '네이티브 사이드카' 를 만든다
+      command: ["sh", "-c", "tail -F /var/log/app/app.log"]
+      volumeMounts:
+        - name: applogs             # 본 컨테이너가 쓰는 볼륨과 같은 이름
+          mountPath: /var/log/app
+
+# 일반 initContainer 는 끝나야 본 컨테이너가 시작한다.
+# restartPolicy: Always 를 주면 먼저 시작해서 끝까지 함께 산다 → READY 2/2
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+# Q6 — ConfigMap 값 바꾸기 → 파드에 반영(재배포) → immutable 로 잠그기
+# ══════════════════════════════════════════════════════════════
+q6_title() { echo "Update a ConfigMap, roll it out, then make it immutable"; }
+q6_text() { cat <<'EOF'
+In the billing namespace, the Deployment invoice-api reads the key
+PAYMENT_MODE from the ConfigMap billing-config as an environment variable.
+The current value is PAYMENT_MODE=sandbox.
+
+  (a) Change PAYMENT_MODE in billing-config to live.
+      Leave the other keys unchanged.
+  (b) Make sure the running Pods of invoice-api actually use the new value.
+      Do not change how the Deployment gets the value — it must still read
+      PAYMENT_MODE from billing-config.
+  (c) Finally, make billing-config immutable.
+
+The Deployment must keep 2 replicas, all Ready.
+
+Verify:
+  kubectl -n billing get configmap billing-config -o yaml
+  kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
+EOF
+}
+q6_title_ko() { echo "ConfigMap 수정 → 파드에 반영(재배포) → immutable 로 잠그기"; }
+q6_text_ko() { cat <<'EOF'
+billing 네임스페이스의 invoice-api Deployment 는 billing-config ConfigMap 의
+PAYMENT_MODE 키를 환경변수로 읽는다. 지금 값은 PAYMENT_MODE=sandbox 이다.
+
+  (a) billing-config 의 PAYMENT_MODE 를 live 로 바꾸시오.
+      다른 키는 그대로 둔다.
+  (b) 실행 중인 invoice-api 파드가 실제로 새 값을 쓰게 하시오.
+      Deployment 가 값을 가져오는 방식은 바꾸지 않는다 —
+      PAYMENT_MODE 는 계속 billing-config 에서 읽어야 한다.
+  (c) 마지막으로 billing-config 를 immutable(변경 불가)로 만드시오.
+
+Deployment 는 replicas 2 를 유지하고 모두 Ready 여야 한다.
+
+[확인]
+  kubectl -n billing get configmap billing-config -o yaml
+  kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
+EOF
+}
+q6_grade() {
+  check "ConfigMap billing-config 존재" "kubectl -n billing get configmap billing-config"
+  check_output "PAYMENT_MODE=live" \
+    "kubectl -n billing get configmap billing-config -o jsonpath='{.data.PAYMENT_MODE}'" '^live$'
+  check_output "다른 키는 그대로 (CURRENCY=KRW)" \
+    "kubectl -n billing get configmap billing-config -o jsonpath='{.data.CURRENCY}'" '^KRW$'
+  check_output "ConfigMap 이 immutable: true" \
+    "kubectl -n billing get configmap billing-config -o jsonpath='{.immutable}'" '^true$'
+  check_output "Deployment 가 여전히 billing-config 에서 PAYMENT_MODE 를 읽는다 (configMapKeyRef)" \
+    "kubectl -n billing get deployment invoice-api -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name==\"PAYMENT_MODE\")].valueFrom.configMapKeyRef.name}'" '^billing-config$'
+
+  wait_ready "-l app=invoice-api" billing
+  check_output "Deployment Available" \
+    "kubectl -n billing get deployment invoice-api -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}'" '^True$'
+  check_output "Ready 파드 2개" \
+    "kubectl -n billing get deployment invoice-api -o jsonpath='{.status.readyReplicas}'" '^2$'
+
+  # 지워지는 중이 아닌 Ready 파드만 골라서 — 생성 시각과 실제 환경변수를 본다.
+  #   환경변수는 컨테이너가 시작할 때 한 번 정해지므로, 바꾸기 전에 뜬 파드는 옛 값을 그대로 갖고 있다.
+  local base lines name ct dt ready v n=0 old=0 wrong=0 vals=""
+  base=$(cat "$WORK_DIR/.q6-baseline" 2>/dev/null)
+  lines=$(kubectl -n billing get pods -l app=invoice-api \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.creationTimestamp}{"|"}{.metadata.deletionTimestamp}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null)
+  while IFS='|' read -r name ct dt ready; do
+    [[ -z "$name" || -n "$dt" || "$ready" != "True" ]] && continue
+    n=$((n+1))
+    # ISO-8601(UTC) 문자열은 사전순 비교가 곧 시간순 비교다
+    if [[ -n "$base" ]] && ! [[ "$ct" > "$base" ]]; then old=$((old+1)); fi
+    v=$(kubectl -n billing exec "$name" -c api -- printenv PAYMENT_MODE 2>/dev/null </dev/null)
+    v="${v//[$'\r\n\t ']/}"
+    [[ "$v" == "live" ]] || { wrong=$((wrong+1)); vals+="$name=${v:-?} "; }
+  done <<< "$lines"
+
+  if (( n == 0 )); then
+    check_result "Ready 파드가 모두 값을 바꾼 뒤 새로 만들어졌다" 1 "Ready 파드가 없음"
+    check_result "모든 Ready 파드 안에서 PAYMENT_MODE=live (exec printenv)" 1 "Ready 파드가 없음"
+  else
+    if [[ -z "$base" ]]; then
+      # 기록이 없으면(start 를 거치지 않음) 생성 시각은 못 본다 — 아래 printenv 검사가 같은 것을 증명한다
+      check_result "Ready 파드가 모두 값을 바꾼 뒤 새로 만들어졌다" \
+        "$(( wrong == 0 ? 0 : 1 ))" "시작 기록 없음 — 환경변수 값으로 판단"
+    else
+      check_result "Ready 파드가 모두 값을 바꾼 뒤 새로 만들어졌다 (옛 파드 ${old}개)" \
+        "$(( old == 0 ? 0 : 1 ))" "처음 뜬 파드가 아직 Ready — 파드를 새로 만들어야 환경변수가 바뀐다"
+    fi
+    check_result "모든 Ready 파드 안에서 PAYMENT_MODE=live (exec printenv, ${n}개)" \
+      "$(( wrong == 0 ? 0 : 1 ))" "옛 값: ${vals}"
+  fi
+}
+q6_hint() { cat <<'EOF'
+# (a) 값 바꾸기
+kubectl -n billing edit configmap billing-config          # PAYMENT_MODE: live
+#   또는 kubectl -n billing patch configmap billing-config -p '{"data":{"PAYMENT_MODE":"live"}}'
+
+# (b) 환경변수는 컨테이너가 시작할 때 한 번 정해진다 → 파드를 새로 만들어야 반영
+kubectl -n billing rollout restart deployment invoice-api
+kubectl -n billing rollout status deployment invoice-api
+kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
+
+# (c) 마지막에 잠근다 — 먼저 잠그면 값을 못 고친다
+kubectl -n billing patch configmap billing-config -p '{"immutable":true}'
+
+# 순서를 틀려 잠근 뒤에 값을 바꿔야 한다면: 지우고 다시 만든다
+kubectl -n billing get configmap billing-config -o yaml > cm.yaml   # 고친 뒤
+kubectl replace --force -f cm.yaml
+EOF
+}
+
+exam_main "$@"

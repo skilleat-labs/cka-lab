@@ -119,8 +119,8 @@ EXAM_WARN_MIN=5   bash exam.sh start    # 5분 남았을 때 알리기
 
 | | 순차(이전) | 병렬(지금) |
 |---|---|---|
-| 11-ingress Q1 (11항목) | 1,981ms | **693ms** |
-| 09-networking Q1 (10항목) | 1,872ms | **665ms** |
+| 14-ingress Q1 (11항목) | 1,981ms | **693ms** |
+| 05-networking Q1 (10항목) | 1,872ms | **665ms** |
 | 시험 시작 — mock-5 정리 | 2,755ms | **1,073ms** |
 
 ```bash

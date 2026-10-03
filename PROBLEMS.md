@@ -15,16 +15,16 @@
 | `tutoring/session-2` | 세션 시험 | 3 | 30 | 네임스페이스 · NodePort · ConfigMap · 롤아웃/롤백 |
 | `tutoring/session-3` | 세션 시험 | 3 | 32 | Deployment+Service · StorageClass/PVC · Gateway API |
 | `tutoring/session-4` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
-| `13-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
-| `06-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
-| `07-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
-| `08-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
-| `09-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
-| `11-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
-| `14-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
-| `15-maintenance` | 강의 실습 | 4 | 18 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
-| `17-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
-| `19-troubleshooting` | 강의 실습 | 4 | 19 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
+| `03-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
+| `05-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
+| `09-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
+| `10-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
+| `12-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
+| `14-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
+| `15-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
+| `16-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
+| `20-maintenance` | 강의 실습 | 4 | 18 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
+| `22-troubleshooting` | 강의 실습 | 4 | 19 | CrashLoopBackOff · ImagePullBackOff · Endpoints · 노드 |
 | `mock-1` | 모의고사 | 7 | 100점 | 전 범위 (목표 40분) |
 | `mock-2` | 모의고사 변형 | 7 | 100점 | mock-1 과 같은 유형·다른 값 (retail ns) |
 | `mock-3` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
@@ -93,41 +93,14 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 ---
 
-## 13-cluster-setup — 클러스터 구축 (5항목)
+## 03-cluster-setup — 클러스터 구축 (5항목)
 
 | 문제 | 내용 |
 |------|------|
 | P1 | worker-2(192.168.56.12) 노드를 클러스터에 join |
 | P2 | control-plane 에서 `crictl` 로 컨테이너 확인 및 로그 출력 |
 
-## 06-workloads — 워크로드 (20항목)
-
-| 문제 | 내용 |
-|------|------|
-| P1 | Deployment 생성 후 Scale · Rolling Update · Rollback |
-| P2 | ConfigMap 생성 후 파드에 환경변수 주입 |
-| P3 | 매 분 `date` 를 출력하는 CronJob |
-| P4 | `monitoring` 네임스페이스에 DaemonSet (hostNetwork/hostPID) |
-
-## 07-scheduling — 스케줄링 (21항목)
-
-| 문제 | 내용 |
-|------|------|
-| P1 | Resource Requests/Limits 설정된 파드 |
-| P2 | Node Affinity 로 worker-1(disktype=ssd)에 배치 |
-| P3 | worker-2 의 Taint(dedicated=gpu:NoSchedule) 허용하는 Toleration |
-| P4 | HPA 생성 |
-
-## 08-storage — 스토리지 (23항목)
-
-| 문제 | 내용 |
-|------|------|
-| P1 | PersistentVolume + PVC 생성 및 바인딩 |
-| P2 | StorageClass + PVC |
-| P3 | StatefulSet + volumeClaimTemplates |
-| P4 | emptyDir 공유 볼륨 파드 |
-
-## 09-networking — 서비스와 네트워킹 (27항목)
+## 05-networking — 서비스와 네트워킹 (27항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -136,7 +109,34 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | NetworkPolicy — frontend 에서만 backend 인그레스 허용 |
 | P4 | DNS 검증 (busybox 파드에서 nslookup) |
 
-## 11-ingress — 외부 트래픽 (23항목)
+## 09-workloads — 워크로드 (20항목)
+
+| 문제 | 내용 |
+|------|------|
+| P1 | Deployment 생성 후 Scale · Rolling Update · Rollback |
+| P2 | ConfigMap 생성 후 파드에 환경변수 주입 |
+| P3 | 매 분 `date` 를 출력하는 CronJob |
+| P4 | `monitoring` 네임스페이스에 DaemonSet (hostNetwork/hostPID) |
+
+## 10-scheduling — 스케줄링 (21항목)
+
+| 문제 | 내용 |
+|------|------|
+| P1 | Resource Requests/Limits 설정된 파드 |
+| P2 | Node Affinity 로 worker-1(disktype=ssd)에 배치 |
+| P3 | worker-2 의 Taint(dedicated=gpu:NoSchedule) 허용하는 Toleration |
+| P4 | HPA 생성 |
+
+## 12-storage — 스토리지 (23항목)
+
+| 문제 | 내용 |
+|------|------|
+| P1 | PersistentVolume + PVC 생성 및 바인딩 |
+| P2 | StorageClass + PVC |
+| P3 | StatefulSet + volumeClaimTemplates |
+| P4 | emptyDir 공유 볼륨 파드 |
+
+## 14-ingress — 외부 트래픽 (23항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -145,7 +145,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | TLS Ingress |
 | P4 | NetworkPolicy 로 production 네임스페이스 격리 |
 
-## 14-rbac — 권한과 인증 (26항목)
+## 15-rbac — 권한과 인증 (26항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -154,16 +154,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | ClusterRole + ClusterRoleBinding |
 | P4 | `kubectl auth can-i` 로 권한 검증 |
 
-## 15-maintenance — 클러스터 유지보수 (9항목)
-
-| 문제 | 내용 |
-|------|------|
-| P1 | worker-2 drain 후 작업 완료 시 uncordon |
-| P2 | etcd 스냅샷을 `/tmp/etcd-backup.db` 에 저장 |
-| P3 | `kubeadm upgrade plan` 으로 업그레이드 가능 버전 확인 |
-| P4 | `kubeadm certs check-expiration` 으로 인증서 만료 확인 |
-
-## 17-helm — 패키징 도구 (11항목)
+## 16-helm — 패키징 도구 (11항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -172,7 +163,16 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | revision 1 로 롤백 |
 | P4 | Kustomize 디렉토리 구성 후 `kubectl apply -k` |
 
-## 19-troubleshooting — 트러블슈팅 (8항목)
+## 20-maintenance — 클러스터 유지보수 (9항목)
+
+| 문제 | 내용 |
+|------|------|
+| P1 | worker-2 drain 후 작업 완료 시 uncordon |
+| P2 | etcd 스냅샷을 `/tmp/etcd-backup.db` 에 저장 |
+| P3 | `kubeadm upgrade plan` 으로 업그레이드 가능 버전 확인 |
+| P4 | `kubeadm certs check-expiration` 으로 인증서 만료 확인 |
+
+## 22-troubleshooting — 트러블슈팅 (8항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -252,7 +252,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 ## 알아둘 점
 
-- **폴더 번호는 실습 세트 번호이며 강의 회차와 일대일 대응이 아니다.** 담당 강사의 안내를 따른다.
-- `13-cluster-setup` 은 worker 노드 IP 가 `192.168.56.12` 로 고정되어 있다. 다른 IP 라면 스크립트를 수정한다.
-- `15-maintenance`, `17-helm`, `19-troubleshooting` 은 채점 항목 수가 상대적으로 적다. 통과했다고 해서 완전히 익혔다고 보기 어려우니 반복 연습이 필요하다.
+- **폴더 앞 번호 = 온라인 강의 번호다** (2026-10-04 개편). 순서대로 풀면 강의 순서와 같다.
+- `03-cluster-setup` 은 worker 노드 IP 가 `192.168.56.12` 로 고정되어 있다. 다른 IP 라면 스크립트를 수정한다.
+- `20-maintenance`, `16-helm`, `22-troubleshooting` 은 채점 항목 수가 상대적으로 적다. 통과했다고 해서 완전히 익혔다고 보기 어려우니 반복 연습이 필요하다.
 - `exam-start.sh --hints` 는 정답 명령어까지 출력한다. 시험용으로 쓸 때는 사용하지 않는다.

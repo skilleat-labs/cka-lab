@@ -609,8 +609,8 @@ kubernetes.io/docs/concepts/services-networking/network-policies/
 
 | 세트 | 문제 | 내용 |
 |---|---|---|
-| `09-networking` | P3 | `backend-policy` — frontend 에서만 backend 로 |
-| `11-ingress` | P4 | `production` 네임스페이스 격리 |
+| `05-networking` | P3 | `backend-policy` — frontend 에서만 backend 로 |
+| `14-ingress` | P4 | `production` 네임스페이스 격리 |
 | `mock-4` | Q3 | `deny-all` + `allow-web` (3306 만) |
 
 예제 YAML 로 직접 실험해보려면:

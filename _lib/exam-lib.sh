@@ -303,7 +303,7 @@ wait_ready() {
 # ── 네임스페이스 삭제 완료 대기 ──────────────────────────────────
 #   cleanup 은 네임스페이스를 --wait=false 로 지운다. 지우는 중(Terminating)인 이름으로
 #   setup 이 같은 네임스페이스를 만들면 API 서버가 거부하고, 그 안의 리소스도 전부 실패한다.
-#   그 뒤 삭제가 끝나면 네임스페이스가 아예 없는 상태로 시험이 시작된다 (finaltest Q3 vault 사례).
+#   그 뒤 삭제가 끝나면 네임스페이스가 아예 없는 상태로 시험이 시작된다 (final-test Q3 vault 사례).
 #   그래서 setup 전에 Terminating 이 사라질 때까지 기다린다. EXAM_NS_WAIT 초가 지나면 알리고 넘어간다.
 EXAM_NS_WAIT="${EXAM_NS_WAIT:-120}"
 _terminating_ns() {

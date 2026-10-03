@@ -289,7 +289,7 @@ function connect(){
 // ── 상태 ────────────────────────────────────────────────────────────
 function setOptions(sets){
   $('#sets').innerHTML = sets.map(s =>
-    `<option value="${s.id}" ${s.id===SET?'selected':''}>${esc(s.id)} — ${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
+    `<option value="${s.id}" ${s.id===SET?'selected':''}>${s.label?esc(s.label)+' — ':''}${esc(s.title)}${s.done?'  ✓ 완료':(s.running?`  (Q${s.current} 진행 중)`:'')}</option>`).join('');
 }
 
 async function loadSets(){
