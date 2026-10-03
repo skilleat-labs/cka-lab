@@ -3,17 +3,38 @@
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 9강 실습 — 서비스 · NodePort · NetworkPolicy · DNS"
-EXAM_NQ=4
+EXAM_TITLE="CKA 9강 실습 — 서비스 · NodePort · NetworkPolicy · DNS · 이름 붙은 포트"
+EXAM_NQ=5
 
 exam_cleanup() {
-  kdel deployment web api backend -n default
-  kdel service web-svc api-svc -n default
+  kdel deployment web api backend storefront -n default
+  kdel service web-svc api-svc storefront-svc -n default
   kdel networkpolicy backend-policy -n default
   kdel pod dns-test -n default
-  echo "  web / api / backend / web-svc / api-svc / backend-policy / dns-test 삭제"
+  echo "  web / api / backend / storefront / web-svc / api-svc / storefront-svc / backend-policy / dns-test 삭제"
 }
-exam_setup() { echo "  (미리 만들어둘 것 없음)"; }
+exam_setup() {
+  # ── Q5: 포트를 하나도 선언하지 않은 Deployment (학생이 named port 를 추가한다)
+  cat <<'YAML' | kubectl apply -f - &>/dev/null
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: default
+  labels: { app: storefront }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: storefront } }
+  template:
+    metadata: { labels: { app: storefront } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.24
+YAML
+  echo "  Q1~Q4  미리 만들어둘 것 없음"
+  echo "  Q5     default/storefront Deployment 배치 (ports 선언 없음)"
+}
 
 # ══════════════════════════════════════════════════════════════
 q1_title() { echo "Deployment behind a ClusterIP Service"; }
@@ -255,6 +276,114 @@ kubectl exec dns-test -- nslookup web-svc
 # 해석이 안 되면
 kubectl get pods -n kube-system -l k8s-app=kube-dns    # CoreDNS 가 Running 인가
 kubectl exec dns-test -- cat /etc/resolv.conf          # nameserver 가 CoreDNS ClusterIP 인가
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "Add a named container port and expose it with NodePort"; }
+q5_text() { cat <<'EOF'
+In the default namespace there is an existing Deployment named storefront.
+Its container does not declare any ports.
+
+  1) reconfigure the existing Deployment storefront so that its container
+     exposes port 80/TCP with the name http
+     (do not delete and recreate the Deployment)
+
+  2) create a Service named storefront-svc
+     type        NodePort
+     selector    the storefront Pods
+     port        80
+     targetPort  the named container port http  (by name, not by number)
+
+The Service must have Endpoints and answer on <NodeIP>:<nodePort>.
+
+Verify:
+  kubectl get deployment storefront -o jsonpath='{.spec.template.spec.containers[0].ports}'
+  kubectl describe svc storefront-svc        -> TargetPort: http/TCP
+  kubectl get endpoints storefront-svc
+EOF
+}
+q5_title_ko() { echo "이름 붙은 컨테이너 포트 추가 + NodePort 로 노출"; }
+q5_text_ko() { cat <<'EOF'
+default 네임스페이스에 storefront Deployment 가 이미 있다.
+이 컨테이너에는 포트가 하나도 선언되어 있지 않다.
+
+  1) 기존 storefront Deployment 를 수정해서 컨테이너가
+     포트 80/TCP 를 이름 http 로 노출하게 하시오
+     (Deployment 를 지우고 다시 만들지 말 것)
+
+  2) storefront-svc Service 생성
+     타입         NodePort
+     selector     storefront 파드
+     port         80
+     targetPort   컨테이너 포트 이름 http  (번호가 아니라 이름으로)
+
+Service 의 Endpoints 가 차 있고 <노드IP>:<nodePort> 로 응답해야 한다.
+
+[확인]
+  kubectl get deployment storefront -o jsonpath='{.spec.template.spec.containers[0].ports}'
+  kubectl describe svc storefront-svc        → TargetPort: http/TCP
+  kubectl get endpoints storefront-svc
+EOF
+}
+q5_grade() {
+  local CP="{.spec.template.spec.containers[0].ports[0]"
+  check "Deployment storefront 존재" "kubectl get deployment storefront -n default"
+  check_output "컨테이너 포트 이름 http" \
+    "kubectl get deployment storefront -n default -o jsonpath='${CP}.name}'" '^http$'
+  check_output "containerPort 80" \
+    "kubectl get deployment storefront -n default -o jsonpath='${CP}.containerPort}'" '^80$'
+  check_output "protocol TCP" \
+    "kubectl get deployment storefront -n default -o jsonpath='${CP}.protocol}'" '^TCP$'
+
+  # 롤아웃이 끝나야 새 파드(포트 http 있음)만 Endpoints 에 들어간다 — 먼저 기다린다
+  local rc=1
+  if kubectl get deployment storefront -n default &>/dev/null; then
+    kubectl rollout status deployment/storefront -n default --timeout="${EXAM_WAIT}s" &>/dev/null; rc=$?
+  fi
+  check_result "롤아웃 완료 (새 파드가 모두 Ready)" "$rc" \
+    "$([[ $rc == 0 ]] || echo 'kubectl rollout status deployment/storefront 로 확인')"
+
+  check "Service storefront-svc 존재" "kubectl get service storefront-svc -n default"
+  check_output "타입 NodePort" "kubectl get service storefront-svc -n default -o jsonpath='{.spec.type}'" '^NodePort$'
+  check_output "port 80" "kubectl get service storefront-svc -n default -o jsonpath='{.spec.ports[0].port}'" '^80$'
+  check_output "targetPort 가 이름 http (번호 80 이 아니다)" \
+    "kubectl get service storefront-svc -n default -o jsonpath='{.spec.ports[0].targetPort}'" '^http$'
+  check_output "selector app=storefront" \
+    "kubectl get service storefront-svc -n default -o jsonpath='{.spec.selector.app}'" '^storefront$'
+  check_output "Endpoints 에 파드 IP 가 있다" \
+    "kubectl get endpoints storefront-svc -n default -o jsonpath='{.subsets[0].addresses[*].ip}' | wc -w" '^\s*[1-9]'
+  check_output "Endpoints 포트가 80 (이름 http 가 80 으로 풀렸다)" \
+    "kubectl get endpoints storefront-svc -n default -o jsonpath='{.subsets[0].ports[0].port}'" '^80$'
+
+  local ip np
+  ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null | awk '{print $1}')
+  np=$(kubectl get service storefront-svc -n default -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+  np=${np//[^0-9]/}
+  if [[ -n "$np" ]]; then
+    check_output "노드 IP:nodePort 로 실제 응답 (${ip:-노드IP}:${np})" \
+      "curl -s --max-time 5 http://${ip:-127.0.0.1}:${np}" 'nginx'
+  else
+    check_result "노드 IP:nodePort 로 실제 응답" 1 "nodePort 가 없음 (NodePort Service 가 아니거나 없음)"
+  fi
+}
+q5_hint() { cat <<'EOF'
+# 1) 기존 Deployment 에 포트 추가 — edit 또는 patch (컨테이너 이름은 nginx)
+kubectl edit deployment storefront
+#   containers:
+#   - name: nginx
+#     image: nginx:1.24
+#     ports:                    ← 추가
+#     - name: http
+#       containerPort: 80
+#       protocol: TCP
+# 또는
+kubectl patch deployment storefront -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","ports":[{"name":"http","containerPort":80,"protocol":"TCP"}]}]}}}}'
+kubectl rollout status deployment/storefront
+
+# 2) targetPort 는 이름으로
+kubectl expose deployment storefront --name=storefront-svc --type=NodePort --port=80 --target-port=http
+kubectl describe svc storefront-svc      # TargetPort: http/TCP, Endpoints 가 :80 으로 찍힌다
 EOF
 }
 

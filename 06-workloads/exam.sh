@@ -5,7 +5,7 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
 EXAM_TITLE="CKA 6강 실습 — 워크로드 배포와 관리"
-EXAM_NQ=5
+EXAM_NQ=6
 
 # ══════════════════════════════════════════════════════════════
 exam_cleanup() {
@@ -17,7 +17,9 @@ exam_cleanup() {
   kdel cronjob date-printer -n default
   kubectl get jobs -n default -o name 2>/dev/null | grep "date-printer" | xargs -r kubectl delete -n default &>/dev/null || true
   kdel namespace monitoring
-  echo "  web-app / db-client / db-config / date-printer / monitoring ns 삭제"
+  kdel namespace billing          # Q6 — immutable ConfigMap 도 네임스페이스와 함께 지워진다
+  rm -f "$WORK_DIR/.q6-baseline"
+  echo "  web-app / db-client / db-config / date-printer / monitoring ns / billing ns 삭제"
 }
 exam_setup() {
   # Q5(사이드카) 용 — 로그를 계속 쓰는 앱을 미리 띄워 둔다. 사이드카만 붙이면 되게.
@@ -48,6 +50,60 @@ spec:
           emptyDir: {}
 YAML
   echo "  logging 네임스페이스에 log-app 배치 (Q5 에서 사이드카를 붙인다)"
+
+  # Q6(ConfigMap 수정 → 재배포 → immutable) 용 — 값을 env 로 읽는 Deployment
+  kubectl create namespace billing &>/dev/null
+  cat <<'YAML' | kubectl apply -f - &>/dev/null
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-config
+  namespace: billing
+data:
+  PAYMENT_MODE: sandbox
+  CURRENCY: KRW
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoice-api
+  namespace: billing
+  labels: { app: invoice-api }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: invoice-api } }
+  template:
+    metadata:
+      labels: { app: invoice-api }
+    spec:
+      terminationGracePeriodSeconds: 2      # sh 는 SIGTERM 을 무시한다 — 재시작이 30초씩 걸리지 않게
+      containers:
+        - name: api
+          image: busybox:1.36
+          command: ["sh", "-c", "echo \"mode=$PAYMENT_MODE currency=$CURRENCY\"; sleep 3600"]
+          env:
+            - name: PAYMENT_MODE
+              valueFrom: { configMapKeyRef: { name: billing-config, key: PAYMENT_MODE } }
+            - name: CURRENCY
+              valueFrom: { configMapKeyRef: { name: billing-config, key: CURRENCY } }
+YAML
+  # 처음 뜬 파드의 생성 시각(API 서버 기준)을 기록해 둔다 — 채점 때 "그 뒤에 새로 만든 파드인가" 를 본다.
+  # 노드·채점 머신 시계가 달라도 상관없게 date 가 아니라 creationTimestamp 끼리 비교한다.
+  local i out cnt base=""
+  for i in $(seq 1 20); do
+    out=$(kubectl -n billing get pods -l app=invoice-api \
+      -o jsonpath='{range .items[*]}{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null)
+    cnt=$(printf '%s\n' "$out" | grep -c 'T'); cnt=${cnt//[^0-9]/}; cnt=${cnt:-0}
+    base=$(printf '%s\n' "$out" | grep 'T' | sort | tail -1)
+    (( cnt >= 2 )) && break
+    sleep 1
+  done
+  if [[ -n "$base" ]]; then
+    echo "$base" > "$WORK_DIR/.q6-baseline"
+  else
+    rm -f "$WORK_DIR/.q6-baseline"
+  fi
+  echo "  billing 네임스페이스에 billing-config(ConfigMap) + invoice-api(Deployment) 배치 (Q6)"
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -389,6 +445,116 @@ kubectl -n logging edit deployment log-app
 
 # 일반 initContainer 는 끝나야 본 컨테이너가 시작한다.
 # restartPolicy: Always 를 주면 먼저 시작해서 끝까지 함께 산다 → READY 2/2
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+# Q6 — ConfigMap 값 바꾸기 → 파드에 반영(재배포) → immutable 로 잠그기
+# ══════════════════════════════════════════════════════════════
+q6_title() { echo "Update a ConfigMap, roll it out, then make it immutable"; }
+q6_text() { cat <<'EOF'
+In the billing namespace, the Deployment invoice-api reads the key
+PAYMENT_MODE from the ConfigMap billing-config as an environment variable.
+The current value is PAYMENT_MODE=sandbox.
+
+  (a) Change PAYMENT_MODE in billing-config to live.
+      Leave the other keys unchanged.
+  (b) Make sure the running Pods of invoice-api actually use the new value.
+      Do not change how the Deployment gets the value — it must still read
+      PAYMENT_MODE from billing-config.
+  (c) Finally, make billing-config immutable.
+
+The Deployment must keep 2 replicas, all Ready.
+
+Verify:
+  kubectl -n billing get configmap billing-config -o yaml
+  kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
+EOF
+}
+q6_title_ko() { echo "ConfigMap 수정 → 파드에 반영(재배포) → immutable 로 잠그기"; }
+q6_text_ko() { cat <<'EOF'
+billing 네임스페이스의 invoice-api Deployment 는 billing-config ConfigMap 의
+PAYMENT_MODE 키를 환경변수로 읽는다. 지금 값은 PAYMENT_MODE=sandbox 이다.
+
+  (a) billing-config 의 PAYMENT_MODE 를 live 로 바꾸시오.
+      다른 키는 그대로 둔다.
+  (b) 실행 중인 invoice-api 파드가 실제로 새 값을 쓰게 하시오.
+      Deployment 가 값을 가져오는 방식은 바꾸지 않는다 —
+      PAYMENT_MODE 는 계속 billing-config 에서 읽어야 한다.
+  (c) 마지막으로 billing-config 를 immutable(변경 불가)로 만드시오.
+
+Deployment 는 replicas 2 를 유지하고 모두 Ready 여야 한다.
+
+[확인]
+  kubectl -n billing get configmap billing-config -o yaml
+  kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
+EOF
+}
+q6_grade() {
+  check "ConfigMap billing-config 존재" "kubectl -n billing get configmap billing-config"
+  check_output "PAYMENT_MODE=live" \
+    "kubectl -n billing get configmap billing-config -o jsonpath='{.data.PAYMENT_MODE}'" '^live$'
+  check_output "다른 키는 그대로 (CURRENCY=KRW)" \
+    "kubectl -n billing get configmap billing-config -o jsonpath='{.data.CURRENCY}'" '^KRW$'
+  check_output "ConfigMap 이 immutable: true" \
+    "kubectl -n billing get configmap billing-config -o jsonpath='{.immutable}'" '^true$'
+  check_output "Deployment 가 여전히 billing-config 에서 PAYMENT_MODE 를 읽는다 (configMapKeyRef)" \
+    "kubectl -n billing get deployment invoice-api -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name==\"PAYMENT_MODE\")].valueFrom.configMapKeyRef.name}'" '^billing-config$'
+
+  wait_ready "-l app=invoice-api" billing
+  check_output "Deployment Available" \
+    "kubectl -n billing get deployment invoice-api -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}'" '^True$'
+  check_output "Ready 파드 2개" \
+    "kubectl -n billing get deployment invoice-api -o jsonpath='{.status.readyReplicas}'" '^2$'
+
+  # 지워지는 중이 아닌 Ready 파드만 골라서 — 생성 시각과 실제 환경변수를 본다.
+  #   환경변수는 컨테이너가 시작할 때 한 번 정해지므로, 바꾸기 전에 뜬 파드는 옛 값을 그대로 갖고 있다.
+  local base lines name ct dt ready v n=0 old=0 wrong=0 vals=""
+  base=$(cat "$WORK_DIR/.q6-baseline" 2>/dev/null)
+  lines=$(kubectl -n billing get pods -l app=invoice-api \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.creationTimestamp}{"|"}{.metadata.deletionTimestamp}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null)
+  while IFS='|' read -r name ct dt ready; do
+    [[ -z "$name" || -n "$dt" || "$ready" != "True" ]] && continue
+    n=$((n+1))
+    # ISO-8601(UTC) 문자열은 사전순 비교가 곧 시간순 비교다
+    if [[ -n "$base" ]] && ! [[ "$ct" > "$base" ]]; then old=$((old+1)); fi
+    v=$(kubectl -n billing exec "$name" -c api -- printenv PAYMENT_MODE 2>/dev/null </dev/null)
+    v="${v//[$'\r\n\t ']/}"
+    [[ "$v" == "live" ]] || { wrong=$((wrong+1)); vals+="$name=${v:-?} "; }
+  done <<< "$lines"
+
+  if (( n == 0 )); then
+    check_result "Ready 파드가 모두 값을 바꾼 뒤 새로 만들어졌다" 1 "Ready 파드가 없음"
+    check_result "모든 Ready 파드 안에서 PAYMENT_MODE=live (exec printenv)" 1 "Ready 파드가 없음"
+  else
+    if [[ -z "$base" ]]; then
+      # 기록이 없으면(start 를 거치지 않음) 생성 시각은 못 본다 — 아래 printenv 검사가 같은 것을 증명한다
+      check_result "Ready 파드가 모두 값을 바꾼 뒤 새로 만들어졌다" \
+        "$(( wrong == 0 ? 0 : 1 ))" "시작 기록 없음 — 환경변수 값으로 판단"
+    else
+      check_result "Ready 파드가 모두 값을 바꾼 뒤 새로 만들어졌다 (옛 파드 ${old}개)" \
+        "$(( old == 0 ? 0 : 1 ))" "처음 뜬 파드가 아직 Ready — 파드를 새로 만들어야 환경변수가 바뀐다"
+    fi
+    check_result "모든 Ready 파드 안에서 PAYMENT_MODE=live (exec printenv, ${n}개)" \
+      "$(( wrong == 0 ? 0 : 1 ))" "옛 값: ${vals}"
+  fi
+}
+q6_hint() { cat <<'EOF'
+# (a) 값 바꾸기
+kubectl -n billing edit configmap billing-config          # PAYMENT_MODE: live
+#   또는 kubectl -n billing patch configmap billing-config -p '{"data":{"PAYMENT_MODE":"live"}}'
+
+# (b) 환경변수는 컨테이너가 시작할 때 한 번 정해진다 → 파드를 새로 만들어야 반영
+kubectl -n billing rollout restart deployment invoice-api
+kubectl -n billing rollout status deployment invoice-api
+kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
+
+# (c) 마지막에 잠근다 — 먼저 잠그면 값을 못 고친다
+kubectl -n billing patch configmap billing-config -p '{"immutable":true}'
+
+# 순서를 틀려 잠근 뒤에 값을 바꿔야 한다면: 지우고 다시 만든다
+kubectl -n billing get configmap billing-config -o yaml > cm.yaml   # 고친 뒤
+kubectl replace --force -f cm.yaml
 EOF
 }
 

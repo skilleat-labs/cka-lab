@@ -3,8 +3,19 @@
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 11강 실습 — Ingress (경로·호스트·TLS) · 네임스페이스 격리"
-EXAM_NQ=4
+EXAM_TITLE="CKA 11강 실습 — Ingress (경로·호스트·TLS) · 네임스페이스 격리 · Gateway API 이전"
+EXAM_NQ=5
+
+# ── Q5: Gateway API + NGINX Gateway Fabric (tutoring/session-3 과 같은 버전·방식) ──
+NGF_VERSION="v2.7.0"
+GW_CRD_KUSTOMIZE="https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=${NGF_VERSION}"
+NGF_CRDS="https://raw.githubusercontent.com/nginx/nginx-gateway-fabric/${NGF_VERSION}/deploy/crds.yaml"
+NGF_DEPLOY="https://raw.githubusercontent.com/nginx/nginx-gateway-fabric/${NGF_VERSION}/deploy/nodeport/deploy.yaml"
+MODE_FILE="$WORK_DIR/.gateway-mode"
+gw_mode() { cat "$MODE_FILE" 2>/dev/null || echo none; }
+
+Q5_NS=ing-migrate
+Q5_HOST=shop.example.local
 
 exam_cleanup() {
   kdel ingress web-ingress host-ingress tls-ingress -n default
@@ -12,9 +23,137 @@ exam_cleanup() {
   kdel service web1-svc -n default
   kdel secret tls-secret -n default
   kdel namespace production
+  # Q5 — Gateway·HTTPRoute·Ingress·Secret·백엔드가 전부 이 네임스페이스 안에 있다
+  kdel namespace "$Q5_NS"
+  rm -f "$MODE_FILE"
   echo "  web1 / web1-svc / ingress 3종 / tls-secret / production ns 삭제"
+  echo "  $Q5_NS 네임스페이스 삭제 (Gateway · HTTPRoute · Ingress · Secret · 백엔드)"
+  echo "  (Gateway API 컨트롤러는 남겨둠 — 완전 제거: kubectl delete ns nginx-gateway)"
 }
-exam_setup() { echo "  (미리 만들어둘 것 없음 — Ingress 컨트롤러가 설치돼 있어야 실제 접속 테스트가 된다)"; }
+
+q5_setup_gateway_api() {
+  # tutoring/session-3 의 4)·5) 와 같은 절차 — 이미 설치돼 있으면 건너뛴다
+  local mode="none"
+  if kubectl get gatewayclass nginx &>/dev/null && kubectl get deployment -n nginx-gateway &>/dev/null; then
+    echo "  Gateway API 이미 설치됨 — 건너뜀"; mode="full"
+  else
+    echo "  Gateway API CRD 설치 중..."
+    if kubectl kustomize "$GW_CRD_KUSTOMIZE" 2>/dev/null | kubectl apply -f - &>/dev/null; then
+      mode="crds"
+      kubectl apply --server-side -f "$NGF_CRDS" &>/dev/null || true
+      kubectl create namespace nginx-gateway &>/dev/null || true
+      echo "  NGINX Gateway Fabric 배포 중 (최대 3분)..."
+      if kubectl apply -f "$NGF_DEPLOY" &>/dev/null && \
+         kubectl wait --for=condition=Available deployment --all -n nginx-gateway --timeout=180s &>/dev/null; then
+        mode="full"; echo "  NGINX Gateway Fabric 준비 완료 (GatewayClass: nginx)"
+      else
+        echo "  컨트롤러가 아직 Ready 되지 않음 — kubectl get pods -n nginx-gateway 로 확인"
+      fi
+    else
+      echo "  Gateway API CRD 설치 실패 (인터넷 연결 확인)"
+    fi
+  fi
+
+  # 데이터 플레인을 DaemonSet 으로 (모든 노드에서 접속되도록)
+  if [[ "$mode" == "full" ]]; then
+    local patch='{"spec":{"kubernetes":{"deployment":null,"daemonSet":{"patches":[{"type":"StrategicMerge","value":{"spec":{"template":{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}}]}}}}'
+    local pn pns; pn=$(kubectl get gatewayclass nginx -o jsonpath='{.spec.parametersRef.name}' 2>/dev/null); pns=$(kubectl get gatewayclass nginx -o jsonpath='{.spec.parametersRef.namespace}' 2>/dev/null)
+    if [[ -n "$pn" && -n "$pns" ]]; then
+      kubectl patch nginxproxy "$pn" -n "$pns" --type=merge -p "$patch" &>/dev/null && echo "  게이트웨이 데이터 플레인 → DaemonSet 전환"
+    else
+      kubectl apply -f - &>/dev/null <<'EOF'
+apiVersion: gateway.nginx.org/v1alpha2
+kind: NginxProxy
+metadata: { name: exam-proxy-config, namespace: nginx-gateway }
+spec:
+  kubernetes:
+    daemonSet:
+      patches:
+      - type: StrategicMerge
+        value:
+          spec:
+            template:
+              spec:
+                tolerations:
+                - { key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }
+EOF
+      kubectl patch gatewayclass nginx --type=merge -p '{"spec":{"parametersRef":{"group":"gateway.nginx.org","kind":"NginxProxy","name":"exam-proxy-config","namespace":"nginx-gateway"}}}' &>/dev/null && echo "  게이트웨이 데이터 플레인 → DaemonSet 전환"
+    fi
+  fi
+  echo "$mode" > "$MODE_FILE"
+  case "$mode" in
+    full) echo "  → Q5 전부 채점 가능" ;;
+    crds) echo "  → CRD 만 설치됨. Q5 리소스 작성은 채점되지만 상태·트래픽 검증은 제외" ;;
+    none) echo "  → Gateway API 미설치. Q5 는 리소스 채점 불가" ;;
+  esac
+}
+
+q5_setup_ingress() {
+  kubectl create namespace "$Q5_NS" &>/dev/null || true
+
+  # 백엔드 — /api/ 로 들어오면 shop-api-ok 를 돌려준다 (트래픽 검증용 표식)
+  kubectl apply -f - &>/dev/null <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: shop-api, namespace: ${Q5_NS}, labels: { app: shop-api } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: shop-api } }
+  template:
+    metadata: { labels: { app: shop-api } }
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27
+        ports: [ { containerPort: 80 } ]
+        command: ["sh", "-c", "mkdir -p /usr/share/nginx/html/api && echo shop-api-ok > /usr/share/nginx/html/api/index.html && exec nginx -g 'daemon off;'"]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: shop-api-svc, namespace: ${Q5_NS} }
+spec:
+  selector: { app: shop-api }
+  ports: [ { name: http, port: 8080, targetPort: 80 } ]
+EOF
+
+  # 자체 서명 인증서 → TLS Secret
+  local d; d=$(mktemp -d)
+  if openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+       -keyout "$d/tls.key" -out "$d/tls.crt" \
+       -subj "/CN=${Q5_HOST}" -addext "subjectAltName=DNS:${Q5_HOST}" &>/dev/null; then
+    kubectl create secret tls shop-tls-cert -n "$Q5_NS" --cert="$d/tls.crt" --key="$d/tls.key" &>/dev/null
+  else
+    echo "  [주의] openssl 로 인증서를 만들지 못했습니다 — Secret shop-tls-cert 없음"
+  fi
+  rm -rf "$d"
+
+  # 옮겨야 할 기존 Ingress (host + TLS + 경로)
+  kubectl apply -f - &>/dev/null <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: shop-ingress, namespace: ${Q5_NS} }
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts: [ ${Q5_HOST} ]
+    secretName: shop-tls-cert
+  rules:
+  - host: ${Q5_HOST}
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service: { name: shop-api-svc, port: { number: 8080 } }
+EOF
+  echo "  Q5: $Q5_NS 네임스페이스 · shop-api(+shop-api-svc:8080) · Secret shop-tls-cert · Ingress shop-ingress 생성"
+}
+
+exam_setup() {
+  echo "  (Q1~Q4 는 미리 만들어둘 것 없음 — Ingress 컨트롤러가 설치돼 있어야 실제 접속 테스트가 된다)"
+  q5_setup_gateway_api
+  q5_setup_ingress
+}
 
 # ══════════════════════════════════════════════════════════════
 q1_title() { echo "Path based Ingress"; }
@@ -271,6 +410,170 @@ kubectl create deployment secure-app -n production --image=nginx:1.24
 #     policyTypes: [Ingress]
 #     ingress:
 #     - ports: [{ protocol: TCP, port: 8080 }]
+EOF
+}
+
+# ══════════════════════════════════════════════════════════════
+q5_title() { echo "Migrate an Ingress to Gateway API (HTTPS)"; }
+q5_text() { cat <<'EOF'
+In the namespace ing-migrate, an Ingress named shop-ingress exposes the
+application over HTTPS. Migrate it to Gateway API, then remove the Ingress.
+
+Inspect the existing Ingress first:
+  kubectl get ingress shop-ingress -n ing-migrate -o yaml
+
+  1) create a Gateway named shop-gateway in ing-migrate
+
+     gatewayClassName   nginx
+     listener           name https, port 443, protocol HTTPS
+     hostname           the same host as the Ingress
+     tls                terminate with the TLS Secret the Ingress uses
+
+  2) create an HTTPRoute named shop-route in ing-migrate
+
+     parentRefs         shop-gateway
+     hostnames          the same host as the Ingress
+     rule               the same path (PathPrefix) and the same
+                        backend Service and port as the Ingress
+
+  3) delete the Ingress shop-ingress
+     (keep the Service and the Secret)
+
+Verify:
+  kubectl get gateway,httproute -n ing-migrate
+  kubectl describe gateway shop-gateway -n ing-migrate
+  kubectl get ingress -n ing-migrate
+EOF
+}
+q5_title_ko() { echo "Ingress 를 Gateway API 로 옮기기 (HTTPS)"; }
+q5_text_ko() { cat <<'EOF'
+ing-migrate 네임스페이스의 shop-ingress Ingress 가 애플리케이션을 HTTPS 로
+노출하고 있다. 이것을 Gateway API 로 옮긴 뒤 Ingress 를 삭제하시오.
+
+먼저 기존 Ingress 를 확인한다:
+  kubectl get ingress shop-ingress -n ing-migrate -o yaml
+
+  1) ing-migrate 에 shop-gateway Gateway 를 만든다
+
+     gatewayClassName   nginx
+     리스너             이름 https, 포트 443, 프로토콜 HTTPS
+     hostname           Ingress 와 같은 호스트
+     tls                Ingress 가 쓰는 TLS Secret 으로 종료(Terminate)
+
+  2) ing-migrate 에 shop-route HTTPRoute 를 만든다
+
+     parentRefs         shop-gateway
+     hostnames          Ingress 와 같은 호스트
+     규칙               Ingress 와 같은 경로(PathPrefix)와
+                        같은 백엔드 Service · 포트
+
+  3) shop-ingress Ingress 를 삭제한다
+     (Service 와 Secret 은 남겨 둔다)
+
+[확인]
+  kubectl get gateway,httproute -n ing-migrate
+  kubectl describe gateway shop-gateway -n ing-migrate
+  kubectl get ingress -n ing-migrate
+EOF
+}
+q5_grade() {
+  local mode ns="$Q5_NS"; mode=$(gw_mode)
+  if [[ "$mode" == "none" ]]; then
+    check_result "Gateway API 가 설치되어 있다" 1 "미설치 — 인터넷 연결 후 bash exam.sh start 재실행"
+    return
+  fi
+  local GW="kubectl get gateway shop-gateway -n $ns -o jsonpath"
+  local RT="kubectl get httproute shop-route -n $ns -o jsonpath"
+
+  # ── Gateway 스펙
+  check "Gateway shop-gateway 존재" "kubectl get gateway shop-gateway -n $ns"
+  check_output "gatewayClassName nginx" "$GW='{.spec.gatewayClassName}'" '^nginx$'
+  check_output "리스너 https 가 포트 443 · HTTPS" \
+    "$GW='{.spec.listeners[?(@.name==\"https\")].port}/{.spec.listeners[?(@.name==\"https\")].protocol}'" '^443/HTTPS$'
+  check_output "리스너 hostname $Q5_HOST" \
+    "$GW='{.spec.listeners[?(@.name==\"https\")].hostname}'" '^shop\.example\.local$'
+  check_output "리스너 TLS 인증서가 Secret shop-tls-cert" \
+    "$GW='{.spec.listeners[?(@.name==\"https\")].tls.certificateRefs[*].name}'" '(^| )shop-tls-cert( |$)'
+  check_output "TLS 모드 Terminate (생략하면 기본값)" \
+    "$GW='{.spec.listeners[?(@.name==\"https\")].tls.mode}'" '^(Terminate)?$'
+
+  # ── HTTPRoute 스펙
+  check "HTTPRoute shop-route 존재" "kubectl get httproute shop-route -n $ns"
+  check_output "parentRefs 가 shop-gateway" "$RT='{.spec.parentRefs[*].name}'" '(^| )shop-gateway( |$)'
+  check_output "hostnames 에 $Q5_HOST" "$RT='{.spec.hostnames[*]}'" '(^| )shop\.example\.local( |$)'
+  check_output "경로 매치 PathPrefix /api" \
+    "$RT='{range .spec.rules[*].matches[*]}{.path.type}={.path.value}{\" \"}{end}'" '(^| )PathPrefix=/api/?( |$)'
+  check_output "backendRef shop-api-svc:8080" \
+    "$RT='{range .spec.rules[*].backendRefs[*]}{.name}:{.port}{\" \"}{end}'" '(^| )shop-api-svc:8080( |$)'
+
+  # ── 정리 — Ingress 는 지우고, Service · Secret 은 남긴다
+  # pipefail 이 걸려 있어 'kubectl get | grep' 파이프는 kubectl 의 실패를 그대로 돌려준다 — 값으로 판정
+  local ing; ing=$(kubectl get ingress shop-ingress -n "$ns" 2>&1)
+  check_result "Ingress shop-ingress 삭제됨" "$([[ "$ing" == *NotFound* ]] && echo 0 || echo 1)" \
+    "$([[ "$ing" == *NotFound* ]] || echo "아직 남아 있다 — kubectl delete ingress shop-ingress -n $ns")"
+  check "Service shop-api-svc 와 Secret shop-tls-cert 는 남아 있다" \
+    "kubectl get service shop-api-svc -n $ns && kubectl get secret shop-tls-cert -n $ns"
+
+  [[ "$mode" != "full" ]] && { echo -e "  ${DIM}(컨트롤러 미설치 — 상태·트래픽 검증 생략)${RESET}"; return; }
+
+  # ── 컨트롤러가 받아들였는가
+  check_output "Gateway Accepted" \
+    "$GW='{.status.conditions[?(@.type==\"Accepted\")].status}'" 'True'
+  check_output "Gateway Programmed" \
+    "$GW='{.status.conditions[?(@.type==\"Programmed\")].status}'" 'True'
+  check_output "리스너 https 의 인증서 참조가 해석됨 (ResolvedRefs)" \
+    "$GW='{.status.listeners[?(@.name==\"https\")].conditions[?(@.type==\"ResolvedRefs\")].status}'" '^True$'
+  check_output "HTTPRoute 가 Gateway 에 Accepted" \
+    "$RT='{.status.parents[*].conditions[?(@.type==\"Accepted\")].status}'" 'True'
+  check_output "HTTPRoute 백엔드 참조가 해석됨 (ResolvedRefs)" \
+    "$RT='{.status.parents[*].conditions[?(@.type==\"ResolvedRefs\")].status}'" 'True'
+
+  # ── 실제 HTTPS 트래픽 (Gateway 가 만든 Service 의 443 NodePort 로)
+  local port ip hit="" resp
+  port=$(kubectl get svc -n "$ns" -l gateway.networking.k8s.io/gateway-name=shop-gateway \
+           -o jsonpath='{.items[0].spec.ports[?(@.port==443)].nodePort}' 2>/dev/null)
+  port="${port//[^0-9]/}"
+  if [[ -n "$port" ]] && command -v curl &>/dev/null; then
+    for ip in $(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null); do
+      [[ -z "$ip" ]] && continue
+      resp=$(curl -sk --max-time 5 --resolve "${Q5_HOST}:${port}:${ip}" "https://${Q5_HOST}:${port}/api/" 2>/dev/null || true)
+      [[ "$resp" == *shop-api-ok* ]] && { hit="$ip"; break; }
+    done
+  fi
+  check_result "https://$Q5_HOST/api/ 가 Gateway 를 거쳐 백엔드에 닿는다${hit:+ — $hit:$port}" \
+    "$([[ -n "$hit" ]] && echo 0 || echo 1)" \
+    "${port:+NodePort $port 응답 없음 — }리스너 hostname · certificateRefs · HTTPRoute hostnames/경로 확인 (kubectl get svc -n $ns)"
+}
+q5_hint() { cat <<'EOF'
+kubectl get ingress shop-ingress -n ing-migrate -o yaml   # host · secretName · path · backend 를 옮겨 적는다
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: { name: shop-gateway, namespace: ing-migrate }
+spec:
+  gatewayClassName: nginx                    # ← ingressClassName
+  listeners:
+  - name: https
+    port: 443
+    protocol: HTTPS
+    hostname: shop.example.local             # ← tls[].hosts
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - { kind: Secret, name: shop-tls-cert } # ← tls[].secretName
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: shop-route, namespace: ing-migrate }
+spec:
+  parentRefs: [ { name: shop-gateway } ]
+  hostnames: [ shop.example.local ]          # ← rules[].host
+  rules:
+  - matches: [ { path: { type: PathPrefix, value: /api } } ]   # ← Prefix
+    backendRefs: [ { name: shop-api-svc, port: 8080 } ]       # ← backend.service
+
+kubectl describe gateway shop-gateway -n ing-migrate   # Accepted · Programmed · ResolvedRefs
+kubectl delete ingress shop-ingress -n ing-migrate
 EOF
 }
 
