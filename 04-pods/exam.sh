@@ -30,8 +30,21 @@ exam_setup() {
   local code; code="pl-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 6)"
   echo "$code" > "$CODE_FILE"
   kubectl -n "$NS" run info --image=nginx:1.27 --labels=app=info &>/dev/null
-  kubectl -n "$NS" run greeter --image=busybox:1.36 --labels=app=greeter \
-    --command -- sh -c "echo starting; echo ACCESS-CODE=$code; echo ready; sleep 36000" &>/dev/null
+  # sh 는 SIGTERM 을 무시한다 — 정리할 때 30초씩 걸리지 않게 grace 를 1초로
+  cat <<YAML | kubectl apply -f - &>/dev/null
+apiVersion: v1
+kind: Pod
+metadata:
+  name: greeter
+  namespace: $NS
+  labels: { app: greeter }
+spec:
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: greeter
+      image: busybox:1.36
+      command: ["sh", "-c", "echo starting; echo ACCESS-CODE=$code; echo ready; sleep 36000"]
+YAML
   echo "  info · greeter 파드 배치 (Q2)"
 
   # Q3 — 이미지 이름 오타로 못 뜨는 파드
