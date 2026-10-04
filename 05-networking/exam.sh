@@ -3,18 +3,17 @@
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 5강 실습 — 서비스 · NodePort · NetworkPolicy · DNS · 이름 붙은 포트"
-EXAM_NQ=5
+EXAM_TITLE="CKA 5강 실습 — 서비스 (ClusterIP · NodePort · DNS · 이름 붙은 포트)"
+EXAM_NQ=4
 
 exam_cleanup() {
-  kdel deployment web api backend storefront -n default
+  kdel deployment web api storefront -n default
   kdel service web-svc api-svc storefront-svc -n default
-  kdel networkpolicy backend-policy -n default
   kdel pod dns-test -n default
-  echo "  web / api / backend / storefront / web-svc / api-svc / storefront-svc / backend-policy / dns-test 삭제"
+  echo "  web / api / storefront / web-svc / api-svc / storefront-svc / dns-test 삭제"
 }
 exam_setup() {
-  # ── Q5: 포트를 하나도 선언하지 않은 Deployment (학생이 named port 를 추가한다)
+  # ── Q4: 포트를 하나도 선언하지 않은 Deployment (학생이 named port 를 추가한다)
   cat <<'YAML' | kubectl apply -f - &>/dev/null
 apiVersion: apps/v1
 kind: Deployment
@@ -32,8 +31,8 @@ spec:
         - name: nginx
           image: nginx:1.24
 YAML
-  echo "  Q1~Q4  미리 만들어둘 것 없음"
-  echo "  Q5     default/storefront Deployment 배치 (ports 선언 없음)"
+  echo "  Q1~Q3  미리 만들어둘 것 없음"
+  echo "  Q4     default/storefront Deployment 배치 (ports 선언 없음)"
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -156,72 +155,10 @@ kubectl apply -f svc.yaml
 EOF
 }
 
+
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "NetworkPolicy — only frontend may reach backend"; }
+q3_title() { echo "Check cluster DNS from a Pod"; }
 q3_text() { cat <<'EOF'
-In the default namespace:
-
-  1) create a Deployment named backend
-     image nginx:1.24 / replicas 1 / label app=backend
-
-  2) create a NetworkPolicy named backend-policy
-     applies to    Pods labelled app=backend
-     policyTypes   Ingress
-     allow         traffic only from Pods labelled app=frontend
-     everything else must be denied
-
-Verify:
-  kubectl describe networkpolicy backend-policy
-EOF
-}
-q3_title_ko() { echo "NetworkPolicy — frontend 에서만 backend 로"; }
-q3_text_ko() { cat <<'EOF'
-default 네임스페이스에서:
-
-  1) backend Deployment 생성
-     이미지 nginx:1.24 / 레플리카 1 / 레이블 app=backend
-
-  2) backend-policy NetworkPolicy 생성
-     적용 대상    app=backend 레이블 파드
-     policyTypes  Ingress
-     허용         app=frontend 레이블 파드에서 오는 트래픽만
-     그 외 모든 인바운드는 차단
-
-[확인]
-  kubectl describe networkpolicy backend-policy
-EOF
-}
-q3_grade() {
-  check "Deployment backend 존재" "kubectl get deployment backend -n default"
-  check_output "이미지 nginx:1.24" \
-    "kubectl get deployment backend -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" '^nginx:1\.24$'
-  check "NetworkPolicy backend-policy 존재" "kubectl get networkpolicy backend-policy -n default"
-  check_output "대상이 app=backend" \
-    "kubectl get networkpolicy backend-policy -n default -o jsonpath='{.spec.podSelector.matchLabels.app}'" '^backend$'
-  check_output "policyTypes 에 Ingress" \
-    "kubectl get networkpolicy backend-policy -n default -o jsonpath='{.spec.policyTypes}'" 'Ingress'
-  check_output "허용 출처가 app=frontend" \
-    "kubectl get networkpolicy backend-policy -n default -o jsonpath='{.spec.ingress[0].from[0].podSelector.matchLabels.app}'" '^frontend$'
-  check_output "ingress 규칙이 1개 (전부 허용이 아니다)" \
-    "kubectl get networkpolicy backend-policy -n default -o jsonpath='{.spec.ingress}' | grep -c 'podSelector'" '^[1-9]'
-}
-q3_hint() { cat <<'EOF'
-kubectl create deployment backend --image=nginx:1.24 --replicas=1
-
-#   kind: NetworkPolicy
-#   spec:
-#     podSelector: { matchLabels: { app: backend } }
-#     policyTypes: [Ingress]
-#     ingress:
-#     - from:
-#       - podSelector: { matchLabels: { app: frontend } }
-# NetworkPolicy 는 create 명령이 없다 — 문서 예제를 복사해서 고치는 게 빠르다.
-EOF
-}
-
-# ══════════════════════════════════════════════════════════════
-q4_title() { echo "Check cluster DNS from a Pod"; }
-q4_text() { cat <<'EOF'
 In the default namespace, create a Pod named dns-test.
 
   image     busybox:1.36
@@ -236,8 +173,8 @@ Verify:
   kubectl exec dns-test -- nslookup web-svc.default.svc.cluster.local
 EOF
 }
-q4_title_ko() { echo "파드 안에서 클러스터 DNS 확인"; }
-q4_text_ko() { cat <<'EOF'
+q3_title_ko() { echo "파드 안에서 클러스터 DNS 확인"; }
+q3_text_ko() { cat <<'EOF'
 default 네임스페이스에 dns-test 파드를 만드시오.
 
   이미지    busybox:1.36
@@ -252,7 +189,7 @@ default 네임스페이스에 dns-test 파드를 만드시오.
   kubectl exec dns-test -- nslookup web-svc.default.svc.cluster.local
 EOF
 }
-q4_grade() {
+q3_grade() {
   check "파드 dns-test 존재" "kubectl get pod dns-test -n default"
   wait_ready "dns-test" default
   check_output "Running" "kubectl get pod dns-test -n default -o jsonpath='{.status.phase}'" '^Running$'
@@ -269,7 +206,7 @@ q4_grade() {
     check_result "FQDN 해석" 1 "파드가 없음"
   fi
 }
-q4_hint() { cat <<'EOF'
+q3_hint() { cat <<'EOF'
 kubectl run dns-test --image=busybox:1.36 --command -- sleep 3600
 kubectl exec dns-test -- nslookup web-svc
 
@@ -280,8 +217,8 @@ EOF
 }
 
 # ══════════════════════════════════════════════════════════════
-q5_title() { echo "Add a named container port and expose it with NodePort"; }
-q5_text() { cat <<'EOF'
+q4_title() { echo "Add a named container port and expose it with NodePort"; }
+q4_text() { cat <<'EOF'
 In the default namespace there is an existing Deployment named storefront.
 Its container does not declare any ports.
 
@@ -303,8 +240,8 @@ Verify:
   kubectl get endpoints storefront-svc
 EOF
 }
-q5_title_ko() { echo "이름 붙은 컨테이너 포트 추가 + NodePort 로 노출"; }
-q5_text_ko() { cat <<'EOF'
+q4_title_ko() { echo "이름 붙은 컨테이너 포트 추가 + NodePort 로 노출"; }
+q4_text_ko() { cat <<'EOF'
 default 네임스페이스에 storefront Deployment 가 이미 있다.
 이 컨테이너에는 포트가 하나도 선언되어 있지 않다.
 
@@ -326,7 +263,7 @@ Service 의 Endpoints 가 차 있고 <노드IP>:<nodePort> 로 응답해야 한�
   kubectl get endpoints storefront-svc
 EOF
 }
-q5_grade() {
+q4_grade() {
   local CP="{.spec.template.spec.containers[0].ports[0]"
   check "Deployment storefront 존재" "kubectl get deployment storefront -n default"
   check_output "컨테이너 포트 이름 http" \
@@ -367,7 +304,7 @@ q5_grade() {
     check_result "노드 IP:nodePort 로 실제 응답" 1 "nodePort 가 없음 (NodePort Service 가 아니거나 없음)"
   fi
 }
-q5_hint() { cat <<'EOF'
+q4_hint() { cat <<'EOF'
 # 1) 기존 Deployment 에 포트 추가 — edit 또는 patch (컨테이너 이름은 nginx)
 kubectl edit deployment storefront
 #   containers:

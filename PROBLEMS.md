@@ -17,9 +17,11 @@
 | `tutoring/session-4` | 세션 시험 | 3 | 33 | PVC→Deployment YAML · Requests/Limits · Probe |
 | `03-cluster-setup` | 강의 실습 | 2 | 7 | kubeadm join · crictl |
 | `04-pods` | 강의 실습 | 7 | 36 | Pod · logs/exec · ReplicaSet · 라벨/셀렉터 · Deployment 업데이트/롤백 |
-| `05-networking` | 강의 실습 | 4 | 30 | ClusterIP · NodePort · NetworkPolicy · DNS |
-| `09-workloads` | 강의 실습 | 4 | 26 | Deployment · ConfigMap · CronJob · DaemonSet |
-| `10-scheduling` | 강의 실습 | 4 | 24 | Requests/Limits · Affinity · Taint · HPA |
+| `05-networking` | 강의 실습 | 4 | 36 | ClusterIP · NodePort · DNS · 이름 붙은 포트 |
+| `06-config` | 강의 실습 | 5 | 38 | ConfigMap · Secret · 반영 · immutable |
+| `07-resources` | 강의 실습 | 7 | 40 | 네임스페이스 · requests/limits · OOM · QoS · LimitRange · ResourceQuota |
+| `09-workloads` | 강의 실습 | 4 | 25 | Deployment · CronJob · DaemonSet · 사이드카 |
+| `10-scheduling` | 강의 실습 | 4 | 24 | Affinity · Taint · HPA · PriorityClass |
 | `12-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
 | `14-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
 | `15-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
@@ -123,6 +125,28 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P2 | NodePort 서비스 (api / nodePort 30080) |
 | P3 | NetworkPolicy — frontend 에서만 backend 인그레스 허용 |
 | P4 | DNS 검증 (busybox 파드에서 nslookup) |
+
+## 06-config — ConfigMap · Secret (38항목)
+
+| 문제 | 내용 |
+|------|------|
+| Q1 | ConfigMap 을 만들어 envFrom 으로 전부 주입 (옛 09 Q2) |
+| Q2 | 키 하나(COLOR)만 골라 다른 이름(THEME)의 환경변수로 — envFrom 이면 오답 |
+| Q3 | 파일로 ConfigMap 을 만들어 nginx 에 볼륨으로 마운트 |
+| Q4 | Secret 디코딩(base64 그대로면 오답) · generic 생성 · secretKeyRef |
+| Q5 | ConfigMap 수정 → rollout restart → immutable (옛 09 Q6) |
+
+## 07-resources — 네임스페이스와 자원 (40항목)
+
+| 문제 | 내용 |
+|------|------|
+| Q1 | 파드가 있는 네임스페이스 찾기 · team-c 에 Deployment (default 에 만들면 오답) |
+| Q2 | requests/limits 가 있는 파드 (옛 10 Q1) |
+| Q3 | 메모리 limit 64Mi 로 OOMKilled 반복 — 이유 기록 후 limit 만 512Mi |
+| Q4 | QoS 등급 읽기 · Guaranteed 파드 만들기 |
+| Q5 | LimitRange 기본값·최대값 — 기본값이 채워지고 큰 값은 거부되는지까지 |
+| Q6 | ResourceQuota 에 막혀 2개만 뜬 Deployment — 비우고, 고치고, 늘린다 |
+| Q7 | 노드 자원을 나눠 레플리카 모두 띄우기 (옛 10 Q6) — 이 문제에 들어갈 때 자원을 잡는다 |
 
 ## 09-workloads — 워크로드 (20항목)
 

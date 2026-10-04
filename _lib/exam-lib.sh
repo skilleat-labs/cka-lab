@@ -14,6 +14,8 @@
 #   qN_title_ko() / qN_text_ko()   같은 내용의 한글판 (선택. 없으면 영어가 나온다)
 #   qN_grade()                채점 — check / check_output 만 호출
 #   qN_hint()                 (선택) 힌트
+#   qN_enter()                (선택) 그 문제에 처음 들어갈 때 한 번 — 다른 문제를 방해하는 환경
+#                             (예: 노드 자원을 미리 잡아 두기)을 시작부터 깔지 않으려고 쓴다
 #
 # 학생이 쓰는 명령:
 #   bash exam.sh start    환경 준비 + Q1 출제
@@ -440,6 +442,16 @@ run_grade() {
   rm -rf "$_CK_DIR"
 }
 
+# 문제에 처음 들어갈 때 한 번만 qN_enter 를 부른다 (있을 때만)
+enter_q() {
+  local n="$1"
+  [[ "$(type -t "q${n}_enter")" == "function" ]] || return 0
+  [[ -n "$(state_get "q${n}_entered")" ]] && return 0
+  echo -e "\n${CYAN}[SETUP] Q${n} 환경을 준비합니다...${RESET}"
+  "q${n}_enter"
+  state_set "q${n}_entered" 1
+}
+
 # 문제 n 으로 이동 (되돌아가기 포함)
 goto_q() {
   local n="$1" cur
@@ -447,6 +459,7 @@ goto_q() {
   [[ -n "$cur" && "$cur" != "$n" ]] && q_close "$cur"
   state_set current "$n"
   state_set "q${n}_start" "$(now)"
+  enter_q "$n"
   show_question "$n"
 }
 # 다음으로 — 아직 채점되지 않은 문제를 우선 찾고, 없으면 리포트
@@ -513,6 +526,7 @@ cmd_start() {
   state_set started "$(now)"
   state_set current 1
   state_set q1_start "$(now)"
+  enter_q 1
   if has_limit; then
     echo ""
     echo -e "  ${BOLD}제한시간 ${EXAM_LIMIT_MIN}분${RESET}  ${DIM}— ${EXAM_WARN_MIN}분 남으면 알려 드립니다.${RESET}"

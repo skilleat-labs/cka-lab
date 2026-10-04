@@ -53,7 +53,7 @@ bash exam.sh status     # 진행 현황 (점수·소요 시간)
 문제 사이는 자유롭게 오간다 — `bash exam.sh go 3` (또는 `next` / `prev`).
 되돌아가 다시 채점하면 점수가 갱신되고, 시간은 그 문제에 머문 만큼만 누적된다. 마지막 문제를 통과하면 최종 리포트가 나온다.
 끝나고 클러스터를 원래대로 돌리려면 `bash exam.sh clean` — 시험에서 만든 리소스(네임스페이스·PV·노드 레이블 등)를 전부 지운다.
-강의 실습 14개 · 모의고사 6개 · Final Test · 과외 세션 시험 4개 — **전체 25세트 130문항**에 적용돼 있다.
+강의 실습 16개 · 모의고사 6개 · Final Test · 과외 세션 시험 4개 — **전체 27세트 137문항**에 적용돼 있다.
 모의고사는 100점 배점, 세션 시험은 항목 수로 채점된다. 
 
 ### 한꺼번에 풀기 (모든 세트)
@@ -81,7 +81,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 > 각 폴더에 어떤 문제가 들어 있는지 자세한 내용은 [PROBLEMS.md](PROBLEMS.md) 참고.
 
 **폴더 앞 번호 = 온라인 강의 번호입니다.** 10강을 봤다면 `10-scheduling` 을 풉니다. 위에서부터 순서대로 풀면 강의 순서와 같습니다.
-번호가 비는 강의(1·2·6·7·8·11·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
+번호가 비는 강의(1·2·8·11·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
 
 ### 강의별 실습
 
@@ -89,9 +89,11 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 |------|------|------|
 | `03-cluster-setup` | 3강 내 클러스터 만들기 | kubeadm join, crictl, CNI, CRI |
 | `04-pods` | 4강 파드에서 Deployment 까지 | 파드 생성·라벨, get -o wide·logs·exec, 고장 파드, ReplicaSet·scale, 라벨로 떼어 내기, 롤링 업데이트·롤백 |
-| `05-networking` | 5강 서비스 | ClusterIP, NodePort, NetworkPolicy, DNS, 이름 붙은 포트 |
-| `09-workloads` | 9강 Deployment 로는 안 되는 일 | Deployment 롤백, ConfigMap, CronJob, DaemonSet, 네이티브 사이드카 |
-| `10-scheduling` | 10강 스케줄링 | Requests/Limits, Affinity, Taint/Toleration, HPA, PriorityClass |
+| `05-networking` | 5강 서비스 | ClusterIP, NodePort, DNS, 이름 붙은 포트 |
+| `06-config` | 6강 설정을 이미지 밖으로 | ConfigMap(envFrom · 키 하나 · 볼륨), Secret(base64 · secretKeyRef), 수정 반영 · immutable |
+| `07-resources` | 7강 네임스페이스와 자원 | 네임스페이스, requests/limits, OOMKilled, QoS, LimitRange, ResourceQuota, 자원 배분 |
+| `09-workloads` | 9강 Deployment 로는 안 되는 일 | Deployment 롤백, CronJob, DaemonSet, 네이티브 사이드카 |
+| `10-scheduling` | 10강 스케줄링 | Affinity, Taint/Toleration, HPA, PriorityClass |
 | `12-storage` | 12강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |
 | `13-networkpolicy` | 13강 NetworkPolicy | 기본 거부, 선택 허용, 네임스페이스 허용, Egress |
 | `14-ingress` | 14강 Ingress → Gateway API | 경로·호스트 라우팅, TLS, 네임스페이스 격리, Gateway 이전 |
