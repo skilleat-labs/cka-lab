@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CKA 14강 실습 초기화 스크립트 — Ingress와 보안 기초
+# CKA 8강 실습 초기화 스크립트 — Ingress와 보안 기초
 # 사용법: bash exam-start.sh [--hints]
 set -euo pipefail
 
@@ -10,7 +10,7 @@ WORK_DIR="$(cd "$(dirname "$0")" && pwd)/work"
 mkdir -p "$WORK_DIR"
 
 echo "================================================="
-echo " CKA 14강 실습: Ingress와 보안 기초"
+echo " CKA 8강 실습: Ingress와 보안 기초"
 echo "================================================="
 echo ""
 

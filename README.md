@@ -80,8 +80,8 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 
 > 각 폴더에 어떤 문제가 들어 있는지 자세한 내용은 [PROBLEMS.md](PROBLEMS.md) 참고.
 
-**폴더 앞 번호 = 온라인 강의 번호입니다.** 10강을 봤다면 `10-scheduling` 을 풉니다. 위에서부터 순서대로 풀면 강의 순서와 같습니다.
-번호가 비는 강의(1·2·8·11·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
+**폴더 앞 번호 = 온라인 강의 번호입니다.** 11강을 봤다면 `11-scheduling` 을 풉니다. 위에서부터 순서대로 풀면 강의 순서와 같습니다.
+번호가 비는 강의(1·2·9·12·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
 
 ### 강의별 실습
 
@@ -92,11 +92,11 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | `05-networking` | 5강 서비스 | ClusterIP, NodePort, DNS, 이름 붙은 포트 |
 | `06-config` | 6강 설정을 이미지 밖으로 | ConfigMap(envFrom · 키 하나 · 볼륨), Secret(base64 · secretKeyRef), 수정 반영 · immutable |
 | `07-resources` | 7강 네임스페이스와 자원 | 네임스페이스, requests/limits, OOMKilled, QoS, LimitRange, ResourceQuota, 자원 배분 |
-| `09-workloads` | 9강 Deployment 로는 안 되는 일 | Deployment 롤백, CronJob, DaemonSet, 네이티브 사이드카 |
-| `10-scheduling` | 10강 스케줄링 | Affinity, Taint/Toleration, HPA, PriorityClass |
-| `12-storage` | 12강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |
-| `13-networkpolicy` | 13강 NetworkPolicy | 기본 거부, 선택 허용, 네임스페이스 허용, Egress |
-| `14-ingress` | 14강 Ingress → Gateway API | 경로·호스트 라우팅, TLS, 네임스페이스 격리, Gateway 이전 |
+| `08-ingress` | 8강 밖에서 이름으로 들어오기 — Ingress → Gateway API | 경로·호스트 라우팅, TLS, 네임스페이스 격리, Gateway 이전 |
+| `10-workloads` | 10강 Deployment 로는 안 되는 일 | Deployment 롤백, CronJob, DaemonSet, 네이티브 사이드카 |
+| `11-scheduling` | 11강 스케줄링 | Affinity, Taint/Toleration, HPA, PriorityClass |
+| `13-storage` | 13강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |
+| `14-networkpolicy` | 14강 NetworkPolicy | 기본 거부, 선택 허용, 네임스페이스 허용, Egress |
 | `15-rbac` | 15강 인증 · RBAC · ServiceAccount | ServiceAccount, Role, ClusterRole, 권한 검증 |
 | `16-helm` | 16강 Helm · Kustomize | install/upgrade/rollback, Kustomize, helm template, CRD |
 | `18-architecture` | 18강 컨트롤플레인 안을 열어 보기 | 컨트롤플레인 구성, etcd 연결, 노드 구성, 선언적 모델 |
@@ -132,7 +132,8 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 > 옛 폴더에서 풀던 기록이 있다면 `bash clean-all.sh` 로 한 번 정리하고 다시 시작하세요.
 
 > **2026-10-04 순서 개편:** 강의 실습 폴더 번호를 온라인 강의 번호에 맞췄습니다. 문제는 그대로이고 이름만 바뀌었습니다.
-> `13-cluster-setup`→`03-cluster-setup`, `09-networking`→`05-networking`, `06-workloads`→`09-workloads`, `07-scheduling`→`10-scheduling`, `08-storage`→`12-storage`, `10-networkpolicy`→`13-networkpolicy`, `11-ingress`→`14-ingress`, `14-rbac`→`15-rbac`, `17-helm`→`16-helm`, `03-architecture`→`18-architecture`, `16-node-ops`→`19-node-ops`, `15-maintenance`→`20-maintenance`, `19-troubleshooting`→`22-troubleshooting`, `finaltest`→`final-test`.
+> `13-cluster-setup`→`03-cluster-setup`, `09-networking`→`05-networking`, `06-workloads`→`10-workloads`, `07-scheduling`→`11-scheduling`, `08-storage`→`13-storage`, `10-networkpolicy`→`14-networkpolicy`, `11-ingress`→`08-ingress`, `14-rbac`→`15-rbac`, `17-helm`→`16-helm`, `03-architecture`→`18-architecture`, `16-node-ops`→`19-node-ops`, `15-maintenance`→`20-maintenance`, `19-troubleshooting`→`22-troubleshooting`, `finaltest`→`final-test`.
+> 2026-10-06 온라인 강의에서 Ingress · Gateway API 를 8강으로 당기면서 그 뒤 번호가 한 칸씩 밀렸습니다 (위 대응표는 최종 이름).
 > 풀던 기록은 **옛 폴더를 지우기 전에** 옛 폴더에서 `bash exam.sh clean` 을 먼저 하세요. `git pull` 뒤에 옛 폴더가 `work/` 만 남은 채로 보이면 지워도 됩니다.
 
 ## 개념 문서

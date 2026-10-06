@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 10강 실습 — 스케줄링 (순차 진행형)
+# CKA 11강 실습 — 스케줄링 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 10강 실습 — 스케줄링 (Affinity · Taint · HPA · PriorityClass)"
+EXAM_TITLE="CKA 11강 실습 — 스케줄링 (Affinity · Taint · HPA · PriorityClass)"
 EXAM_NQ=4
 
 exam_cleanup() {

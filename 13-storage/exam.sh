@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CKA 12강 실습 — 스토리지 (순차 진행형)
+# CKA 13강 실습 — 스토리지 (순차 진행형)
 set -uo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 
-EXAM_TITLE="CKA 12강 실습 — 스토리지 (PV/PVC · 기본 StorageClass · StatefulSet · emptyDir · 주어진 파일에 PVC 붙이기)"
+EXAM_TITLE="CKA 13강 실습 — 스토리지 (PV/PVC · 기본 StorageClass · StatefulSet · emptyDir · 주어진 파일에 PVC 붙이기)"
 EXAM_NQ=5
 
 # Q5 — 학생이 고쳐서 apply 할 Deployment 파일 (setup 이 만든다. 학생에게는 work/records-deploy.yaml)

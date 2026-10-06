@@ -20,10 +20,10 @@
 | `05-networking` | 강의 실습 | 4 | 36 | ClusterIP · NodePort · DNS · 이름 붙은 포트 |
 | `06-config` | 강의 실습 | 5 | 38 | ConfigMap · Secret · 반영 · immutable |
 | `07-resources` | 강의 실습 | 7 | 40 | 네임스페이스 · requests/limits · OOM · QoS · LimitRange · ResourceQuota |
-| `09-workloads` | 강의 실습 | 4 | 25 | Deployment · CronJob · DaemonSet · 사이드카 |
-| `10-scheduling` | 강의 실습 | 4 | 24 | Affinity · Taint · HPA · PriorityClass |
-| `12-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
-| `14-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
+| `08-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
+| `10-workloads` | 강의 실습 | 4 | 25 | Deployment · CronJob · DaemonSet · 사이드카 |
+| `11-scheduling` | 강의 실습 | 4 | 24 | Affinity · Taint · HPA · PriorityClass |
+| `13-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
 | `15-rbac` | 강의 실습 | 4 | 26 | ServiceAccount · Role · ClusterRole · 권한 검증 |
 | `16-helm` | 강의 실습 | 4 | 18 | Helm 설치/업그레이드/롤백 · Kustomize |
 | `20-maintenance` | 강의 실습 | 4 | 18 | drain/uncordon · etcd 백업 · 업그레이드 · 인증서 |
@@ -148,7 +148,16 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q6 | ResourceQuota 에 막혀 2개만 뜬 Deployment — 비우고, 고치고, 늘린다 |
 | Q7 | 노드 자원을 나눠 레플리카 모두 띄우기 (옛 10 Q6) — 이 문제에 들어갈 때 자원을 잡는다 |
 
-## 09-workloads — 워크로드 (20항목)
+## 08-ingress — 외부 트래픽 (23항목)
+
+| 문제 | 내용 |
+|------|------|
+| P1 | 기본 Ingress 생성 |
+| P2 | 호스트 기반 라우팅 Ingress |
+| P3 | TLS Ingress |
+| P4 | NetworkPolicy 로 production 네임스페이스 격리 |
+
+## 10-workloads — 워크로드 (20항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -157,7 +166,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | 매 분 `date` 를 출력하는 CronJob |
 | P4 | `monitoring` 네임스페이스에 DaemonSet (hostNetwork/hostPID) |
 
-## 10-scheduling — 스케줄링 (21항목)
+## 11-scheduling — 스케줄링 (21항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -166,7 +175,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P3 | worker-2 의 Taint(dedicated=gpu:NoSchedule) 허용하는 Toleration |
 | P4 | HPA 생성 |
 
-## 12-storage — 스토리지 (23항목)
+## 13-storage — 스토리지 (23항목)
 
 | 문제 | 내용 |
 |------|------|
@@ -174,15 +183,6 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P2 | StorageClass + PVC |
 | P3 | StatefulSet + volumeClaimTemplates |
 | P4 | emptyDir 공유 볼륨 파드 |
-
-## 14-ingress — 외부 트래픽 (23항목)
-
-| 문제 | 내용 |
-|------|------|
-| P1 | 기본 Ingress 생성 |
-| P2 | 호스트 기반 라우팅 Ingress |
-| P3 | TLS Ingress |
-| P4 | NetworkPolicy 로 production 네임스페이스 격리 |
 
 ## 15-rbac — 권한과 인증 (26항목)
 
