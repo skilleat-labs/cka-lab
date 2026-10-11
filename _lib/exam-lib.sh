@@ -38,6 +38,38 @@ STATE="$WORK_DIR/.progress"
 QLOG="$WORK_DIR/questions-so-far.txt"
 mkdir -p "$WORK_DIR"
 
+# ── 시험 스크립트 안에서는 기본 네임스페이스를 default 로 고정 ─────────
+#   세트의 정리·준비·채점 코드 중 -n 없이 쓴 kubectl 은 "default 기준" 으로 쓴 것이다.
+#   그런데 학생이 kubectl config set-context --namespace=study 처럼 기본 칸을 바꿔 두면
+#   정리는 study 에서 지우고 채점은 default 를 봐서, 다시 시작해도 리소스가 남았다 (mock-1 사례).
+#   kubeconfig 파일은 건드리지 않는다 — 이 스크립트 안에서만 KUBECONFIG 앞에 덮어쓰기 파일을 붙인다.
+#   (kubectl 에 -n default 를 붙이는 방식은 YAML 의 metadata.namespace 와 부딪혀서 쓰지 않는다)
+USER_NS=""
+_pin_default_ns() {
+  [[ -n "${EXAM_KEEP_NS:-}" ]] && return 0
+  local cl us ov="$WORK_DIR/.kubeconfig-default-ns"
+  USER_NS=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}' 2>/dev/null)
+  [[ -z "$USER_NS" || "$USER_NS" == "default" ]] && return 0
+  cl=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.cluster}' 2>/dev/null)
+  us=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.user}' 2>/dev/null)
+  [[ -z "$cl" || -z "$us" ]] && return 0
+  cat > "$ov" <<KCFG
+apiVersion: v1
+kind: Config
+current-context: cka-lab-default-ns
+contexts:
+- name: cka-lab-default-ns
+  context: { cluster: "$cl", user: "$us", namespace: default }
+KCFG
+  export KUBECONFIG="$ov:${KUBECONFIG:-$HOME/.kube/config}"
+}
+ns_notice() {   # 학생 터미널의 기본 칸이 default 가 아니면 알려 준다 — 답을 엉뚱한 칸에 만들기 쉽다
+  [[ -z "$USER_NS" || "$USER_NS" == "default" ]] && return 0
+  echo -e "  ${ORANGE}[주의] 지금 터미널의 기본 네임스페이스가 ${BOLD}${USER_NS}${RESET}${ORANGE} 입니다.${RESET}"
+  echo -e "  ${DIM}문제에 네임스페이스가 없으면 default 기준이다 → -n default 를 붙이거나${RESET}"
+  echo -e "  ${DIM}kubectl config set-context --current --namespace=default 로 되돌린다${RESET}"
+}
+
 sep() { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"; }
 thin() { echo -e "${DIM}──────────────────────────────────────────────────────────────${RESET}"; }
 
@@ -511,6 +543,7 @@ cmd_start() {
   rm -f "$STATE" "$QLOG" "$JSONL"
   kubectl get nodes &>/dev/null || {
     echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"; exit 1; }
+  ns_notice
   echo -e "\n${CYAN}[CLEAN] 이전 시험 리소스를 정리합니다...${RESET}"
   exam_cleanup; wait
   wait_ns_terminated || true
@@ -744,6 +777,7 @@ cmd_meta() {    # key=value 로 세트 정보 출력
 
 exam_main() {
   EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-0}"   # 세트가 정하지 않았으면 무제한
+  case "${1:-}" in meta|qtext|hinttext|lang|"") ;; *) _pin_default_ns ;; esac
   case "${1:-}" in
     start)  cmd_start ;;
     show)   cmd_show ;;
