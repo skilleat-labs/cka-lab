@@ -22,11 +22,11 @@ exam_cleanup() {
   kdel deployment web1 -n default
   kdel service web1-svc -n default
   kdel secret tls-secret -n default
-  kdel namespace production
+  kdel namespace ing-production --wait=false
   # Q5 — Gateway·HTTPRoute·Ingress·Secret·백엔드가 전부 이 네임스페이스 안에 있다
-  kdel namespace "$Q5_NS"
+  kdel namespace "$Q5_NS" --wait=false
   rm -f "$MODE_FILE"
-  echo "  web1 / web1-svc / ingress 3종 / tls-secret / production ns 삭제"
+  echo "  web1 / web1-svc / ingress 3종 / tls-secret / ing-production ns 삭제"
   echo "  $Q5_NS 네임스페이스 삭제 (Gateway · HTTPRoute · Ingress · Secret · 백엔드)"
   echo "  (Gateway API 컨트롤러는 남겨둠 — 완전 제거: kubectl delete ns nginx-gateway)"
 }
@@ -34,7 +34,10 @@ exam_cleanup() {
 q5_setup_gateway_api() {
   # tutoring/session-3 의 4)·5) 와 같은 절차 — 이미 설치돼 있으면 건너뛴다
   local mode="none"
-  if kubectl get gatewayclass nginx &>/dev/null && kubectl get deployment -n nginx-gateway &>/dev/null; then
+  # get deployment -n 은 비어 있어도(네임스페이스가 없어도) 0 을 돌려준다 — 실제로 Available 인 디플로이먼트가 있어야 설치된 것
+  if kubectl get gatewayclass nginx &>/dev/null \
+     && [[ -n "$(kubectl -n nginx-gateway get deploy -o name 2>/dev/null)" ]] \
+     && kubectl -n nginx-gateway wait --for=condition=Available deploy --all --timeout=60s &>/dev/null; then
     echo "  Gateway API 이미 설치됨 — 건너뜀"; mode="full"
   else
     echo "  Gateway API CRD 설치 중..."
@@ -342,64 +345,64 @@ EOF
 # ══════════════════════════════════════════════════════════════
 q4_title() { echo "Isolate a namespace with NetworkPolicies"; }
 q4_text() { cat <<'EOF'
-  1) create a namespace named production
+  1) create a namespace named ing-production
 
   2) create a Deployment named secure-app in it (image nginx:1.24)
 
-  3) create a NetworkPolicy named default-deny-all in production
+  3) create a NetworkPolicy named default-deny-all in ing-production
      podSelector   {}   (all Pods)
      policyTypes   Ingress
      no ingress rules -> everything is denied
 
-  4) create a NetworkPolicy named allow-8080 in production
+  4) create a NetworkPolicy named allow-8080 in ing-production
      policyTypes   Ingress
      allow         TCP port 8080
 
 Verify:
-  kubectl get networkpolicy -n production
-  kubectl describe networkpolicy default-deny-all -n production
+  kubectl get networkpolicy -n ing-production
+  kubectl describe networkpolicy default-deny-all -n ing-production
 EOF
 }
 q4_title_ko() { echo "NetworkPolicy 로 네임스페이스 격리"; }
 q4_text_ko() { cat <<'EOF'
-  1) production 네임스페이스를 만든다
+  1) ing-production 네임스페이스를 만든다
 
   2) 그 안에 secure-app Deployment 를 만든다 (이미지 nginx:1.24)
 
-  3) production 에 default-deny-all NetworkPolicy 를 만든다
+  3) ing-production 에 default-deny-all NetworkPolicy 를 만든다
      podSelector   {}   (모든 파드)
      policyTypes   Ingress
      ingress 규칙 없음 → 전부 차단
 
-  4) production 에 allow-8080 NetworkPolicy 를 만든다
+  4) ing-production 에 allow-8080 NetworkPolicy 를 만든다
      policyTypes   Ingress
      허용          TCP 8080 포트
 
 [확인]
-  kubectl get networkpolicy -n production
-  kubectl describe networkpolicy default-deny-all -n production
+  kubectl get networkpolicy -n ing-production
+  kubectl describe networkpolicy default-deny-all -n ing-production
 EOF
 }
 q4_grade() {
-  check "네임스페이스 production 존재" "kubectl get namespace production"
-  check "Deployment secure-app 존재" "kubectl get deployment secure-app -n production"
+  check "네임스페이스 ing-production 존재" "kubectl get namespace ing-production"
+  check "Deployment secure-app 존재" "kubectl get deployment secure-app -n ing-production"
   check_output "이미지 nginx:1.24" \
-    "kubectl get deployment secure-app -n production -o jsonpath='{.spec.template.spec.containers[0].image}'" '^nginx:1\.24$'
-  check "NetworkPolicy default-deny-all 존재" "kubectl get networkpolicy default-deny-all -n production"
+    "kubectl get deployment secure-app -n ing-production -o jsonpath='{.spec.template.spec.containers[0].image}'" '^nginx:1\.24$'
+  check "NetworkPolicy default-deny-all 존재" "kubectl get networkpolicy default-deny-all -n ing-production"
   check_output "podSelector 가 비어 있다 (전체 적용)" \
-    "kubectl get networkpolicy default-deny-all -n production -o jsonpath='{.spec.podSelector}'" '^\{\}$'
+    "kubectl get networkpolicy default-deny-all -n ing-production -o jsonpath='{.spec.podSelector}'" '^\{\}$'
   check_output "policyTypes 에 Ingress" \
-    "kubectl get networkpolicy default-deny-all -n production -o jsonpath='{.spec.policyTypes}'" 'Ingress'
+    "kubectl get networkpolicy default-deny-all -n ing-production -o jsonpath='{.spec.policyTypes}'" 'Ingress'
   check_result "default-deny-all 에 ingress 규칙이 없다 (전부 차단)" \
-    "$([[ -z "$(kubectl get networkpolicy default-deny-all -n production -o jsonpath='{.spec.ingress}' 2>/dev/null)" ]] && echo 0 || echo 1)" \
+    "$([[ -z "$(kubectl get networkpolicy default-deny-all -n ing-production -o jsonpath='{.spec.ingress}' 2>/dev/null)" ]] && echo 0 || echo 1)" \
     "ingress 항목이 있으면 기본 거부가 아니다"
-  check "NetworkPolicy allow-8080 존재" "kubectl get networkpolicy allow-8080 -n production"
+  check "NetworkPolicy allow-8080 존재" "kubectl get networkpolicy allow-8080 -n ing-production"
   check_output "allow-8080 이 포트 8080 허용" \
-    "kubectl get networkpolicy allow-8080 -n production -o jsonpath='{.spec.ingress[0].ports[0].port}'" '^8080$'
+    "kubectl get networkpolicy allow-8080 -n ing-production -o jsonpath='{.spec.ingress[0].ports[0].port}'" '^8080$'
 }
 q4_hint() { cat <<'EOF'
-kubectl create namespace production
-kubectl create deployment secure-app -n production --image=nginx:1.24
+kubectl create namespace ing-production
+kubectl create deployment secure-app -n ing-production --image=nginx:1.24
 
 # 기본 거부 — ingress 를 아예 쓰지 않는다
 #   spec: { podSelector: {}, policyTypes: [Ingress] }
@@ -494,8 +497,14 @@ q5_grade() {
     "$GW='{.spec.listeners[?(@.name==\"https\")].hostname}'" '^shop\.example\.local$'
   check_output "리스너 TLS 인증서가 Secret shop-tls-cert" \
     "$GW='{.spec.listeners[?(@.name==\"https\")].tls.certificateRefs[*].name}'" '(^| )shop-tls-cert( |$)'
-  check_output "TLS 모드 Terminate (생략하면 기본값)" \
-    "$GW='{.spec.listeners[?(@.name==\"https\")].tls.mode}'" '^(Terminate)?$'
+  # 비어 있으면(생략) 기본값 Terminate 로 통과 — 단, Gateway 가 없을 때 빈 출력으로 통과하지 않게 따로 판정
+  local tm gw_ok=1
+  if kubectl get gateway shop-gateway -n "$ns" &>/dev/null; then
+    gw_ok=0; tm=$(kubectl get gateway shop-gateway -n "$ns" -o jsonpath='{.spec.listeners[?(@.name=="https")].tls.mode}' 2>/dev/null)
+  fi
+  check_result "TLS 모드 Terminate (생략하면 기본값)" \
+    "$([[ $gw_ok == 0 && ( -z "$tm" || "$tm" == Terminate ) ]] && echo 0 || echo 1)" \
+    "$([[ $gw_ok == 0 ]] && echo "tls.mode: $tm" || echo 'Gateway shop-gateway 가 없음')"
 
   # ── HTTPRoute 스펙
   check "HTTPRoute shop-route 존재" "kubectl get httproute shop-route -n $ns"

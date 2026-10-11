@@ -40,6 +40,14 @@ bash exam.sh lang ko      # 한글 지문 (웹 패널은 오른쪽 위 EN/KO 버
 bash setup-shell.sh       # ~/.bashrc 에 한 줄 추가 — 웹 패널 터미널은 자동 적용
 ```
 
+예전 버전의 `setup-shell.sh` 를 돌린 뒤 **ssh 로그인이 바로 끊긴다면**(설정 파일이 서로를 끝없이 불러 bash 가 죽는 문제) 이렇게 되살린다.
+`git pull` 뒤 `bash setup-shell.sh` 를 다시 돌리면 막힌 줄로 바뀐다.
+
+```bash
+ssh <vm> bash --norc                   # ~/.bashrc 를 읽지 않고 들어간다 (프롬프트가 안 보여도 명령은 된다)
+sed -i '/cka-lab/d' ~/.bashrc          # cka-lab 줄을 지운다
+```
+
 ### 한 문제씩 풀기 (`exam.sh` — 모든 세트)
 
 ```bash

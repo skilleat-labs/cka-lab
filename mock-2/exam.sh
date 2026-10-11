@@ -11,20 +11,32 @@ EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-40}"   # 제한시간(분) — 0 이면 무제
 NS=retail
 
 exam_cleanup() {
-  if kubectl get namespace retail &>/dev/null; then
-    echo "  네임스페이스 retail 삭제 중..."
-    kubectl delete namespace retail --wait=true &>/dev/null || true
-  fi
+  # 네임스페이스는 기다리지 않고 지운다 — start 는 엔진이 삭제 완료(wait_ns_terminated)를 기다린 뒤 setup 한다
+  kdel namespace retail
   kdel pv report-pv
   kubectl uncordon worker-2 &>/dev/null || true
-  echo "  retail 네임스페이스 · report-pv 삭제, worker-2 uncordon"
+  echo "  retail 네임스페이스(drain-demo 포함) · report-pv 삭제, worker-2 uncordon"
 }
 
 exam_setup() {
   kubectl create namespace retail &>/dev/null || true
   echo "  retail 네임스페이스 생성"
-  kubectl run web-broken --image=nginz:1.24 --restart=Never -n retail &>/dev/null || true
+  # Q7 의 web-broken 은 컨트롤러 없는 맨 파드다. worker-2 에 뜨면 Q6 drain 이 --force 없이는 멈춘다 —
+  # 힌트대로 풀 수 있게 worker-1 에 고정한다 (worker-1 이 없는 클러스터면 스케줄러에 맡긴다)
+  local ov=()
+  kubectl get node worker-1 &>/dev/null && ov=(--overrides='{"apiVersion":"v1","spec":{"nodeName":"worker-1"}}')
+  kubectl run web-broken --image=nginz:1.24 --restart=Never -n retail ${ov[@]+"${ov[@]}"} &>/dev/null || true
   echo "  Q7 용 web-broken 파드 생성 (이미지 저장소 오타)"
+  # Q6 — drain 했는지는 "worker-2 의 파드가 비워졌는가" 로 본다. 옮겨질 파드를 미리 깔아 둔다
+  kubectl create deployment drain-demo --image=nginx:1.24 --replicas=4 -n retail &>/dev/null || true
+  local i
+  for i in $(seq 1 20); do
+    [[ -z "$(kubectl get pods -n retail -l app=drain-demo --field-selector spec.nodeName= -o name 2>/dev/null)" \
+       && -n "$(kubectl get pods -n retail -l app=drain-demo -o name 2>/dev/null)" ]] && break
+    sleep 1
+  done
+  drain_mark "app=drain-demo" worker-2
+  echo "  Q6 용 drain-demo Deployment 생성 (retail · nginx 4개, worker-2 에 $(cat "$WORK_DIR/.drain-before" 2>/dev/null || echo 0)개)"
 }
 
 q1_title() { echo "Create a Deployment [15 pts]"; }
@@ -207,7 +219,12 @@ PersistentVolumeClaim
   kubectl get pvc report-pvc -n retail         → Bound
 EOF
 }
-q4_hint() { echo "accessModes 가 ReadWriteMany 여야 한다. RWO 로 만들면 Bound 되지 않는다."; }
+q4_hint() { cat <<'EOF'
+PV 와 PVC 의 accessModes · storageClassName · 용량이 서로 맞아야 Bound 된다.
+한쪽만 ReadWriteOnce 로 만들면 짝이 맞지 않아 Pending 으로 남는다.
+(둘 다 RWO 면 Bound 는 되지만 조건이 ReadWriteMany 라 감점)
+EOF
+}
 q4_grade() {
   check_output "PV report-pv 용량 1Gi" "kubectl get pv report-pv -o jsonpath='{.spec.capacity.storage}'" "^1Gi$" 3
   check_output "PV accessMode ReadWriteMany" "kubectl get pv report-pv -o jsonpath='{.spec.accessModes[0]}'" "^ReadWriteMany$" 3
@@ -285,6 +302,9 @@ q6_text() { cat <<'EOF'
     - allow deletion of emptyDir data
 (2) When the maintenance is done, make worker-2 schedulable again.
 
+Note: a bare Pod that has no controller (Deployment, ReplicaSet, ...) blocks
+the drain — it needs --force (the Pod is deleted and not recreated).
+
 Verify:
   kubectl get nodes   -> worker-2 is Ready and not SchedulingDisabled
 EOF
@@ -296,12 +316,17 @@ q6_text_ko() { cat <<'EOF'
     - emptyDir 데이터는 삭제 허용
 (2) 유지보수 완료 후 worker-2 를 다시 스케줄 가능 상태로 전환한다.
 
+참고: 컨트롤러(Deployment·ReplicaSet 등) 없는 맨 파드가 있으면 drain 이
+멈춘다 — --force 가 필요하다 (그 파드는 지워지고 다시 만들어지지 않는다).
+
 [확인]
   kubectl get nodes   → worker-2 가 Ready, SchedulingDisabled 아님
 EOF
 }
 q6_hint() { cat <<'EOF'
 kubectl drain worker-2 --ignore-daemonsets --delete-emptydir-data
+#   "cannot delete Pods that declare no controller" 가 나오면 → --force 를 붙인다
+kubectl get pods -n retail -o wide -l app=drain-demo     # worker-2 에 남은 파드가 없어야 한다
 kubectl uncordon worker-2
 EOF
 }
@@ -309,8 +334,9 @@ q6_grade() {
   if ! kubectl get node worker-2 &>/dev/null; then
     check_result "worker-2 노드 (이 클러스터에 없음 — 통과 처리)" 0 "" 10; return
   fi
-  check_output "worker-2 스케줄 가능 (uncordon 완료)" "kubectl get node worker-2 -o jsonpath='{.spec.unschedulable}'" "^$|^false$" 5
-  check_output "worker-2 Ready 상태" "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 5
+  check "drain 으로 worker-2 의 drain-demo 파드가 다른 노드로 옮겨졌다" "drain_moved 'app=drain-demo' worker-2" 4
+  check_output "worker-2 스케줄 가능 (uncordon 완료)" "kubectl get node worker-2 -o jsonpath='{.spec.unschedulable}'" "^$|^false$" 3
+  check_output "worker-2 Ready 상태" "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 3
 }
 
 q7_title() { echo "Troubleshoot a Pod [25 pts]"; }

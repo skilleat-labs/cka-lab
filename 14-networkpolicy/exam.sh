@@ -11,14 +11,18 @@ NS=netpol
 PICK_NS=netpol-pick
 PICK_DIR=/tmp/netpol
 PICK_SUM="$WORK_DIR/.q6-files.cksum"
+# Q5 답 파일 — sudo 로 만들면 root 소유라 읽기는 sudo -n 으로 한 번 더 시도
+ANSWER=/tmp/netpol-answer.txt
+answer_cat() { cat "$ANSWER" 2>/dev/null || sudo -n cat "$ANSWER" 2>/dev/null; }
 
 exam_cleanup() {
   kdel namespace "$NS"
   kdel namespace "${NS}-client"
   kdel namespace "$PICK_NS"
   rm -rf "$PICK_DIR" "$PICK_SUM" 2>/dev/null || true
+  rmf "$ANSWER"     # Q5 답 파일 — 남아 있으면 다음 시작에서 바로 통과한다
   echo "  $NS / ${NS}-client / $PICK_NS 네임스페이스 삭제 (안의 리소스도 함께)"
-  echo "  $PICK_DIR (Q6 정책 파일) 삭제"
+  echo "  $PICK_DIR (Q6 정책 파일) · $ANSWER (Q5 답) 삭제"
 }
 exam_setup() {
   kubectl create namespace "$NS" &>/dev/null
@@ -202,11 +206,15 @@ q2_grade() {
     "kubectl -n $NS get networkpolicy allow-trusted -o jsonpath='{.spec.ingress[0].from[0].podSelector.matchLabels.role}'" '^trusted$'
   check_output "포트 80" \
     "kubectl -n $NS get networkpolicy allow-trusted -o jsonpath='{.spec.ingress[0].ports[0].port}'" '^80$'
-  check_output "trusted 에서 실제로 닿는다" \
-    "kubectl -n $NS exec trusted -- wget -qO- --timeout=3 web-svc 2>/dev/null" 'nginx' 2
+  # 허용 경로가 살아 있을 때만 '막힘' 을 믿는다 (web 이 죽었거나 파드가 안 떠서 안 닿는 것과 구분 — Q6 과 같은 방식)
+  local served=1 b
+  kubectl -n "$NS" exec trusted -- wget -qO- --timeout=3 web-svc 2>/dev/null | grep -qi nginx && served=0
+  b=$(kubectl -n "$NS" exec stranger -- wget -qO- --timeout=3 web-svc 2>/dev/null)
+  check_result "trusted 에서 실제로 닿는다" "$served" \
+    "응답 없음 — 정책의 from 레이블과 trusted 파드 레이블을 대조" 2
   check_result "stranger 는 막혀 있다" \
-    "$(kubectl -n $NS exec stranger -- wget -qO- --timeout=3 web-svc &>/dev/null && echo 1 || echo 0)" \
-    "stranger 가 닿으면 안 된다" 2
+    "$([[ $served == 0 ]] && ! echo "$b" | grep -qi nginx && echo 0 || echo 1)" \
+    "$([[ $served != 0 ]] && echo "허용 경로부터 확인" || echo "stranger 가 닿으면 안 된다")" 2
 }
 q2_hint() { cat <<'EOF'
 spec:
@@ -334,7 +342,7 @@ q5_title() { echo "Read what a policy does"; }
 q5_text() { cat <<'EOF'
 Look at the policies you created and answer in a file.
 
-Write to /tmp/netpol-answer.txt exactly one line, the name of the policy
+On the first line of /tmp/netpol-answer.txt write the name of the policy
 that makes every Pod in the namespace default-deny even though it
 allows nothing by itself.
 
@@ -343,7 +351,7 @@ namespace netpol.
 
 Example:
   some-policy-name
-  4
+  7
 EOF
 }
 q5_title_ko() { echo "정책을 읽어 낸다"; }
@@ -357,15 +365,16 @@ q5_text_ko() { cat <<'EOF'
 
 예시:
   some-policy-name
-  4
+  7
 EOF
 }
 q5_grade() {
-  check "/tmp/netpol-answer.txt 가 있다" "test -s /tmp/netpol-answer.txt"
-  check_output "첫 줄이 default-deny-ingress" "head -1 /tmp/netpol-answer.txt 2>/dev/null" '^default-deny-ingress$'
+  check "/tmp/netpol-answer.txt 가 있다" "test -s $ANSWER"
+  # 끝의 공백·CR(윈도 줄바꿈) 은 무시한다
+  check_output "첫 줄이 default-deny-ingress" "answer_cat | head -1 | tr -d '\r' | sed 's/[[:space:]]*$//'" '^default-deny-ingress$'
   local want got
   want=$(kubectl -n "$NS" get networkpolicy --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  got=$(sed -n '2p' /tmp/netpol-answer.txt 2>/dev/null | tr -d ' ')
+  got=$(answer_cat | sed -n '2p' | tr -d ' \r\t')
   check_result "둘째 줄의 개수가 실제와 같다" \
     "$([[ -n "$got" && "$got" == "$want" ]] && echo 0 || echo 1)" \
     "실제 ${want}개 / 적어낸 값 '${got:-비어 있음}'"

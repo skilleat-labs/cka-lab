@@ -17,11 +17,11 @@ exam_cleanup() {
   kdel statefulset mysql-sts
   kdel pvc -l app=mysql-sts
   kdel pvc data-mysql-sts-0 data-mysql-sts-1
-  rm -f /tmp/mock2-etcd.db
+  rmf /tmp/mock2-etcd.db      # sudo 로 저장하면 root 소유 0600 — rm -f 로는 안 지워질 수 있다
   kubectl label node worker-1 disktype- &>/dev/null || true
-  # worker-2 kubelet 복구 (시험 중단 시 NotReady 로 남지 않도록)
+  # worker-2 kubelet 복구 (시험 중단 시 NotReady 로 남지 않도록). Q7 은 disable --now 로 멈추므로 enable --now 로 되돌린다
   if kubectl get node worker-2 &>/dev/null; then
-    ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl start kubelet; systemctl enable kubelet' &>/dev/null \
+    ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'sudo -n systemctl enable --now kubelet 2>/dev/null || systemctl enable --now kubelet' &>/dev/null \
       && echo "  worker-2 kubelet 복구" || echo "  worker-2 kubelet 은 직접 확인 필요 (ssh 불가)"
   fi
   echo "  affinity/toleration 파드 · NetworkPolicy · Ingress · StatefulSet · 백엔드 · etcd 스냅샷 삭제, worker-1 레이블 제거"
@@ -36,16 +36,21 @@ exam_setup() {
   kubectl run api-backend --image=nginx:1.24 --labels="app=api" --restart=Never &>/dev/null || true
   kubectl expose pod api-backend --name=api-svc --port=8080 --target-port=80 &>/dev/null || true
   echo "  Q4 용 shop-svc(80) / api-svc(8080) 백엔드 생성"
-  # Q7: worker-2 kubelet 정지 시도 (ssh 가능할 때만)
-  if kubectl get node worker-2 &>/dev/null; then
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 'systemctl stop kubelet' &>/dev/null; then
-      echo "  Q7 용 worker-2 kubelet 정지 → 약 40초 후 NotReady 가 됩니다"
-    else
-      echo "  Q7: worker-2 에 ssh 로 kubelet 을 멈추지 못했습니다."
-      echo "      강사가 worker-2 에서 직접  systemctl stop kubelet  을 실행해 주세요."
-    fi
-  fi
+  echo "  Q7 용 worker-2 kubelet 정지는 Q7 에 들어갈 때 합니다 (그 전 문제들은 worker-2 를 씁니다)"
   etcd_tool_check
+}
+
+# Q7 에 처음 들어갈 때 한 번 — 시작부터 멈추면 Q1~Q6 동안 worker-2 가 NotReady 라 파드가 몰리고 결과가 흔들린다.
+# disable --now 로 멈춘다: stop 만 하면 enabled 가 그대로라 "재부팅 후 자동 시작" 항목이 공짜로 통과됐다.
+q7_enter() {
+  kubectl get node worker-2 &>/dev/null || { echo "  worker-2 노드가 없습니다 — Q7 은 통과 처리됩니다"; return 0; }
+  if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no worker-2 \
+       'sudo -n systemctl disable --now kubelet 2>/dev/null || systemctl disable --now kubelet' &>/dev/null; then
+    echo "  worker-2 kubelet 정지 + disable → 약 40초 후 NotReady 가 됩니다"
+  else
+    echo "  Q7: worker-2 에 ssh 로 kubelet 을 멈추지 못했습니다."
+    echo "      강사가 worker-2 에서 직접  sudo systemctl disable --now kubelet  을 실행해 주세요."
+  fi
 }
 
 q1_title() { echo "Node affinity Pod [15 pts]"; }
@@ -243,7 +248,12 @@ q4_text_ko() { cat <<'EOF'
   kubectl describe ingress shop-ingress
 EOF
 }
-q4_hint() { echo 'kubectl create ingress shop-ingress --rule="/shop=shop-svc:80" --rule="/api=api-svc:8080"'; }
+q4_hint() { cat <<'EOF'
+# 경로 끝에 * 를 붙여야 pathType: Prefix 가 된다 (* 없이 쓰면 Exact)
+kubectl create ingress shop-ingress --rule="/shop*=shop-svc:80" --rule="/api*=api-svc:8080"
+kubectl get ingress shop-ingress -o yaml | grep -B1 -A1 pathType
+EOF
+}
 q4_grade() {
   check "Ingress shop-ingress 존재" "kubectl get ingress shop-ingress -n default" 3
   local rules; rules=$(kubectl get ingress shop-ingress -n default -o json 2>/dev/null || echo "{}")
@@ -349,14 +359,23 @@ ETCDCTL_API=3 etcdctl snapshot save /tmp/mock2-etcd.db \
 EOF
 }
 q6_grade() {
-  check_result "/tmp/mock2-etcd.db 파일 존재" "$([[ -f /tmp/mock2-etcd.db ]] && echo 0 || echo 1)" "컨트롤플레인 노드에서 실행해야 함" 4
-  local sz; sz=$(stat -c%s /tmp/mock2-etcd.db 2>/dev/null || stat -f%z /tmp/mock2-etcd.db 2>/dev/null || echo 0)
+  local f=/tmp/mock2-etcd.db
+  check_result "$f 파일 존재" "$([[ -f $f ]] && echo 0 || echo 1)" "컨트롤플레인 노드에서 실행해야 함" 4
+  local sz; sz=$(stat -c%s $f 2>/dev/null || stat -f%z $f 2>/dev/null || sudo -n stat -c%s $f 2>/dev/null || echo 0)
+  sz="${sz//[^0-9]/}"; sz="${sz:-0}"
   check_result "스냅샷 크기 > 1MB (실제 etcd 데이터)" "$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1)" "${sz} bytes" 3
-  local st=1
-  if command -v etcdctl &>/dev/null; then ETCDCTL_API=3 etcdctl snapshot status /tmp/mock2-etcd.db &>/dev/null && st=0
-  elif command -v etcdutl &>/dev/null; then etcdutl snapshot status /tmp/mock2-etcd.db &>/dev/null && st=0
-  else st=$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1); fi
-  check_result "스냅샷이 유효하다 (snapshot status)" "$st" "" 3
+  # sudo etcdctl 로 저장하면 root 소유 0600 이라 일반 사용자는 status 를 읽지 못한다 — sudo -n 으로 다시, 그것도 안 되면 크기로
+  local st=1 note="snapshot status 로 읽히지 않는다 — 깨진 파일"
+  if ! command -v etcdctl &>/dev/null && ! command -v etcdutl &>/dev/null; then
+    st=$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1); note="호스트에 etcdctl 이 없어 크기로만 판정"
+  elif [[ -e $f && ! -r $f ]] && ! sudo -n true 2>/dev/null; then
+    st=$([[ "$sz" -gt 1000000 ]] && echo 0 || echo 1)
+    note="파일을 읽을 권한이 없고(root 소유 0600) sudo -n 도 안 돼 크기로만 판정 — sudo -v 후 다시 채점하면 엄격하게 본다"
+  else
+    { ETCDCTL_API=3 etcdctl snapshot status $f || sudo -n env ETCDCTL_API=3 etcdctl snapshot status $f \
+      || etcdutl snapshot status $f || sudo -n etcdutl snapshot status $f; } &>/dev/null && st=0
+  fi
+  check_result "스냅샷이 유효하다 (snapshot status)" "$st" "$note" 3
 }
 
 q7_title() { echo "Recover a NotReady node [10 pts]"; }
@@ -391,12 +410,16 @@ EOF
 }
 q7_hint() { cat <<'EOF'
 ssh worker-2
-systemctl start kubelet && systemctl enable kubelet
+sudo systemctl status kubelet          # inactive (dead) · disabled
+sudo systemctl enable --now kubelet    # 지금 시작 + 재부팅 후 자동 시작
 EOF
 }
 q7_grade() {
   if ! kubectl get node worker-2 &>/dev/null; then
     check_result "worker-2 노드 (이 클러스터에 없음 — 통과 처리)" 0 "" 10; return
+  fi
+  if [[ -z "$(state_get q7_entered)" ]]; then   # kubelet 을 멈추기 전이면 건강한 노드를 보고 통과시키면 안 된다
+    check_result "worker-2 NotReady 복구" 1 "문제에 들어가지 않음 — kubelet 이 아직 멈추지 않았다 (bash exam.sh go 7)" 10; return
   fi
   local i; for i in $(seq 1 10); do
     [[ "$(kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]] && break; sleep 3

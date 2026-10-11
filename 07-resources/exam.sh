@@ -40,9 +40,9 @@ exam_cleanup() {
   kdel pod resource-pod -n default                        # Q2
   kdel namespace "$NS" --wait=false                       # Q3 · Q4
   kdel namespace "$Q7_NS" --wait=false                    # Q7
-  kdel namespace dev quota-lab --wait=false               # Q5 · Q6
+  kdel namespace res-dev quota-lab --wait=false               # Q5 · Q6
   rm -rf "$OUT_DIR" "$FINDER_FILE"
-  echo "  team-a/b/c · $NS · $Q7_NS · dev · quota-lab 네임스페이스 · resource-pod · $OUT_DIR 삭제"
+  echo "  team-a/b/c · $NS · $Q7_NS · res-dev · quota-lab 네임스페이스 · resource-pod · $OUT_DIR 삭제"
 }
 exam_setup() {
   mkdir -p "$OUT_DIR"
@@ -100,9 +100,9 @@ YAML
   echo "  $NS 에 cruncher(메모리 limit 64Mi — OOM 반복) · mystery 파드 (Q3 · Q4)"
 
 
-  # Q5 — 빈 dev 칸
-  kubectl create namespace dev &>/dev/null
-  echo "  dev 네임스페이스 준비 (Q5)"
+  # Q5 — 빈 res-dev 칸
+  kubectl create namespace res-dev &>/dev/null
+  echo "  res-dev 네임스페이스 준비 (Q5)"
 
   # Q6 — 쿼터 600m 에 250m × 3 을 요청 → 2개만 생긴다
   kubectl create namespace quota-lab &>/dev/null
@@ -287,11 +287,27 @@ q3_grade() {
     "kubectl -n $NS get deployment cruncher -o jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}'" '^512Mi$'
   check_output "(b) requests.memory 는 그대로 32Mi" \
     "kubectl -n $NS get deployment cruncher -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}'" '^32Mi$'
-  wait_ready "-l app=cruncher" "$NS"
+  # 현재 ReplicaSet(디플로이먼트 revision 과 같은 것)의 pod-template-hash — 옛 CrashLoop 파드가 남아 있어도 섞이지 않게
+  local rev h sel lines name dt rc ready n=0 bad=""
+  rev=$(kubectl -n $NS get deployment cruncher -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null)
+  h=$(kubectl -n $NS get rs -o jsonpath='{range .items[*]}{.metadata.ownerReferences[0].name}|{.metadata.annotations.deployment\.kubernetes\.io/revision}|{.metadata.labels.pod-template-hash}{"\n"}{end}' 2>/dev/null \
+      | awk -F'|' -v r="$rev" '$1=="cruncher" && $2==r {print $3; exit}')
+  sel="-l app=cruncher${h:+,pod-template-hash=$h}"
+  wait_ready "$sel" "$NS"
   check_output "(b) 새 설정의 파드 1개가 Ready" \
     "kubectl -n $NS get deployment cruncher -o jsonpath='{.status.updatedReplicas}/{.status.readyReplicas}'" '^1/1$'
-  check_output "(b) 지금 파드는 재시작 0 (메모리를 다 채우고도 살아 있다)" \
-    "kubectl -n $NS get pods -l app=cruncher --field-selector=status.phase=Running -o jsonpath='{.items[*].status.containerStatuses[0].restartCount}'" '^0$'
+  if [[ -n "$h" ]]; then
+    lines=$(kubectl -n $NS get pods $sel \
+      -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.deletionTimestamp}|{.status.containerStatuses[0].restartCount}|{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null)
+    while IFS='|' read -r name dt rc ready; do
+      [[ -z "$name" || -n "$dt" ]] && continue
+      n=$((n+1))
+      [[ "$rc" == 0 && "$ready" == True ]] || bad+="$name(restart=${rc:-?},ready=${ready:-?}) "
+    done <<< "$lines"
+  fi
+  check_result "(b) 새 ReplicaSet 의 파드가 재시작 0 · Ready (메모리를 다 채우고도 살아 있다)" \
+    "$([[ $n -ge 1 && -z "$bad" ]] && echo 0 || echo 1)" \
+    "$([[ $n -ge 1 ]] && echo "$bad" || echo '현재 ReplicaSet 의 파드가 없음')"
 }
 q3_hint() { cat <<'EOF'
 kubectl -n res-lab get pods -l app=cruncher            # OOMKilled / CrashLoopBackOff
@@ -369,48 +385,48 @@ EOF
 # ══════════════════════════════════════════════════════════════
 q5_title() { echo "LimitRange — per-container defaults and maximum"; }
 q5_text() { cat <<'EOF'
-In the namespace dev, create a LimitRange named dev-defaults that applies
+In the namespace res-dev, create a LimitRange named dev-defaults that applies
 to containers:
 
   default request   cpu 100m, memory 64Mi
   default limit     cpu 200m, memory 128Mi
   max               cpu 500m, memory 256Mi
 
-Then create a Pod named plain in dev (image nginx:1.27) WITHOUT any
+Then create a Pod named plain in res-dev (image nginx:1.27) WITHOUT any
 resources section, and check that the defaults were filled in.
 
 Verify:
-  kubectl -n dev describe limitrange dev-defaults
-  kubectl -n dev get pod plain -o jsonpath='{.spec.containers[0].resources}'
+  kubectl -n res-dev describe limitrange dev-defaults
+  kubectl -n res-dev get pod plain -o jsonpath='{.spec.containers[0].resources}'
 EOF
 }
 q5_title_ko() { echo "LimitRange — 하나당 기본값과 최대값"; }
 q5_text_ko() { cat <<'EOF'
-dev 네임스페이스에 컨테이너에 적용되는 LimitRange dev-defaults 를 만드시오.
+res-dev 네임스페이스에 컨테이너에 적용되는 LimitRange dev-defaults 를 만드시오.
 
   기본 request   cpu 100m, memory 64Mi
   기본 limit     cpu 200m, memory 128Mi
   최대           cpu 500m, memory 256Mi
 
-그다음 resources 를 적지 않은 plain 파드(이미지 nginx:1.27)를 dev 에 만들어
+그다음 resources 를 적지 않은 plain 파드(이미지 nginx:1.27)를 res-dev 에 만들어
 기본값이 채워졌는지 확인하시오.
 
 [확인]
-  kubectl -n dev describe limitrange dev-defaults
-  kubectl -n dev get pod plain -o jsonpath='{.spec.containers[0].resources}'
+  kubectl -n res-dev describe limitrange dev-defaults
+  kubectl -n res-dev get pod plain -o jsonpath='{.spec.containers[0].resources}'
 EOF
 }
 q5_grade() {
-  check "dev-defaults LimitRange 존재" "kubectl -n dev get limitrange dev-defaults"
-  check_output "기본 request cpu 100m · memory 64Mi" "kubectl -n dev get limitrange dev-defaults -o jsonpath='{.spec.limits[?(@.type==\"Container\")].defaultRequest.cpu}/{.spec.limits[?(@.type==\"Container\")].defaultRequest.memory}'" '^100m/64Mi$'
-  check_output "기본 limit cpu 200m · memory 128Mi" "kubectl -n dev get limitrange dev-defaults -o jsonpath='{.spec.limits[?(@.type==\"Container\")].default.cpu}/{.spec.limits[?(@.type==\"Container\")].default.memory}'" '^200m/128Mi$'
-  check_output "최대 cpu 500m · memory 256Mi" "kubectl -n dev get limitrange dev-defaults -o jsonpath='{.spec.limits[?(@.type==\"Container\")].max.cpu}/{.spec.limits[?(@.type==\"Container\")].max.memory}'" '^500m/256Mi$'
-  check "plain 파드 존재" "kubectl -n dev get pod plain"
+  check "dev-defaults LimitRange 존재" "kubectl -n res-dev get limitrange dev-defaults"
+  check_output "기본 request cpu 100m · memory 64Mi" "kubectl -n res-dev get limitrange dev-defaults -o jsonpath='{.spec.limits[?(@.type==\"Container\")].defaultRequest.cpu}/{.spec.limits[?(@.type==\"Container\")].defaultRequest.memory}'" '^100m/64Mi$'
+  check_output "기본 limit cpu 200m · memory 128Mi" "kubectl -n res-dev get limitrange dev-defaults -o jsonpath='{.spec.limits[?(@.type==\"Container\")].default.cpu}/{.spec.limits[?(@.type==\"Container\")].default.memory}'" '^200m/128Mi$'
+  check_output "최대 cpu 500m · memory 256Mi" "kubectl -n res-dev get limitrange dev-defaults -o jsonpath='{.spec.limits[?(@.type==\"Container\")].max.cpu}/{.spec.limits[?(@.type==\"Container\")].max.memory}'" '^500m/256Mi$'
+  check "plain 파드 존재" "kubectl -n res-dev get pod plain"
   check_output "plain 에 기본값이 채워졌다 (req 100m/64Mi · lim 200m/128Mi)" \
-    "kubectl -n dev get pod plain -o jsonpath='{.spec.containers[0].resources.requests.cpu}/{.spec.containers[0].resources.requests.memory}/{.spec.containers[0].resources.limits.cpu}/{.spec.containers[0].resources.limits.memory}'" '^100m/64Mi/200m/128Mi$'
+    "kubectl -n res-dev get pod plain -o jsonpath='{.spec.containers[0].resources.requests.cpu}/{.spec.containers[0].resources.requests.memory}/{.spec.containers[0].resources.limits.cpu}/{.spec.containers[0].resources.limits.memory}'" '^100m/64Mi/200m/128Mi$'
   # 최대값을 넘는 파드는 API 서버가 거부해야 한다 — 서버 dry-run 으로 실제 검사만 해 본다
   check "최대값을 넘는 파드(cpu limit 1)는 거부된다" \
-    "! printf '%s\n' 'apiVersion: v1' 'kind: Pod' 'metadata: {name: too-big, namespace: dev}' 'spec:' '  containers:' '  - name: c' '    image: nginx:1.27' '    resources: {limits: {cpu: \"1\"}}' | kubectl apply --dry-run=server -f -"
+    "kubectl -n res-dev get limitrange dev-defaults &>/dev/null && ! printf '%s\n' 'apiVersion: v1' 'kind: Pod' 'metadata: {name: too-big, namespace: res-dev}' 'spec:' '  containers:' '  - name: c' '    image: nginx:1.27' '    resources: {limits: {cpu: \"1\"}}' | kubectl apply --dry-run=server -f -"
 }
 q5_hint() { cat <<'EOF'
 cat > lr.yaml <<'YAML'
@@ -418,7 +434,7 @@ apiVersion: v1
 kind: LimitRange
 metadata:
   name: dev-defaults
-  namespace: dev
+  namespace: res-dev
 spec:
   limits:
   - type: Container
@@ -429,8 +445,8 @@ YAML
 kubectl apply -f lr.yaml
 
 # LimitRange 는 만들어질 때 검사한다 — 먼저 만들고 파드는 그 뒤에
-kubectl -n dev run plain --image=nginx:1.27
-kubectl -n dev get pod plain -o jsonpath='{.spec.containers[0].resources}'
+kubectl -n res-dev run plain --image=nginx:1.27
+kubectl -n res-dev get pod plain -o jsonpath='{.spec.containers[0].resources}'
 EOF
 }
 

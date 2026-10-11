@@ -155,7 +155,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P1 | 기본 Ingress 생성 |
 | P2 | 호스트 기반 라우팅 Ingress |
 | P3 | TLS Ingress |
-| P4 | NetworkPolicy 로 production 네임스페이스 격리 |
+| P4 | NetworkPolicy 로 ing-production 네임스페이스 격리 |
 
 ## 10-workloads — 워크로드 (20항목)
 
@@ -164,7 +164,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P1 | Deployment 생성 후 Scale · Rolling Update · Rollback |
 | P2 | ConfigMap 생성 후 파드에 환경변수 주입 |
 | P3 | 매 분 `date` 를 출력하는 CronJob |
-| P4 | `monitoring` 네임스페이스에 DaemonSet (hostNetwork/hostPID) |
+| P4 | `lab-monitoring` 네임스페이스에 DaemonSet (hostNetwork/hostPID) |
 
 ## 11-scheduling — 스케줄링 (21항목)
 
@@ -197,7 +197,7 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 | 문제 | 내용 |
 |------|------|
-| P1 | bitnami repo 추가 후 nginx 를 `my-nginx` 로 설치 |
+| P1 | podinfo repo 추가 후 차트를 `my-podinfo` 로 설치 |
 | P2 | `replicaCount=3` 으로 업그레이드 |
 | P3 | revision 1 로 롤백 |
 | P4 | Kustomize 디렉토리 구성 후 `kubectl apply -k` |

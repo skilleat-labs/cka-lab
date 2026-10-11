@@ -153,6 +153,7 @@
 const $ = s => document.querySelector(s);
 let SET = localStorage.getItem('cka.set') || '';
 let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text, open}
+let PREVIEW = null;        // 진행 중에 누른 '중간 리포트' 출력 — 기록은 남지 않는다
 let TIMEUP_SENT = false;   // 시간 종료를 서버에 알렸는지 (한 번만 보낸다)
 let CFG = {shell:true};
 let LANG = localStorage.getItem('cka.lang') || 'en';
@@ -301,8 +302,10 @@ async function loadSets(){
 }
 
 async function refresh(){
-  ST = await api('/api/state?set=' + encodeURIComponent(SET) + '&lang=' + LANG);
-  if(ST) ST._recv = Math.floor(Date.now()/1000);   // 서버 시각 보정용
+  try{ ST = await api('/api/state?set=' + encodeURIComponent(SET) + '&lang=' + LANG); }
+  catch(e){ ST = {error: '패널 서버에 닿지 않습니다 (' + e.message + ')'}; }
+  if(!ST || typeof ST !== 'object') ST = {error: '상태를 읽지 못했습니다'};
+  ST._recv = Math.floor(Date.now()/1000);   // 서버 시각 보정용
   render();
 }
 
@@ -310,7 +313,7 @@ function renderDots(){
   if(!ST || !ST.nq){ $('#dots').innerHTML=''; return; }
   $('#dots').innerHTML = ST.rows.map(r => {
     let c = 'dot';
-    if(r.pass !== null) c += (r.pass === r.total) ? ' full' : ' part';
+    if(r.pass !== null) c += (r.total > 0 && r.pass === r.total) ? ' full' : ' part';
     if(r.current) c += ' cur';
     return `<span class="${c}" title="Q${r.n} ${esc(r.title)}"></span>`;
   }).join('');
@@ -369,8 +372,16 @@ async function markTimeUp(){
   try{
     const r = await api('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({set:SET, cmd:'timecheck', confirm:true})});
-    if(r && r.job) await waitJob(r.job);
-  }catch(e){ /* 실패해도 화면은 계속 쓸 수 있어야 한다 */ }
+    if(!r || r.error || !r.job){
+      // 다른 명령이 도는 중(409) 등 — 몇 초 뒤 다시 시도한다 (여기서 바로 refresh 하면 곧장 다시 불러 돈다)
+      setTimeout(() => { TIMEUP_SENT = false; refresh(); }, 4000);
+      return;
+    }
+    await waitJob(r.job);
+  }catch(e){ /* 실패해도 화면은 계속 쓸 수 있어야 한다 */
+    setTimeout(() => { TIMEUP_SENT = false; refresh(); }, 4000);
+    return;
+  }
   await refresh();
 }
 
@@ -400,6 +411,18 @@ function renderLang(){
 }
 
 function render(){
+  if(ST.error){                // 상태를 못 읽었다 — '시작 전' 화면을 띄우면 시작을 눌러 기록을 날릴 수 있다
+    clearInterval(TICK);
+    $('#setSub').textContent = ''; $('#dots').innerHTML = ''; $('#timer').textContent = ''; $('#langsw').innerHTML = '';
+    $('#left').innerHTML = `<div class="card"><h2>상태를 불러오지 못했습니다</h2>
+      <p class="muted" style="font-size:13.5px">${esc(ST.error)}</p>
+      <p class="muted" style="font-size:13px">패널 서버가 다시 시작됐거나 exam.sh 실행에 실패했을 수 있습니다.
+        진행 기록은 그대로입니다 — 터미널에서 <b>bash exam.sh status</b> 로 확인할 수 있습니다.</p>
+      <div class="bar"><button class="primary" id="retry">다시 불러오기</button></div></div>`;
+    $('#actions').innerHTML = '';
+    $('#retry').onclick = () => refresh();
+    return;
+  }
   $('#setSub').textContent = ST.nq ? `${ST.nq}문제 · ${ST.unit}` : '';
   renderDots(); renderTimer(); renderLang();
   $('#left').innerHTML = leftHTML();
@@ -428,10 +451,14 @@ function leftHTML(){
   if(ST.done) return reportHTML();
 
   const q = ST.question || {};
+  const preview = PREVIEW !== null
+    ? `<div class="card"><h2>중간 리포트 <span class="muted" style="font-weight:400">— 시험은 계속됩니다 (기록되지 않음)</span></h2>
+       <pre class="log">${esc(PREVIEW)}</pre>
+       <div class="bar" style="margin-top:10px"><button class="quiet" id="closePreview">닫기</button></div></div>` : '';
   const hint = hintOpen()
     ? `<div class="card"><h2>힌트 <span class="muted" style="font-weight:400">— 리포트에 기록이 남습니다</span></h2>
        <pre class="q">${esc(HINT.text)}</pre></div>` : '';
-  return timeBarHTML()
+  return timeBarHTML() + preview
     + `<div class="card">
       <h2><span class="n">Q${q.n} / ${ST.nq}</span>${esc(q.title)}</h2>
       <pre class="q">${esc(q.body)}</pre></div>`
@@ -458,7 +485,7 @@ function resultHTML(){
 function statusHTML(){
   return `<div class="card"><h2>진행 현황</h2>${tableHTML()}
     <div class="bar" style="margin-top:12px">
-      <button class="quiet" data-cmd="finish">리포트 보기</button>
+      <button class="quiet" data-cmd="finish" title="지금까지의 점수만 봅니다. 시험은 끝나지 않습니다">중간 리포트</button>
       <button class="quiet" data-cmd="clean" data-confirm="클러스터의 이 시험 리소스를 전부 삭제하고 진행 기록도 지웁니다. 계속할까요?">원상복구</button>
     </div></div>`;
 }
@@ -512,9 +539,10 @@ function actionsHTML(){
 }
 
 const cmdLabel = c =>
-  ({start:'시험 시작', check:'채점', skip:'넘어가기', hint:'힌트', finish:'리포트', clean:'원상복구', reset:'기록 삭제'}[c] || c);
+  ({start:'시험 시작', check:'채점', skip:'넘어가기', hint:'힌트', finish:'중간 리포트', clean:'원상복구', reset:'기록 삭제'}[c] || c);
 
 function bind(){
+  const cp = $('#closePreview'); if(cp) cp.onclick = () => { PREVIEW = null; render(); };
   document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => run(b.dataset.cmd, b.dataset.confirm));
   document.querySelectorAll('[data-go]').forEach(el => el.onclick = e => {
     if(el.disabled) return;
@@ -530,13 +558,14 @@ async function goQ(n){
     body: JSON.stringify({set:SET, cmd:'go', arg:n})});
   if(r.error) return alert(r.error);
   await waitJob(r.job);
-  HINT = null;
+  HINT = null; PREVIEW = null;
   await refresh();
 }
 
 async function run(cmd, confirmMsg){
   if(confirmMsg && !confirm(confirmMsg)) return;
-  if(cmd === 'start' && ST && ST.current && !confirmMsg &&
+  // 상태를 모르면(서버 오류) 진행 중일 수도 있다 — 반드시 묻는다
+  if(cmd === 'start' && !confirmMsg && (!ST || ST.error || ST.current) &&
      !confirm('시험을 시작하면 이전 진행 기록이 지워집니다. 계속할까요?')) return;
 
   if(cmd === 'hint'){
@@ -559,18 +588,30 @@ async function run(cmd, confirmMsg){
   if(r.error) return alert(r.error);
   if(cmd === 'start' || cmd === 'reset') TIMEUP_SENT = false;
   JOB = {id:r.job, cmd, output:'', done:false};
+  PREVIEW = null;
   render();
-  await waitJob(r.job, true);
+  const j = await waitJob(r.job, true);
   JOB = null;
+  // 진행 중에 누른 리포트는 기록되지 않는 중간 리포트다 — 출력을 그대로 보여 준다
+  if(cmd === 'finish' && j) PREVIEW = (j.output || '').trim();
   await refresh();
+  if(ST && (ST.done || !ST.current)) PREVIEW = null;   // 이미 끝난 시험이면 왼쪽에 최종 리포트가 나온다
   setOptions(await api('/api/sets'));
 }
 
 async function waitJob(id, live){
   // 롱폴링 — 새 출력이 생기거나 끝나는 즉시 서버가 응답한다 (대기 시간 없음)
-  let since = 0;
+  let since = 0, fails = 0;
   for(;;){
-    const j = await api(`/api/job?id=${id}&wait=1&since=${since}`);
+    let j;
+    try{ j = await api(`/api/job?id=${id}&wait=1&since=${since}`); fails = 0; }
+    catch(e){                                  // 네트워크가 잠깐 끊긴 것일 수 있다 — 몇 번만 다시
+      if(++fails >= 5) return {id, done:true, rc:-1, output:'(패널 서버에 닿지 않습니다 — 새로고침 하세요)'};
+      await new Promise(res => setTimeout(res, 1500)); continue;
+    }
+    if(!j || j.error){                         // 서버가 재시작돼 작업이 사라졌다 — 더 기다리지 않는다
+      return {id, done:true, rc:-1, output:'(작업을 찾지 못했습니다 — 패널 서버가 다시 시작됐을 수 있습니다)'};
+    }
     since = (j.output || '').length;
     if(live && JOB){ JOB.output = j.output; const el = $('#joblog'); if(el){ el.textContent = j.output; el.scrollTop = el.scrollHeight; } }
     if(j.done) return j;
@@ -578,7 +619,7 @@ async function waitJob(id, live){
 }
 
 $('#sets').onchange = async e => {
-  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null; TIMEUP_SENT = false;
+  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null; PREVIEW = null; TIMEUP_SENT = false;
   followSet();                 // 터미널도 그 세트 폴더로 따라간다
   await refresh();
 };

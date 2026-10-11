@@ -1,16 +1,23 @@
+# 한 셸에서 두 번 읽지 않는다 — 이 파일은 ~/.bashrc 를 읽고, setup-shell.sh 는 ~/.bashrc 에서
+# 이 파일을 읽게 한다. 막지 않으면 서로 끝없이 불러서 bash 가 죽고 ssh 로그인도 안 됐다.
+# (export 하지 않는다 — 안에서 bash 를 새로 띄우면 그 셸은 다시 읽어야 한다)
+[ -n "${__CKA_RC_LOADED:-}" ] && return 0
+__CKA_RC_LOADED=1
 # ============================================================
 # exam-shellrc.sh — 시험 환경 셸 설정
 #
 # 실제 CKA 시험 터미널과 같은 상태로 맞춘다:
 #   kubectl 자동완성 · alias k · $do / $now · vim YAML 들여쓰기
 #
-# 웹 패널 터미널은 이 파일을 자동으로 읽는다.
+# 웹 패널 터미널은 이 파일을 자동으로 읽는다 (bash --rcfile).
 # ssh 로 들어와서 쓰려면:  bash setup-shell.sh   (~/.bashrc 에 한 줄 추가)
 # ============================================================
 
-# 기존 설정 먼저 (PATH, kubeconfig 등)
-[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
-[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+# 기존 설정 먼저 (PATH, kubeconfig 등) — ~/.bashrc 안에서 불린 경우엔 이미 읽는 중이므로 건너뛴다
+if [ -z "${__CKA_FROM_BASHRC:-}" ]; then
+  [ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
+  [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+fi
 
 # ── 자동완성 ────────────────────────────────────────────────
 # bash-completion 이 있어야 complete -F 가 동작한다 (없으면 조용히 건너뜀)

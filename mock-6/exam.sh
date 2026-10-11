@@ -14,6 +14,16 @@ EXAM_NQ=5
 EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-20}"   # 제한시간(분) — 0 이면 무제한
 
 HELM_OUT=/tmp/mock6-argocd.yaml
+# Q5 — 시험 시작 전에 클러스터에 원래 있던 기본 StorageClass 이름 (cleanup 이 되돌린다. 13-storage 와 같은 방식)
+SC_REC="$WORK_DIR/.sc-default-before"
+# Q2 — 시작할 때 argo 저장소가 이미 있었는지 (없었으면 시험 중에 추가된 것이므로 cleanup 이 지운다)
+ARGO_REC="$WORK_DIR/.argo-repo-before"
+
+# 지금 기본으로 지정된 StorageClass 이름들 (한 줄에 하나)
+sc_defaults() {
+  kubectl get sc -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' 2>/dev/null \
+    | grep '=true$' | cut -d= -f1
+}
 
 exam_cleanup() {
   local ns
@@ -22,9 +32,25 @@ exam_cleanup() {
   done
   kdel priorityclass team-high team-mid report-urgent
   kdel storageclass legacy-std fast-local
-  rm -f "$HELM_OUT"
+  rmf "$HELM_OUT"
   helm uninstall cd -n gitops &>/dev/null || true
   kdel namespace gitops
+  # Q2 — argo 저장소는 시작 때 없던 경우에만 지운다 (학생이 원래 쓰던 저장소는 건드리지 않는다)
+  if [[ "$(cat "$ARGO_REC" 2>/dev/null)" == "absent" ]] && command -v helm &>/dev/null; then
+    helm repo remove argo &>/dev/null && echo "  helm 저장소 argo 제거 (시험 중에 추가된 것)"
+  fi
+  rm -f "$ARGO_REC"
+  # Q5 — 학생이 해제한 '원래 기본 StorageClass' 를 되돌린다 (시작 때 적어 둔 것만)
+  local sc restored=""
+  if [[ -f "$SC_REC" ]]; then
+    while IFS= read -r sc; do
+      [[ -z "$sc" ]] && continue
+      kubectl annotate storageclass "$sc" storageclass.kubernetes.io/is-default-class=true --overwrite &>/dev/null \
+        && restored+="$sc "
+    done < "$SC_REC"
+    rm -f "$SC_REC"
+  fi
+  [[ -n "$restored" ]] && echo "  원래 기본 StorageClass 복구: $restored"
   # 네임스페이스가 다 지워져야 start 가 새로 만들 수 있다
   for ns in analytics edge payments partner warehouse gitops; do
     kubectl wait --for=delete namespace/$ns --timeout=90s &>/dev/null || true
@@ -34,6 +60,16 @@ exam_cleanup() {
 }
 
 exam_setup() {
+  # ── Q5: 원래 기본 StorageClass 를 적어 둔다 → cleanup 이 복구한다
+  #   (이 세트가 만드는 legacy-std · fast-local 은 제외 — 지난 시도의 잔여물일 수 있다)
+  sc_defaults | grep -vxE 'legacy-std|fast-local' > "$SC_REC" 2>/dev/null || true
+  # ── Q2: argo 저장소가 이미 있었는지 적어 둔다
+  if command -v helm &>/dev/null && helm repo list 2>/dev/null | awk '{print $1}' | grep -qx argo; then
+    echo present > "$ARGO_REC"
+  else
+    echo absent > "$ARGO_REC"
+  fi
+
   # ── Q1: 기존 PriorityClass 두 개 + 우선순위 없는 Deployment
   cat <<'YAML' | kubectl apply -f - &>/dev/null
 apiVersion: scheduling.k8s.io/v1
@@ -249,8 +285,10 @@ q1_grade() {
   check_output "파드 2개가 Ready" \
     "kubectl -n analytics get deployment report-gen -o jsonpath='{.status.readyReplicas}/{.status.updatedReplicas}'" "^2/2$" 2
   local pr
+  # 롤아웃 중 종료 대기(deletionTimestamp 있음)인 옛 파드는 빼고 본다
   pr=$(kubectl -n analytics get pods -l app=report-gen --field-selector=status.phase=Running \
-       -o jsonpath='{range .items[*]}{.spec.priority}{"\n"}{end}' 2>/dev/null | sort -u | tr '\n' ' ')
+       -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}|{.spec.priority}{"\n"}{end}' 2>/dev/null \
+       | awk -F'|' '$1==""{print $2}' | sort -u | tr '\n' ' ')
   check_result "Running 파드가 모두 priority ${want} (현재: ${pr:-없음})" \
     "$([[ "$pr" == "$want " ]] && echo 0 || echo 1)" "옛 파드가 남아 있으면 롤아웃이 끝났는지 확인" 4
 }
@@ -404,8 +442,10 @@ q3_grade() {
     "kubectl -n edge get deployment audit-api -o jsonpath='{.spec.template.spec.containers[*].name}'" '(^| )api( |$)' 1
   wait_ready "-l app=audit-api" edge || true
   local ready
+  # 종료 대기 중인 옛 파드(사이드카 없음)는 빼고 본다
   ready=$(kubectl -n edge get pods -l app=audit-api --field-selector=status.phase=Running \
-          -o jsonpath='{range .items[*]}{range .status.initContainerStatuses[?(@.name=="audit-shipper")]}{.ready}{end}/{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null | head -1)
+          -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}|{range .status.initContainerStatuses[?(@.name=="audit-shipper")]}{.ready}{end}/{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null \
+          | awk -F'|' '$1==""{print $2}' | head -1)
   check_result "파드가 READY 2/2 (사이드카 ready=true · 본 컨테이너 ready=true)" \
     "$([[ "$ready" == "true/true" ]] && echo 0 || echo 1)" "현재: ${ready:-파드 없음}" 3
   check_output "사이드카 로그에 앱 로그가 보인다" \

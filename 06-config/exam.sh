@@ -498,8 +498,11 @@ kubectl -n billing exec deploy/invoice-api -- printenv PAYMENT_MODE
 kubectl -n billing patch configmap billing-config -p '{"immutable":true}'
 
 # 순서를 틀려 잠근 뒤에 값을 바꿔야 한다면: 지우고 다시 만든다
-kubectl -n billing get configmap billing-config -o yaml > cm.yaml   # 고친 뒤
-kubectl replace --force -f cm.yaml
+kubectl -n billing get configmap billing-config -o yaml > cm.yaml
+vi cm.yaml     # PAYMENT_MODE 고치고, metadata 의 resourceVersion · uid · creationTimestamp 줄은 지운다
+               #   (남겨 두면 새로 만들 때 충돌·거부될 수 있다)
+kubectl replace --force -f cm.yaml                                  # 지우고 다시 만든다
+# 그다음 다시 rollout restart → 마지막에 immutable
 EOF
 }
 exam_main "$@"

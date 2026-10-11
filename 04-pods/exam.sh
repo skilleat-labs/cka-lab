@@ -233,7 +233,7 @@ q3_grade() {
   check "typo 파드 존재" \
     "kubectl -n $NS get pod typo"
   check_output "이미지 nginx:1.27" \
-    "kubectl -n $NS get pod typo -o jsonpath='{.spec.containers[0].image}'" '^nginx:1\.27$'
+    "kubectl -n $NS get pod typo -o jsonpath='{.spec.containers[0].image}'" '^(docker\.io/library/)?nginx:1\.27(\.[0-9]+)?$'
   wait_ready typo "$NS"
   check_output "Ready" \
     "kubectl -n $NS get pod typo -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" '^True$'
@@ -405,7 +405,7 @@ must still exist, scaled down to 0.
 
 Verify:
   kubectl -n pod-lab rollout status deployment/shop
-  kubectl -n pod-lab get deploy,rs -l app=shop
+  kubectl -n pod-lab get deploy shop; kubectl -n pod-lab get rs
 EOF
 }
 q6_title_ko() { echo "Deployment 만들고 버전 바꾸기"; }
@@ -422,7 +422,7 @@ pod-lab 네임스페이스에 shop Deployment 를 만드시오.
 
 [확인]
   kubectl -n pod-lab rollout status deployment/shop
-  kubectl -n pod-lab get deploy,rs -l app=shop
+  kubectl -n pod-lab get deploy shop; kubectl -n pod-lab get rs
 EOF
 }
 q6_grade() {
@@ -435,8 +435,9 @@ q6_grade() {
   wait_ready "-l app=shop" "$NS"
   check_output "새 버전 파드 3개가 Ready (updatedReplicas · readyReplicas)" \
     "kubectl -n $NS get deployment shop -o jsonpath='{.status.updatedReplicas}/{.status.readyReplicas}'" '^3/3$'
+  # 레이블은 지문에서 정하지 않았으므로 ownerReferences(shop)로 찾는다
   check_output "옛 ReplicaSet(nginx:1.27)이 0개로 남아 있다" \
-    "kubectl -n $NS get rs -l app=shop -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].image}={.spec.replicas}{\"\\n\"}{end}'" '^nginx:1\.27=0$'
+    "kubectl -n $NS get rs -o jsonpath='{range .items[*]}{.metadata.ownerReferences[0].name}|{.spec.template.spec.containers[0].image}={.spec.replicas}{\"\\n\"}{end}' | sed -n 's/^shop|//p'" '^nginx:1\.27=0$'
 }
 q6_hint() { cat <<'EOF'
 kubectl -n pod-lab create deployment shop --image=nginx:1.27 --replicas=3

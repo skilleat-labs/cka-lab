@@ -16,9 +16,9 @@ mock-1 정답을 메모해뒀다가 붙여넣으면 틀리도록 만들었다. "
 | Q1 | nginx:1.24 / replicas 3 | **nginx:1.25 / replicas 4** / port 80 | 이미지·개수 불일치 |
 | Q2 | port 80 | **port 8080 → targetPort 80** | `expose --port=80` 하면 FAIL |
 | Q3 | APP_ENV/APP_PORT, busybox | **APP_MODE/APP_PORT**, busybox:1.36, sleep 7200 | 값 불일치 |
-| Q4 | 500Mi RWO, sc `manual` | **1Gi RWX**, sc **`local-manual`** | RWO 로 만들면 Bound 안 됨 |
+| Q4 | 500Mi RWO, sc `manual` | **1Gi RWX**, sc **`local-manual`** | PV·PVC 한쪽만 RWO 면 Bound 안 됨 (둘 다 RWO 면 Bound 되지만 accessMode 감점) |
 | Q5 | pods get,list | **deployments**(apps) get,list,**watch** + pods 는 **no** 여야 함 | 리소스·동사 불일치, 과잉 권한이면 감점 |
-| Q6 | worker-1 | **worker-2** | 다른 노드 |
+| Q6 | worker-1 | **worker-2** | 다른 노드 · drain-demo 파드가 옮겨졌는지 채점 |
 | Q7 | `nginx:broken` → latest | `nginz:1.24`(저장소 오타) → **nginx:1.24** | latest 로 고치면 12점 감점 |
 
 ## 정답
@@ -71,7 +71,7 @@ kubectl create serviceaccount deploy-sa -n retail
 kubectl create role deploy-reader --verb=get,list,watch --resource=deployments -n retail
 kubectl create rolebinding deploy-reader-rb --role=deploy-reader --serviceaccount=retail:deploy-sa -n retail
 
-# Q6
+# Q6 — 컨트롤러 없는 맨 파드가 worker-2 에 있으면 --force 필요
 kubectl drain worker-2 --ignore-daemonsets --delete-emptydir-data
 kubectl uncordon worker-2
 

@@ -74,17 +74,53 @@ def list_sets():
     return [s for s in out if s not in LAST] + [s for s in LAST if s in out]
 
 
+def _kill_group(p):
+    """exam.sh 와 그 자식(kubectl 등)을 통째로 끝낸다. 프로세스가 사라질 때까지 돌아가지 않는다."""
+    for sig, grace in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
+        try:
+            os.killpg(p.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            p.wait(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+    p.wait()
+
+
 def run_exam_stream(set_id, args, job, timeout=900):
-    """exam.sh 를 실행하면서 나오는 줄을 그때그때 job["output"] 에 붙인다."""
+    """exam.sh 를 실행하면서 나오는 줄을 그때그때 job["output"] 에 붙인다.
+
+    출력은 따로 스레드가 읽고, 이쪽은 마감 시각만 지킨다 — 예전엔 출력 읽기에 막혀
+    timeout 이 한 번도 걸리지 않았다. 새 세션(프로세스 그룹)으로 띄워 시간이 넘으면 그룹째 끝낸다.
+    """
     d = os.path.join(ROOT, set_id)
     p = subprocess.Popen(["bash", "exam.sh", *args], cwd=d,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         text=True, errors="replace", bufsize=1)
+                         text=True, errors="replace", bufsize=1,
+                         start_new_session=True)
     job["proc"] = p
-    for line in p.stdout:
-        job["output"] += ANSI.sub("", line)
-    p.stdout.close()
-    return p.wait(timeout=timeout)
+
+    def pump():
+        try:
+            for line in p.stdout:
+                job["output"] += ANSI.sub("", line)
+        except (OSError, ValueError):
+            pass
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+    try:
+        rc = p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(p)
+        reader.join(3)
+        job["output"] += ("\n[시간 초과] %d초가 지나 명령을 중단했습니다 — "
+                          "터미널에서 bash exam.sh status 로 상태를 확인하세요.\n" % timeout)
+        return -1
+    reader.join(5)      # 백그라운드 자식이 파이프를 잡고 있으면 오래 기다리지 않는다
+    return rc
 
 
 def run_exam(set_id, *args, timeout=900):
@@ -98,9 +134,11 @@ def run_exam(set_id, *args, timeout=900):
 
 
 def meta(set_id):
-    """세트 제목·문항수·단위·문제 제목. exam.sh 가 바뀌면 다시 읽는다."""
+    """세트 제목·문항수·단위·문제 제목. exam.sh 가 바뀌면 다시 읽는다.
+    (제한시간은 start 때 work/.progress 에 적힌 값을 exam.sh 가 우선하므로 그 값도 캐시 열쇠에 넣는다)"""
     path = os.path.join(ROOT, set_id, "exam.sh")
-    stamp = os.path.getmtime(path)
+    pr = progress(set_id)
+    stamp = (os.path.getmtime(path), pr.get("limit"), pr.get("warn"))
     hit = _meta_cache.get(set_id)
     if hit and hit[0] == stamp:
         return hit[1]
@@ -166,6 +204,13 @@ def last_items(set_id):
     return qn, items
 
 
+def _int(v, default):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def state(set_id, lang="en"):
     lang = "ko" if lang == "ko" else "en"
     m = meta(set_id)
@@ -199,8 +244,9 @@ def state(set_id, lang="en"):
         "current": cur, "rows": rows, "sum": sum_p, "total": sum_t,
         "started": int(pr.get("started") or 0),
         "finished": int(pr.get("finished") or 0),
-        "limit": m["limit"],                      # 제한시간(분) · 0 이면 무제한
-        "warn": m["warn"],                        # 몇 분 남으면 경고할지
+        # 제한시간(분) · 0 이면 무제한. 시작한 시험은 start 때 적어 둔 값(환경변수로 바꾼 값 포함)
+        "limit": _int(pr.get("limit"), m["limit"]),
+        "warn": _int(pr.get("warn"), m["warn"]),  # 몇 분 남으면 경고할지
         "timeup": bool(pr.get("timeup")),         # 시간 초과로 마감됐나
         "done": bool(cur and cur > nq),
         "hasHint": bool(m["hasHint"].get(str(cur))),
@@ -232,12 +278,14 @@ def start_job(set_id, cmd, arg=None):
         try:
             args = ["hinttext"] if cmd == "hint" else ([cmd, arg] if arg else [cmd])
             job["rc"] = run_exam_stream(set_id, args, job)
-        except subprocess.TimeoutExpired:
-            job["rc"], job["output"] = -1, "시간 초과 — 터미널에서 직접 확인하세요."
         except Exception as e:  # noqa: BLE001
-            job["rc"], job["output"] = -1, "실행 실패: %s" % e
+            p = job.get("proc")
+            if p and p.poll() is None:
+                _kill_group(p)
+            job["rc"] = -1
+            job["output"] += "\n실행 실패: %s\n" % e
         finally:
-            job["done"] = True
+            job["done"] = True      # 프로세스가 끝난 뒤에야 다음 명령을 받는다
 
     threading.Thread(target=work, daemon=True).start()
     return jid, None
@@ -425,6 +473,18 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False))
 
+    def _same_origin(self):
+        """다른 사이트가 띄운 요청을 막는다. Origin 이 있으면 Host 와 같아야 한다.
+        (/ws 는 셸이고 /api/run 은 클러스터를 지운다 — 아무 웹페이지나 부르면 안 된다)"""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True          # 브라우저 밖(curl 등) — 이 VM 에 닿는 사람은 이미 셸이 있다
+        host = (self.headers.get("Host") or "").strip().lower()
+        try:
+            return bool(host) and urlparse(origin).netloc.lower() == host
+        except ValueError:
+            return False
+
     def _set_param(self, q):
         s = (q.get("set") or [""])[0]
         if s not in list_sets():
@@ -436,6 +496,8 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         try:
             if u.path == "/ws":
+                if not self._same_origin():
+                    return self._send(403, "다른 출처의 접속은 받지 않습니다", "text/plain; charset=utf-8")
                 if not SHELL_ON:
                     return self._send(403, "터미널이 꺼져 있습니다 (--no-shell)", "text/plain; charset=utf-8")
                 s = self._set_param(q)
@@ -490,6 +552,12 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path != "/api/run":
             return self._send(404, "not found", "text/plain; charset=utf-8")
+        if not self._same_origin():
+            return self._json({"error": "다른 출처의 요청은 받지 않습니다"}, 403)
+        # text/plain 폼 전송은 CORS 사전 확인 없이 날아온다 — JSON 만 받는다
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            return self._json({"error": "Content-Type 은 application/json 이어야 합니다"}, 415)
         try:
             n = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(n) or b"{}")

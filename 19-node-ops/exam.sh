@@ -6,23 +6,61 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA 19강 실습 — 노드 운영 (drain/uncordon · etcd 백업 · 업그레이드 확인)"
 EXAM_NQ=4
 
+# 답 파일은 이 세트 전용 폴더에 둔다 — 20강 · mock-5 의 /tmp/node-ops/upgrade-plan.txt 등과 섞이지 않게
+ANS_DIR=/tmp/node-ops
+SNAP="$ANS_DIR/etcd-snapshot.db"
+STATUS="$ANS_DIR/etcd-status.txt"
+PLAN="$ANS_DIR/upgrade-plan.txt"
+KVER="$ANS_DIR/kubelet-version.txt"
+SW_YAML="$ANS_DIR/static-web.yaml"     # Q4 힌트의 dry-run 골격
+MANIFEST_DIR=/etc/kubernetes/manifests
+
 # 작업 대상 워커. 노드 이름은 클러스터마다 다르므로(worker1 · worker-1 · node01 …)
 # 고정하지 않고 컨트롤플레인이 아닌 첫 노드를 찾아 쓴다. TARGET_NODE 로 직접 지정해도 된다.
-TARGET_NODE="${TARGET_NODE:-$(kubectl get nodes --no-headers \
-  -l '!node-role.kubernetes.io/control-plane' \
-  -o custom-columns=:metadata.name 2>/dev/null | head -1 | tr -d ' ')}"
+# start 때 고른 노드를 work 에 적어 두고 이후(check · clean)는 그 노드를 쓴다.
+TN_FILE="$WORK_DIR/.target-node"
+_TN_ENV="${TARGET_NODE:-}"
+pick_node() {
+  kubectl get nodes --no-headers -l '!node-role.kubernetes.io/control-plane' \
+    -o custom-columns=:metadata.name 2>/dev/null | head -1 | tr -d ' '
+}
+TARGET_NODE="${_TN_ENV:-$(cat "$TN_FILE" 2>/dev/null)}"
+if [[ -z "$TARGET_NODE" && "${1:-}" != "meta" ]]; then TARGET_NODE="$(pick_node)"; fi
 TARGET_NODE="${TARGET_NODE:-worker-1}"
+
+# 이름이 static-web 인 static pod 매니페스트 (파일 이름이 아니라 내용으로 찾는다).
+#   폴더 안 파일이 root 전용(0600)이면 못 읽으므로 sudo -n 으로 한 번 더 본다
+SW_PAT='^[[:space:]-]*name:[[:space:]]*["'"'"']?static-web["'"'"']?[[:space:]]*$'
+static_manifests() {
+  { grep -rlE "$SW_PAT" "$MANIFEST_DIR" 2>/dev/null || sudo -n grep -rlE "$SW_PAT" "$MANIFEST_DIR" 2>/dev/null; } | sort -u
+}
 
 exam_cleanup() {
   kubectl uncordon "$TARGET_NODE" &>/dev/null || true
   kdel deployment drain-demo -n default
-  rm -f /tmp/etcd-snapshot.db /tmp/etcd-status.txt /tmp/upgrade-plan.txt /tmp/kubelet-version.txt
+  kdel pod static-web -n default          # kubectl 로 잘못 만든 경우
+  # 답 파일 — sudo 로 만들면 root 소유(스냅샷은 0600)라 rm -f 가 조용히 실패했다
+  rmf "$SNAP" "$STATUS" "$PLAN" "$KVER" "$SW_YAML"
   # Q4 에서 만든 static pod — 매니페스트를 치우면 kubelet 이 파드를 거둬간다
-  ( rm -f /etc/kubernetes/manifests/static-web.yaml 2>/dev/null \
-    || sudo -n rm -f /etc/kubernetes/manifests/static-web.yaml 2>/dev/null ) || true
-  echo "  $TARGET_NODE uncordon · drain-demo 및 /tmp 답안 파일 삭제"
+  local f left
+  for f in $(static_manifests); do
+    rm -f "$f" 2>/dev/null || sudo -n rm -f "$f" 2>/dev/null || true
+  done
+  left=$(static_manifests | tr '\n' ' ')
+  if [[ -n "${left// /}" ]]; then
+    echo -e "  ${ORANGE}[주의] static pod 매니페스트를 지우지 못했습니다: ${left}${RESET}"
+    echo -e "     ${CYAN}sudo rm ${left}${RESET}"
+  elif kubectl get pods -n default -o name 2>/dev/null | grep -q '^pod/static-web-'; then
+    echo -e "  ${ORANGE}[주의] static-web 파드가 남아 있습니다 — 매니페스트를 찾지 못했습니다 (sudo 필요하거나 다른 노드).${RESET}"
+    echo -e "     ${CYAN}sudo grep -l 'name: static-web' $MANIFEST_DIR/*  →  sudo rm <파일>${RESET}"
+  fi
+  echo "  $TARGET_NODE uncordon · drain-demo · static-web 및 $ANS_DIR 답안 파일 삭제"
 }
 exam_setup() {
+  mkdir -p "$ANS_DIR" 2>/dev/null || sudo -n mkdir -p "$ANS_DIR" 2>/dev/null
+  # 노드는 이번 시작 때 새로 고른다 (직접 지정했으면 그대로) → 이후 check · clean 이 같은 노드를 쓴다
+  if [[ -z "$_TN_ENV" ]]; then TARGET_NODE="$(pick_node)"; TARGET_NODE="${TARGET_NODE:-worker-1}"; fi
+  echo "$TARGET_NODE" > "$TN_FILE"
   if ! kubectl get node "$TARGET_NODE" &>/dev/null; then
     echo ""
     echo -e "  ${RED}${BOLD}[중단] 노드 '$TARGET_NODE' 를 찾을 수 없습니다.${RESET}"
@@ -36,13 +74,13 @@ exam_setup() {
   wait_ready "-l app=drain-demo" default >/dev/null 2>&1 || true
   drain_mark "app=drain-demo" "$TARGET_NODE"      # 지금 이 노드에 몇 개 있는지 적어 둔다
   echo "  drain-demo (4 레플리카) 배치 · 대상 노드: $TARGET_NODE"
-  echo "  $TARGET_NODE 의 파드 $(cat work/.drain-before 2>/dev/null || echo 0)개 — drain 하면 비워져야 한다"
+  echo "  $TARGET_NODE 의 파드 $(cat "$WORK_DIR/.drain-before" 2>/dev/null || echo 0)개 — drain 하면 비워져야 한다"
   etcd_tool_check
 }
 
 # ══════════════════════════════════════════════════════════════
 q1_title() { echo "Drain a node and bring it back"; }
-q1_text() { cat <<'EOF'
+q1_text() { cat <<EOF
 A worker node needs maintenance. (this cluster: $TARGET_NODE)
 
   1) mark the node so no new Pods are scheduled on it AND
@@ -61,7 +99,7 @@ Verify:
 EOF
 }
 q1_title_ko() { echo "노드를 비우고 되돌리기"; }
-q1_text_ko() { cat <<'EOF'
+q1_text_ko() { cat <<EOF
 워커 노드 한 대를 점검해야 한다. (이 클러스터에서는 $TARGET_NODE)
 
   1) 그 노드에 새 파드가 배치되지 않게 하고,
@@ -131,7 +169,7 @@ EOF
 q2_title() { echo "Back up etcd"; }
 q2_text() { cat <<'EOF'
 On the control plane node, take an etcd snapshot and save it to
-/tmp/etcd-snapshot.db
+/tmp/node-ops/etcd-snapshot.db
 
 Use the following connection details (the real exam gives them the same way):
   --endpoints  https://127.0.0.1:2379
@@ -140,20 +178,20 @@ Use the following connection details (the real exam gives them the same way):
   --key        /etc/kubernetes/pki/etcd/server.key
 
 Then verify the snapshot and save the verification output to
-/tmp/etcd-status.txt
+/tmp/node-ops/etcd-status.txt
 
 (The real exam usually stops at "save". Verifying is added here because a
 failed backup often leaves a small or empty file that looks fine at a glance.)
 
 Verify:
-  ls -l /tmp/etcd-snapshot.db
-  cat /tmp/etcd-status.txt
+  ls -l /tmp/node-ops/etcd-snapshot.db
+  cat /tmp/node-ops/etcd-status.txt
 EOF
 }
 q2_title_ko() { echo "etcd 백업"; }
 q2_text_ko() { cat <<'EOF'
 컨트롤플레인 노드에서 etcd 스냅샷을 떠서
-/tmp/etcd-snapshot.db 에 저장한다.
+/tmp/node-ops/etcd-snapshot.db 에 저장한다.
 
 접속 정보는 아래를 쓴다 (실제 시험도 이렇게 다 준다).
   --endpoints  https://127.0.0.1:2379
@@ -162,39 +200,41 @@ q2_text_ko() { cat <<'EOF'
   --key        /etc/kubernetes/pki/etcd/server.key
 
 그리고 스냅샷이 제대로 떠졌는지 확인한 출력을
-/tmp/etcd-status.txt 에 저장한다.
+/tmp/node-ops/etcd-status.txt 에 저장한다.
 
 (실제 시험은 대개 "저장하라" 까지만 요구한다. 확인까지 시키는 이유는
  백업이 실패하면 작거나 빈 파일이 남는데 눈으로는 멀쩡해 보이기 때문이다.)
 
 [확인]
-  ls -l /tmp/etcd-snapshot.db
-  cat /tmp/etcd-status.txt
+  ls -l /tmp/node-ops/etcd-snapshot.db
+  cat /tmp/node-ops/etcd-status.txt
 EOF
 }
 q2_grade() {
-  check "/tmp/etcd-snapshot.db 가 있다" "test -s /tmp/etcd-snapshot.db" 2
-  local sz; sz=$(wc -c < /tmp/etcd-snapshot.db 2>/dev/null | tr -d ' '); sz="${sz//[^0-9]/}"; sz="${sz:-0}"
+  check "$SNAP 가 있다" "test -s $SNAP" 2
+  # 스냅샷은 root 소유 0600 이라 읽을 수 없다 — 크기는 stat 으로 (읽기 권한이 필요 없다)
+  local sz; sz=$(stat -c%s "$SNAP" 2>/dev/null || sudo -n stat -c%s "$SNAP" 2>/dev/null); sz="${sz//[^0-9]/}"; sz="${sz:-0}"
   check_result "스냅샷 크기가 그럴듯하다 (1MB 이상)" \
     "$([[ "$sz" -ge 1048576 ]] && echo 0 || echo 1)" \
     "현재 ${sz} 바이트 — 너무 작으면 백업이 실패한 것이다" 2
   # 여기까지가 시험에서 실제로 요구하는 부분이다 (4점)
-  check "/tmp/etcd-status.txt 가 있다" "test -s /tmp/etcd-status.txt"
+  check "$STATUS 가 있다" "test -s $STATUS"
   check_output "status 출력이다 (해시와 키 개수가 보인다)" \
-    "cat /tmp/etcd-status.txt 2>/dev/null" '[0-9a-fA-F]{6,}.*[0-9]|[0-9].*[0-9a-fA-F]{6,}'
+    "cat $STATUS 2>/dev/null || sudo -n cat $STATUS 2>/dev/null" '[0-9a-fA-F]{6,}.*[0-9]|[0-9].*[0-9a-fA-F]{6,}'
 }
 q2_hint() { cat <<'EOF'
-sudo ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-snapshot.db \
+mkdir -p /tmp/node-ops      # 시작할 때 만들어 두지만, 다른 노드에서 푼다면 거기에도 필요하다
+sudo ETCDCTL_API=3 etcdctl snapshot save /tmp/node-ops/etcd-snapshot.db \
   --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/kubernetes/pki/etcd/ca.crt \
   --cert=/etc/kubernetes/pki/etcd/server.crt \
   --key=/etc/kubernetes/pki/etcd/server.key
 
-sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-snapshot.db \
-  --write-out=table | sudo tee /tmp/etcd-status.txt
+sudo ETCDCTL_API=3 etcdctl snapshot status /tmp/node-ops/etcd-snapshot.db \
+  --write-out=table | sudo tee /tmp/node-ops/etcd-status.txt
 
 # sudo 를 빼면 인증서를 못 읽어 permission denied 가 난다.
-# 파일 소유자가 root 라 채점이 못 읽으면: sudo chmod 644 /tmp/etcd-snapshot.db /tmp/etcd-status.txt
+# 파일 소유자가 root 여도 채점은 된다 (크기는 stat 으로, 내용은 sudo -n 으로 본다).
 
 # 문제가 접속 정보를 주지 않으면 매니페스트에서 읽는다 — 외우지 않아도 된다
 sudo grep -E 'listen-client-urls|cert-file|key-file|trusted-ca-file' \
@@ -225,9 +265,9 @@ kubectl -n kube-system exec $ETCD_POD -- etcdctl \
   snapshot save /var/lib/etcd/snap.db
 
 kubectl -n kube-system exec $ETCD_POD -- etcdctl \
-  --write-out=table snapshot status /var/lib/etcd/snap.db | sudo tee /tmp/etcd-status.txt
+  --write-out=table snapshot status /var/lib/etcd/snap.db | sudo tee /tmp/node-ops/etcd-status.txt
 
-sudo mv /var/lib/etcd/snap.db /tmp/etcd-snapshot.db      # 채점이 보는 경로로
+sudo mv /var/lib/etcd/snap.db /tmp/node-ops/etcd-snapshot.db      # 채점이 보는 경로로
 #
 #     status 를 먼저 뜨고 나중에 옮기는 순서가 중요하다 —
 #     옮기고 나면 파드 안에서는 그 파일이 보이지 않는다.
@@ -240,15 +280,15 @@ q3_text() { cat <<'EOF'
 Before upgrading a cluster you check what the upgrade would change.
 
   1) on the control plane node, run the kubeadm command that shows the
-     upgrade plan, and save its output to /tmp/upgrade-plan.txt
+     upgrade plan, and save its output to /tmp/node-ops/upgrade-plan.txt
 
-  2) write the kubelet version of every node to /tmp/kubelet-version.txt
+  2) write the kubelet version of every node to /tmp/node-ops/kubelet-version.txt
 
 Do NOT actually upgrade anything.
 
 Verify:
-  cat /tmp/upgrade-plan.txt
-  cat /tmp/kubelet-version.txt
+  cat /tmp/node-ops/upgrade-plan.txt
+  cat /tmp/node-ops/kubelet-version.txt
 EOF
 }
 q3_title_ko() { echo "업그레이드하면 무엇이 바뀌는지 확인"; }
@@ -256,35 +296,36 @@ q3_text_ko() { cat <<'EOF'
 클러스터를 올리기 전에는 무엇이 바뀌는지 먼저 확인한다.
 
   1) 컨트롤플레인 노드에서 업그레이드 계획을 보여 주는 kubeadm 명령을
-     실행하고, 그 출력을 /tmp/upgrade-plan.txt 에 저장한다
+     실행하고, 그 출력을 /tmp/node-ops/upgrade-plan.txt 에 저장한다
 
-  2) 모든 노드의 kubelet 버전을 /tmp/kubelet-version.txt 에 저장한다
+  2) 모든 노드의 kubelet 버전을 /tmp/node-ops/kubelet-version.txt 에 저장한다
 
 실제로 업그레이드하지는 않는다.
 
 [확인]
-  cat /tmp/upgrade-plan.txt
-  cat /tmp/kubelet-version.txt
+  cat /tmp/node-ops/upgrade-plan.txt
+  cat /tmp/node-ops/kubelet-version.txt
 EOF
 }
 q3_grade() {
-  check "/tmp/upgrade-plan.txt 가 있다" "test -s /tmp/upgrade-plan.txt"
-  check_output "kubeadm upgrade plan 의 출력이다" "cat /tmp/upgrade-plan.txt 2>/dev/null" 'upgrade|UPGRADE|COMPONENT|CURRENT'
-  check "/tmp/kubelet-version.txt 가 있다" "test -s /tmp/kubelet-version.txt"
-  check_output "버전 문자열이 있다" "cat /tmp/kubelet-version.txt 2>/dev/null" 'v1\.[0-9]+'
+  check "$PLAN 가 있다" "test -s $PLAN"
+  check_output "kubeadm upgrade plan 의 출력이다" "cat $PLAN 2>/dev/null || sudo -n cat $PLAN 2>/dev/null" 'upgrade|UPGRADE|COMPONENT|CURRENT'
+  check "$KVER 가 있다" "test -s $KVER"
+  check_output "버전 문자열이 있다" "cat $KVER 2>/dev/null || sudo -n cat $KVER 2>/dev/null" 'v1\.[0-9]+'
   local nodes lines
   nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  lines=$(grep -c 'v1\.' /tmp/kubelet-version.txt 2>/dev/null)
+  lines=$( { cat "$KVER" 2>/dev/null || sudo -n cat "$KVER" 2>/dev/null; } | grep -c 'v1\.')
   lines="${lines//[^0-9]/}"; lines="${lines:-0}"
   check_result "노드 수만큼 버전이 적혀 있다" \
     "$([[ "$nodes" -gt 0 && "$lines" -ge "$nodes" ]] && echo 0 || echo 1)" \
     "노드 ${nodes}개 / 버전 ${lines}개"
 }
 q3_hint() { cat <<'EOF'
-sudo kubeadm upgrade plan | sudo tee /tmp/upgrade-plan.txt
+mkdir -p /tmp/node-ops      # 시작할 때 만들어 두지만, 다른 노드에서 푼다면 거기에도 필요하다
+sudo kubeadm upgrade plan | sudo tee /tmp/node-ops/upgrade-plan.txt
 
 kubectl get nodes -o custom-columns='NAME:.metadata.name,KUBELET:.status.nodeInfo.kubeletVersion' \
-  --no-headers > /tmp/kubelet-version.txt
+  --no-headers > /tmp/node-ops/kubelet-version.txt
 
 # upgrade plan 은 읽기만 한다 — 실제로 바꾸는 것은 upgrade apply 다.
 EOF
@@ -334,14 +375,16 @@ kubelet 이 static pod 매니페스트를 찾는 곳(/etc/kubernetes/manifests)�
 EOF
 }
 q4_grade() {
-  local pod; pod=$(kubectl get pods -n default -o name 2>/dev/null | grep static-web | head -1)
+  # static pod 의 미러 파드는 static-web-<노드> — kubectl 로 만든 static-web 은 고르지 않는다
+  local pod; pod=$(kubectl get pods -n default -o name 2>/dev/null | grep '^pod/static-web-' | head -1)
   pod="${pod#pod/}"
   local owner; owner=$(kubectl get pod "${pod:-none}" -n default -o jsonpath='{.metadata.ownerReferences[0].kind}' 2>/dev/null)
 
   # 매니페스트 파일 확인. 다만 폴더가 root 전용이라 못 읽을 수 있으므로,
   # 그럴 때는 '소유자가 Node' 라는 사실로 대신 판정한다 (kubelet 이 파일로 띄웠다는 증거다).
-  local mf=/etc/kubernetes/manifests/static-web.yaml seen=1
-  ( test -f "$mf" || sudo -n test -f "$mf" ) 2>/dev/null && seen=0
+  local mf seen=1
+  mf=$(static_manifests | head -1)
+  [[ -n "$mf" ]] && seen=0
   check_result "매니페스트를 두어 만들었다 (kubectl 로 만든 것이 아니다)" \
     "$([[ "$seen" == "0" || "$owner" == "Node" ]] && echo 0 || echo 1)" \
     "$([[ "$seen" == "0" ]] && echo "$mf 확인" || echo "파일도 못 찾고 소유자도 Node 가 아니다")"
@@ -360,10 +403,10 @@ q4_grade() {
 }
 q4_hint() { cat <<'EOF'
 # YAML 골격은 dry-run 으로 뽑는다
-kubectl run static-web --image=nginx:1.24 $do > /tmp/sw.yaml
+kubectl run static-web --image=nginx:1.24 --dry-run=client -o yaml > /tmp/node-ops/static-web.yaml
 
 # 그 파일을 kubelet 이 보는 폴더로 옮긴다 (kubectl apply 하지 않는다)
-sudo cp /tmp/sw.yaml /etc/kubernetes/manifests/static-web.yaml
+sudo cp /tmp/node-ops/static-web.yaml /etc/kubernetes/manifests/static-web.yaml
 
 # 몇 초 뒤 뜬다. 이름 뒤에 노드 이름이 붙는다
 kubectl get pods -o wide | grep static-web

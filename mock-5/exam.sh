@@ -21,7 +21,7 @@ exam_cleanup() {
   kdel serviceaccount reader-sa
   kdel daemonset log-collector
   kubectl delete pod crash-pod --ignore-not-found --force --grace-period=0 &>/dev/null || true
-  rm -f /tmp/upgrade-plan.txt
+  rmf /tmp/upgrade-plan.txt
   echo "  web-app/HPA · fast-ssd/pv/pvc · RBAC · DaemonSet · broken-deploy/svc · crash-pod · upgrade-plan 삭제"
 }
 
@@ -126,8 +126,9 @@ Create a StorageClass and a PVC with the following spec.
 
 StorageClass
   name          fast-ssd
-  provisioner   kubernetes.io/no-provisioner
-  reclaimPolicy Delete
+  provisioner        kubernetes.io/no-provisioner
+  reclaimPolicy      Delete
+  volumeBindingMode  Immediate
 
 PVC
   name              fast-pvc
@@ -148,8 +149,9 @@ q2_text_ko() { cat <<'EOF'
 
 StorageClass
   이름          fast-ssd
-  provisioner   kubernetes.io/no-provisioner
-  reclaimPolicy Delete
+  provisioner        kubernetes.io/no-provisioner
+  reclaimPolicy      Delete
+  volumeBindingMode  Immediate
 
 PVC
   이름              fast-pvc
@@ -169,6 +171,7 @@ kind: StorageClass
 metadata: { name: fast-ssd }
 provisioner: kubernetes.io/no-provisioner
 reclaimPolicy: Delete
+volumeBindingMode: Immediate      # 문서 예제의 WaitForFirstConsumer 를 그대로 쓰면 파드가 쓰기 전까지 Pending
 EOF
 }
 q2_grade() {
@@ -178,7 +181,7 @@ q2_grade() {
   check_output "reclaimPolicy = Delete" "kubectl get storageclass fast-ssd -o jsonpath='{.reclaimPolicy}'" "^Delete$" 2
   check "PVC fast-pvc 존재" "kubectl get pvc fast-pvc -n default" 2
   check_output "PVC storageClassName = fast-ssd" "kubectl get pvc fast-pvc -n default -o jsonpath='{.spec.storageClassName}'" "^fast-ssd$" 2
-  check_output "PVC 가 Bound 상태" "kubectl get pvc fast-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 3
+  check_output "PVC 가 Bound 상태 (volumeBindingMode Immediate)" "kubectl get pvc fast-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 3
 }
 
 q3_title() { echo "RBAC with a ClusterRole [20 pts]"; }
@@ -392,7 +395,11 @@ kubeadm 으로 클러스터 업그레이드 계획을 확인하고 결과를
   cat /tmp/upgrade-plan.txt     → 쿠버네티스 버전 정보 포함
 EOF
 }
-q7_hint() { echo "kubeadm upgrade plan > /tmp/upgrade-plan.txt 2>&1"; }
+q7_hint() { cat <<'EOF'
+# kubeadm 은 root 권한이 필요하다. 리다이렉트는 내 셸이 하므로 파일은 내 소유로 생긴다
+sudo kubeadm upgrade plan > /tmp/upgrade-plan.txt 2>&1
+EOF
+}
 q7_grade() {
   check_result "/tmp/upgrade-plan.txt 파일 존재" "$([[ -f /tmp/upgrade-plan.txt ]] && echo 0 || echo 1)" "컨트롤플레인에서 실행" 4
   local sz; sz=$(stat -c%s /tmp/upgrade-plan.txt 2>/dev/null || stat -f%z /tmp/upgrade-plan.txt 2>/dev/null || echo 0)

@@ -534,7 +534,12 @@ q5_grade() {
     "$([[ $size -ge 1000000 ]] && echo 0 || echo 1)" "touch 로 만든 빈 파일은 FAIL" 6
   # 상태 확인은 도구가 있을 때만 엄격하게 본다 (파드 안의 etcdctl 로 푼 경우를 막지 않으려고)
   local st=1 note="snapshot status 로 읽히지 않는다 — 깨진 파일"
-  if command -v etcdutl &>/dev/null || command -v etcdctl &>/dev/null; then
+  if { command -v etcdutl &>/dev/null || command -v etcdctl &>/dev/null; } \
+     && [[ -e "$ETCD_SNAP" && ! -r "$ETCD_SNAP" ]] && ! sudo -n true 2>/dev/null; then
+    # 도구는 있지만 파일이 root 소유(0600)라 읽을 수 없고 암호 없는 sudo 도 안 된다 — 도구 탓에 FAIL 주지 않는다
+    [[ $size -ge 1000000 ]] && st=0
+    note="파일을 읽을 권한이 없고(root 소유 0600) sudo -n 도 안 돼 크기로만 판정 — sudo -v 후 다시 채점하면 엄격하게 본다"
+  elif command -v etcdutl &>/dev/null || command -v etcdctl &>/dev/null; then
     { etcdutl snapshot status "$ETCD_SNAP" || sudo -n etcdutl snapshot status "$ETCD_SNAP" \
       || ETCDCTL_API=3 etcdctl snapshot status "$ETCD_SNAP" || sudo -n env ETCDCTL_API=3 etcdctl snapshot status "$ETCD_SNAP"; } \
       2>/dev/null | grep -q '[0-9]' && st=0

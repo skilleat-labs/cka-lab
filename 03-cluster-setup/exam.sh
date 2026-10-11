@@ -56,8 +56,8 @@ cluster_pod_cidr() {
 }
 
 exam_cleanup() {
-  rm -f /tmp/cni.txt /tmp/cni-install.sh          # 예전 Q3 답안 파일
-  rm -f /tmp/coredns.log 2>/dev/null || true
+  rmf /tmp/cni.txt /tmp/cni-install.sh            # 예전 Q3 답안 파일
+  rmf /tmp/coredns.log                            # sudo crictl ... > 로 만들면 root 소유일 수 있다
   rm -rf "$CNI_DIR" 2>/dev/null || sudo -n rm -rf "$CNI_DIR" 2>/dev/null || true
 
   # Q4 — 패키지 제거 · 지문에서 지정한 sysctl 파일만 삭제 · 바꾼 값 되돌리기
@@ -190,7 +190,7 @@ q1_text() { cat <<'EOF'
 Join the node worker-2 (192.168.56.12) to the cluster.
 
   - on the control plane, print a fresh join command with
-    kubeadm token create --print-join-command
+    sudo kubeadm token create --print-join-command
   - run that command on worker-2 with sudo
   - the node must reach Ready state and run the same minor version as the
     other nodes
@@ -203,7 +203,7 @@ q1_title_ko() { echo "워커 노드를 클러스터에 조인"; }
 q1_text_ko() { cat <<'EOF'
 worker-2(192.168.56.12) 노드를 클러스터에 조인시키시오.
 
-  - control-plane 에서 kubeadm token create --print-join-command 로
+  - control-plane 에서 sudo kubeadm token create --print-join-command 로
     조인 명령을 새로 뽑는다
   - 그 명령을 worker-2 에서 sudo 로 실행한다
   - 노드가 Ready 가 되고, 다른 노드와 같은 마이너 버전이어야 한다
@@ -215,15 +215,15 @@ EOF
 q1_grade() {
   check "worker-2 노드가 클러스터에 있다" "kubectl get node worker-2"
   check_output "worker-2 가 Ready" \
-    "kubectl get node worker-2 --no-headers" '\sReady\s'
+    "kubectl get node worker-2 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" '^True$'
   check_output "kubelet 버전이 v1.x 로 보고된다" \
     "kubectl get node worker-2 --no-headers -o wide" 'v1\.'
   check_output "control-plane 과 같은 마이너 버전" \
     "kubectl get nodes --no-headers -o custom-columns=V:.status.nodeInfo.kubeletVersion | sed 's/\.[0-9]*$//' | sort -u | wc -l" '^\s*1$'
 }
 q1_hint() { cat <<'EOF'
-# control-plane 에서
-kubeadm token create --print-join-command
+# control-plane 에서 (admin.conf 를 읽으므로 sudo)
+sudo kubeadm token create --print-join-command
 
 # worker-2 에서 (위 출력을 그대로, sudo 를 붙여서)
 sudo kubeadm join 192.168.56.10:6443 --token ... --discovery-token-ca-cert-hash sha256:...
@@ -388,7 +388,7 @@ q3_grade() {
   check "$CNI_CMD 이 있다" "test -s $CNI_CMD"
   check_output "고친 로컬 파일을 kubectl 로 적용하는 명령이다" \
     "grep -v '^[[:space:]]*#' $CNI_CMD 2>/dev/null" \
-    'kubectl[[:space:]]+(create|apply)[[:space:]].*-f[[:space:]=]*(/tmp/calico/|\./)?custom-resources\.yaml'
+    "kubectl[[:space:]]+(create|apply)[[:space:]].*(-f|--filename)([[:space:]]+|=)?[\"']?(/tmp/calico/|\\./)?custom-resources\\.yaml"
 }
 q3_hint() { cat <<'EOF'
 # 1) 이 클러스터의 파드 CIDR — kubeadm init 때 준 --pod-network-cidr

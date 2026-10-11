@@ -9,23 +9,23 @@ EXAM_NQ=4
 
 # ══════════════════════════════════════════════════════════════
 exam_cleanup() {
-  kdel deployment log-app -n logging
-  kdel namespace logging
+  kdel deployment log-app -n lab-logging
+  kdel namespace lab-logging --wait=false
   kdel deployment web-app -n default
   kdel cronjob date-printer -n default
   kubectl get jobs -n default -o name 2>/dev/null | grep "date-printer" | xargs -r kubectl delete -n default &>/dev/null || true
-  kdel namespace monitoring
-  echo "  web-app / date-printer / monitoring ns / logging ns 삭제"
+  kdel namespace lab-monitoring --wait=false      # 학생 것(kube-prometheus 의 monitoring 등)과 겹치지 않게 lab- 접두어
+  echo "  web-app / date-printer / lab-monitoring ns / lab-logging ns 삭제"
 }
 exam_setup() {
   # Q4(사이드카) 용 — 로그를 계속 쓰는 앱을 미리 띄워 둔다. 사이드카만 붙이면 되게.
-  kubectl create namespace logging &>/dev/null
+  kubectl create namespace lab-logging &>/dev/null
   cat <<'YAML' | kubectl apply -f - &>/dev/null
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: log-app
-  namespace: logging
+  namespace: lab-logging
   labels: { app: log-app }
 spec:
   replicas: 1
@@ -45,7 +45,7 @@ spec:
         - name: applogs
           emptyDir: {}
 YAML
-  echo "  logging 네임스페이스에 log-app 배치 (Q4 에서 사이드카를 붙인다)"
+  echo "  lab-logging 네임스페이스에 log-app 배치 (Q4 에서 사이드카를 붙인다)"
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -93,9 +93,12 @@ q1_grade() {
     "kubectl get deployment web-app -n default"
   check_output "replicas 5" \
     "kubectl get deployment web-app -n default -o jsonpath='{.spec.replicas}'" '^5$'
-  wait_ready "-l app=web-app" default
-  check_output "파드 5개가 Ready" \
-    "kubectl get deployment web-app -n default -o jsonpath='{.status.readyReplicas}'" '^5$'
+  # readyReplicas 는 롤아웃 중 surge 로 잠깐 6 이 될 수 있다 — 롤아웃이 끝나길 기다린 뒤 updated/available 로 본다
+  kubectl rollout status deployment/web-app -n default --timeout="${EXAM_WAIT}s" &>/dev/null
+  local st; st=$(kubectl get deployment web-app -n default -o jsonpath='{.status.updatedReplicas}/{.status.availableReplicas}' 2>/dev/null)
+  check_result "파드 5개가 Ready (updated/available = ${st:-없음})" \
+    "$([[ "${st%%/*}" == 5 && "${st#*/}" =~ ^[0-9]+$ && "${st#*/}" -ge 5 ]] && echo 0 || echo 1)" \
+    "kubectl rollout status deployment/web-app 로 확인"
   check_output "롤백 후 이미지가 nginx:1.24" \
     "kubectl get deployment web-app -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" '^nginx:1\.24$'
   local rev; rev=$(kubectl get deployment web-app -n default -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null || echo 0)
@@ -103,7 +106,7 @@ q1_grade() {
   check_result "업데이트 후 롤백한 이력 (revision ${rev:-0} ≥ 3)" \
     "$([[ "${rev:-0}" -ge 3 ]] && echo 0 || echo 1)" "revision=${rev:-0} — 1.25 로 올렸다가 되돌렸는지 확인"
   check_output "이전 ReplicaSet(nginx:1.25)이 남아 있다" \
-    "kubectl get rs -n default -l app=web-app -o jsonpath='{.items[*].spec.template.spec.containers[0].image}'" 'nginx:1\.25'
+    "kubectl get rs -n default -o jsonpath='{range .items[*]}{.metadata.ownerReferences[0].name}|{.spec.template.spec.containers[0].image}{\"\\n\"}{end}' | sed -n 's/^web-app|//p'" '^nginx:1\.25$'
 }
 q1_hint() { cat <<'EOF'
 kubectl create deployment web-app --image=nginx:1.24 --replicas=3
@@ -174,9 +177,9 @@ EOF
 # ══════════════════════════════════════════════════════════════
 # Q3 — DaemonSet
 # ══════════════════════════════════════════════════════════════
-q3_title() { echo "DaemonSet in the monitoring namespace"; }
+q3_title() { echo "DaemonSet in the lab-monitoring namespace"; }
 q3_text() { cat <<'EOF'
-Create a namespace named monitoring and, inside it, a DaemonSet named
+Create a namespace named lab-monitoring and, inside it, a DaemonSet named
 node-exporter.
 
   image          prom/node-exporter:latest
@@ -190,13 +193,13 @@ Note: there is no kubectl create command for a DaemonSet — write the YAML
 and strategy).
 
 Verify:
-  kubectl get daemonset -n monitoring
-  kubectl get pods -n monitoring -o wide
+  kubectl get daemonset -n lab-monitoring
+  kubectl get pods -n lab-monitoring -o wide
 EOF
 }
-q3_title_ko() { echo "monitoring 네임스페이스에 DaemonSet 생성"; }
+q3_title_ko() { echo "lab-monitoring 네임스페이스에 DaemonSet 생성"; }
 q3_text_ko() { cat <<'EOF'
-monitoring 네임스페이스를 만들고 그 안에 node-exporter DaemonSet 을
+lab-monitoring 네임스페이스를 만들고 그 안에 node-exporter DaemonSet 을
 생성하시오.
 
   이미지         prom/node-exporter:latest
@@ -209,30 +212,30 @@ DaemonSet 은 kubectl create 명령이 없다 — YAML 을 직접 쓴다
 (Deployment 를 --dry-run 으로 뽑아 kind 를 바꾸고 replicas·strategy 를 지우면 빠르다).
 
 [확인]
-  kubectl get daemonset -n monitoring
-  kubectl get pods -n monitoring -o wide
+  kubectl get daemonset -n lab-monitoring
+  kubectl get pods -n lab-monitoring -o wide
 EOF
 }
 q3_grade() {
-  check "monitoring 네임스페이스 존재" "kubectl get namespace monitoring"
-  check "DaemonSet node-exporter 존재" "kubectl get daemonset node-exporter -n monitoring"
+  check "lab-monitoring 네임스페이스 존재" "kubectl get namespace lab-monitoring"
+  check "DaemonSet node-exporter 존재" "kubectl get daemonset node-exporter -n lab-monitoring"
   check_output "이미지 prom/node-exporter" \
-    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.template.spec.containers[0].image}'" 'node-exporter'
+    "kubectl get daemonset node-exporter -n lab-monitoring -o jsonpath='{.spec.template.spec.containers[0].image}'" 'node-exporter'
   check_output "hostNetwork: true" \
-    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.template.spec.hostNetwork}'" '^true$'
+    "kubectl get daemonset node-exporter -n lab-monitoring -o jsonpath='{.spec.template.spec.hostNetwork}'" '^true$'
   check_output "hostPID: true" \
-    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.template.spec.hostPID}'" '^true$'
+    "kubectl get daemonset node-exporter -n lab-monitoring -o jsonpath='{.spec.template.spec.hostPID}'" '^true$'
   check_output "selector 가 app=node-exporter" \
-    "kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.spec.selector.matchLabels.app}'" '^node-exporter$'
-  local ready; ready=$(kubectl get daemonset node-exporter -n monitoring -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
+    "kubectl get daemonset node-exporter -n lab-monitoring -o jsonpath='{.spec.selector.matchLabels.app}'" '^node-exporter$'
+  local ready; ready=$(kubectl get daemonset node-exporter -n lab-monitoring -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
   check_result "파드가 1개 이상 Ready (현재 ${ready:-0}개)" \
     "$([[ "${ready:-0}" -ge 1 ]] && echo 0 || echo 1)" "이미지 pull 에 시간이 걸릴 수 있습니다"
 }
 q3_hint() { cat <<'EOF'
-kubectl create namespace monitoring
+kubectl create namespace lab-monitoring
 
 # Deployment 뼈대를 뽑아 DaemonSet 으로 고친다
-kubectl create deployment node-exporter -n monitoring \
+kubectl create deployment node-exporter -n lab-monitoring \
   --image=prom/node-exporter:latest $do > ds.yaml
 #   kind: Deployment  →  DaemonSet
 #   spec.replicas / spec.strategy 줄 삭제
@@ -244,7 +247,7 @@ EOF
 # ══════════════════════════════════════════════════════════════
 q4_title() { echo "Native sidecar — a logging container"; }
 q4_text() { cat <<'EOF'
-A Deployment named log-app already exists in the logging namespace.
+A Deployment named log-app already exists in the lab-logging namespace.
 Its main container writes to /var/log/app/app.log on a shared emptyDir volume.
 
 Add a native sidecar named log-sidecar to that Deployment.
@@ -260,13 +263,13 @@ It must be a NATIVE sidecar:
 After the change each Pod must show READY 2/2.
 
 Verify:
-  kubectl -n logging get pods
-  kubectl -n logging logs deploy/log-app -c log-sidecar
+  kubectl -n lab-logging get pods
+  kubectl -n lab-logging logs deploy/log-app -c log-sidecar
 EOF
 }
 q4_title_ko() { echo "네이티브 사이드카 — 로그 수집 컨테이너"; }
 q4_text_ko() { cat <<'EOF'
-logging 네임스페이스에 log-app Deployment 가 이미 있다.
+lab-logging 네임스페이스에 log-app Deployment 가 이미 있다.
 본 컨테이너가 공유 emptyDir 볼륨의 /var/log/app/app.log 에 로그를 쓴다.
 
 여기에 log-sidecar 라는 네이티브 사이드카를 추가한다.
@@ -282,28 +285,31 @@ logging 네임스페이스에 log-app Deployment 가 이미 있다.
 바꾸고 나면 각 파드가 READY 2/2 로 보여야 한다.
 
 [확인]
-  kubectl -n logging get pods
-  kubectl -n logging logs deploy/log-app -c log-sidecar
+  kubectl -n lab-logging get pods
+  kubectl -n lab-logging logs deploy/log-app -c log-sidecar
 EOF
 }
 q4_grade() {
-  check "Deployment log-app 존재" "kubectl -n logging get deployment log-app"
+  check "Deployment log-app 존재" "kubectl -n lab-logging get deployment log-app"
   check_output "initContainers 에 log-sidecar 가 있다" \
-    "kubectl -n logging get deployment log-app -o jsonpath='{.spec.template.spec.initContainers[*].name}'" 'log-sidecar'
+    "kubectl -n lab-logging get deployment log-app -o jsonpath='{.spec.template.spec.initContainers[*].name}'" 'log-sidecar'
   check_output "사이드카 이미지가 busybox:1.36" \
-    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.image}{end}'" '^busybox:1\.36$'
+    "kubectl -n lab-logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.image}{end}'" '^busybox:1\.36$'
   check_output "restartPolicy: Always (네이티브 사이드카의 조건)" \
-    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.restartPolicy}{end}'" '^Always$'
-  check_output "같은 볼륨을 /var/log/app 에 마운트" \
-    "kubectl -n logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{range .volumeMounts[*]}{.mountPath}{\" \"}{end}{end}'" '/var/log/app'
-  wait_ready "-l app=log-app" logging
-  check_output "파드가 READY 2/2 (사이드카가 살아 있다)" \
-    "kubectl -n logging get deployment log-app -o jsonpath='{.status.readyReplicas}'" '^1$'
+    "kubectl -n lab-logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{.restartPolicy}{end}'" '^Always$'
+  check_output "같은 볼륨(applogs)을 /var/log/app 에 마운트" \
+    "kubectl -n lab-logging get deployment log-app -o jsonpath='{range .spec.template.spec.initContainers[?(@.name==\"log-sidecar\")]}{range .volumeMounts[*]}{.name}={.mountPath}{\" \"}{end}{end}'" '(^| )applogs=/var/log/app/?( |$)'
+  # 롤아웃이 끝나야 옛 파드(1/1)가 빠진다 — readyReplicas 는 surge 중 2 가 될 수 있어 updated/available 로 본다
+  kubectl -n lab-logging rollout status deployment/log-app --timeout="${EXAM_WAIT}s" &>/dev/null
+  local st; st=$(kubectl -n lab-logging get deployment log-app -o jsonpath='{.status.updatedReplicas}/{.status.availableReplicas}' 2>/dev/null)
+  check_result "파드가 READY 2/2 (사이드카가 살아 있다, updated/available = ${st:-없음})" \
+    "$([[ "${st%%/*}" == 1 && "${st#*/}" =~ ^[0-9]+$ && "${st#*/}" -ge 1 ]] && echo 0 || echo 1)" \
+    "kubectl -n lab-logging rollout status deployment/log-app 로 확인"
   check_output "사이드카가 본 컨테이너의 로그를 읽고 있다" \
-    "kubectl -n logging logs deploy/log-app -c log-sidecar --tail=5 2>/dev/null" '.'
+    "kubectl -n lab-logging logs deploy/log-app -c log-sidecar --tail=5 2>/dev/null" 'hello from log-app'
 }
 q4_hint() { cat <<'EOF'
-kubectl -n logging edit deployment log-app
+kubectl -n lab-logging edit deployment log-app
 
 # spec.template.spec 아래, containers 와 나란히 initContainers 를 둔다
   initContainers:

@@ -21,11 +21,15 @@ exam_cleanup() {
   kdel pod shared-vol -n default
   kdel statefulset web-sts -n default
   kdel pvc data-pvc sc-pvc -n default
-  kdel pvc www-storage-web-sts-0 www-storage-web-sts-1 www-storage-web-sts-2 -n default
+  # Q3 — volumeClaimTemplate 이 만든 PVC 는 StatefulSet 을 지워도 남는다. 번호와 상관없이 접두사로 전부
+  local p
+  for p in $(kubectl get pvc -n default -o name 2>/dev/null | grep '^persistentvolumeclaim/www-storage-web-sts-'); do
+    kdel "$p" -n default
+  done
   kdel pv data-pv
   kdel storageclass local-storage legacy-hdd
   # Q5 — 네임스페이스(Deployment·PVC 포함)와 미리 만든 PV, 문제 파일
-  kubectl get namespace records &>/dev/null && kubectl delete namespace records --wait=false &>/dev/null
+  kubectl get namespace st-records &>/dev/null && kubectl delete namespace st-records --wait=false &>/dev/null
   kdel pv records-pv
   rm -f "$DEPLOY_FILE"
   # Q2 — 학생이 해제한 '원래 기본 StorageClass' 를 되돌린다 (시작 때 적어 둔 것만)
@@ -39,7 +43,7 @@ exam_cleanup() {
     rm -f "$SC_REC"
   fi
   echo "  data-pv / data-pvc / local-storage / legacy-hdd / sc-pvc / web-sts / shared-vol 삭제"
-  echo "  records 네임스페이스 / records-pv / work/records-deploy.yaml 삭제"
+  echo "  st-records 네임스페이스 / records-pv / work/records-deploy.yaml 삭제"
   [[ -n "$restored" ]] && echo "  원래 기본 StorageClass 복구: $restored"
   return 0
 }
@@ -62,7 +66,7 @@ volumeBindingMode: WaitForFirstConsumer
 ---
 apiVersion: v1
 kind: Namespace
-metadata: { name: records }
+metadata: { name: st-records }
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -83,7 +87,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: records-app
-  namespace: records
+  namespace: st-records
   labels:
     app: records-app
 spec:
@@ -104,7 +108,7 @@ spec:
 YAML
 
   echo "  Q2  StorageClass legacy-hdd (현재 기본으로 지정됨)"
-  echo "  Q5  records 네임스페이스 · PV records-pv · work/records-deploy.yaml (아직 적용 안 됨)"
+  echo "  Q5  st-records 네임스페이스 · PV records-pv · work/records-deploy.yaml (아직 적용 안 됨)"
   local others
   others=$(tr '\n' ' ' < "$SC_REC" 2>/dev/null)
   [[ -n "${others// /}" ]] && echo -e "  ${ORANGE}참고: 이 클러스터에는 원래 기본 StorageClass 가 있습니다 → ${others}(Q2 에서 함께 해제해야 합니다 · clean 때 복구됩니다)${RESET}"
@@ -303,6 +307,9 @@ In the default namespace, create a StatefulSet named web-sts.
 Three PVCs must be created automatically:
   www-storage-web-sts-0 / -1 / -2
 
+Note: with a no-provisioner default StorageClass the Pods may stay
+Pending (no PV to bind). That is fine — only the PVCs are graded.
+
 Verify:
   kubectl get statefulset web-sts
   kubectl get pvc
@@ -319,6 +326,9 @@ default 네임스페이스에 web-sts StatefulSet 을 만드시오.
 
 PVC 3개가 자동 생성되어야 한다:
   www-storage-web-sts-0 / -1 / -2
+
+참고: 기본 StorageClass 가 no-provisioner 라 PV 가 없으면 파드가 Pending 으로
+남을 수 있다. 괜찮다 — PVC 생성까지만 채점한다.
 
 [확인]
   kubectl get statefulset web-sts
@@ -398,8 +408,15 @@ q4_grade() {
     "kubectl get pod shared-vol -n default -o jsonpath='{.spec.containers[*].name}'" 'writer'
   check_output "reader 컨테이너" \
     "kubectl get pod shared-vol -n default -o jsonpath='{.spec.containers[*].name}'" 'reader'
-  check_output "emptyDir 볼륨 사용" \
-    "kubectl get pod shared-vol -n default -o jsonpath='{.spec.volumes[0].emptyDir}'" '\{'
+  check_output "emptyDir 볼륨 shared 사용" \
+    "kubectl get pod shared-vol -n default -o jsonpath='{.spec.volumes[?(@.name==\"shared\")].emptyDir}'" '\{'
+  local c
+  for c in writer reader; do
+    check_output "$c 가 볼륨 shared 를 /shared 에 마운트" \
+      "kubectl get pod shared-vol -n default -o jsonpath='{.spec.containers[?(@.name==\"$c\")].volumeMounts[?(@.name==\"shared\")].mountPath}'" '^/shared$'
+  done
+  check_output "두 컨테이너 모두 Ready" \
+    "kubectl get pod shared-vol -n default -o jsonpath='{.status.containerStatuses[*].ready}'" '^true true$'
   if kubectl get pod shared-vol -n default &>/dev/null; then
     check_output "writer 가 실제로 /shared/log.txt 에 쓰고 있다" \
       "kubectl exec shared-vol -n default -c writer -- cat /shared/log.txt 2>/dev/null | head -1" '[0-9]'
@@ -426,12 +443,12 @@ EOF
 q5_title() { echo "PVC for an existing PV, mounted via a given manifest"; }
 q5_text() { cat <<'EOF'
 An administrator has already created the PersistentVolume records-pv.
-The Deployment records-app (namespace records) is not running — its
+The Deployment records-app (namespace st-records) is not running — its
 manifest is in the file:
 
   work/records-deploy.yaml
 
-  (a) In the records namespace create a PersistentVolumeClaim named
+  (a) In the st-records namespace create a PersistentVolumeClaim named
       records-pvc that binds to records-pv.
         access mode   ReadWriteOnce
         request       250Mi
@@ -446,19 +463,19 @@ The records-app Pod must be Running with the PVC mounted.
 
 Verify:
   kubectl get pv records-pv
-  kubectl -n records get pvc records-pvc        -> STATUS Bound
-  kubectl -n records get deploy,pod
+  kubectl -n st-records get pvc records-pvc        -> STATUS Bound
+  kubectl -n st-records get deploy,pod
 EOF
 }
 q5_title_ko() { echo "기존 PV 에 맞는 PVC + 주어진 Deployment 파일 수정"; }
 q5_text_ko() { cat <<'EOF'
 관리자가 PersistentVolume records-pv 를 미리 만들어 두었다.
-records 네임스페이스의 Deployment records-app 은 아직 실행되지 않았고,
+st-records 네임스페이스의 Deployment records-app 은 아직 실행되지 않았고,
 매니페스트가 아래 파일에 있다.
 
   work/records-deploy.yaml
 
-  (a) records 네임스페이스에 records-pv 에 묶이는 PVC records-pvc 를 만든다.
+  (a) st-records 네임스페이스에 records-pv 에 묶이는 PVC records-pvc 를 만든다.
         accessMode    ReadWriteOnce
         용량 요청     250Mi
       그 밖에 맞춰야 할 값은 records-pv 를 직접 보고 찾는다.
@@ -472,32 +489,32 @@ records-app 파드가 PVC 를 마운트한 채 Running 이어야 한다.
 
 [확인]
   kubectl get pv records-pv
-  kubectl -n records get pvc records-pvc        → STATUS Bound
-  kubectl -n records get deploy,pod
+  kubectl -n st-records get pvc records-pvc        → STATUS Bound
+  kubectl -n st-records get deploy,pod
 EOF
 }
 q5_grade() {
-  check "PVC records-pvc 존재 (records)" "kubectl -n records get pvc records-pvc"
+  check "PVC records-pvc 존재 (st-records)" "kubectl -n st-records get pvc records-pvc"
   check_output "요청 250Mi · ReadWriteOnce" \
-    "kubectl -n records get pvc records-pvc -o jsonpath='{.spec.resources.requests.storage}/{.spec.accessModes[0]}'" '^250Mi/ReadWriteOnce$'
+    "kubectl -n st-records get pvc records-pvc -o jsonpath='{.spec.resources.requests.storage}/{.spec.accessModes[0]}'" '^250Mi/ReadWriteOnce$'
   check_output "storageClassName 이 PV 와 같다 (records-hdd)" \
-    "kubectl -n records get pvc records-pvc -o jsonpath='{.spec.storageClassName}'" '^records-hdd$'
+    "kubectl -n st-records get pvc records-pvc -o jsonpath='{.spec.storageClassName}'" '^records-hdd$'
   check_output "records-pv 에 Bound" \
-    "kubectl -n records get pvc records-pvc -o jsonpath='{.status.phase}/{.spec.volumeName}'" '^Bound/records-pv$'
+    "kubectl -n st-records get pvc records-pvc -o jsonpath='{.status.phase}/{.spec.volumeName}'" '^Bound/records-pv$'
   local fileok=1
-  [[ -f "$DEPLOY_FILE" ]] && grep -qE 'claimName:[[:space:]]*"?records-pvc' "$DEPLOY_FILE" && fileok=0
+  [[ -f "$DEPLOY_FILE" ]] && grep -qE "claimName[\"']?:[[:space:]]*[\"']?records-pvc" "$DEPLOY_FILE" && fileok=0
   check_result "work/records-deploy.yaml 파일에 claimName: records-pvc 를 넣었다" "$fileok" \
     "파일을 직접 고쳐서 apply 해야 한다 (kubectl edit 로는 파일이 바뀌지 않는다)"
-  check "Deployment records-app 존재" "kubectl -n records get deployment records-app"
+  check "Deployment records-app 존재" "kubectl -n st-records get deployment records-app"
   check_output "파드 템플릿 볼륨이 records-pvc 를 쓴다" \
-    "kubectl -n records get deployment records-app -o jsonpath='{.spec.template.spec.volumes[*].persistentVolumeClaim.claimName}'" '(^| )records-pvc( |$)'
+    "kubectl -n st-records get deployment records-app -o jsonpath='{.spec.template.spec.volumes[*].persistentVolumeClaim.claimName}'" '(^| )records-pvc( |$)'
   check_output "컨테이너 web 의 mountPath /usr/share/nginx/html" \
-    "kubectl -n records get deployment records-app -o jsonpath='{.spec.template.spec.containers[?(@.name==\"web\")].volumeMounts[*].mountPath}'" '(^| )/usr/share/nginx/html( |$)'
-  wait_ready "-l app=records-app" records
+    "kubectl -n st-records get deployment records-app -o jsonpath='{.spec.template.spec.containers[?(@.name==\"web\")].volumeMounts[*].mountPath}'" '(^| )/usr/share/nginx/html( |$)'
+  wait_ready "-l app=records-app" st-records
   check_output "Deployment 가 준비됨 (ready 1/1)" \
-    "kubectl -n records get deployment records-app -o jsonpath='{.status.readyReplicas}/{.spec.replicas}'" '^1/1$'
+    "kubectl -n st-records get deployment records-app -o jsonpath='{.status.readyReplicas}/{.spec.replicas}'" '^1/1$'
   check_output "Running 파드가 records-pvc 를 마운트했다" \
-    "kubectl -n records get pods -l app=records-app -o jsonpath='{range .items[?(@.status.phase==\"Running\")]}{.spec.volumes[*].persistentVolumeClaim.claimName}{\" \"}{end}'" 'records-pvc'
+    "kubectl -n st-records get pods -l app=records-app -o jsonpath='{range .items[?(@.status.phase==\"Running\")]}{.spec.volumes[*].persistentVolumeClaim.claimName}{\" \"}{end}'" 'records-pvc'
 }
 q5_hint() { cat <<'EOF'
 # (a) PV 를 먼저 읽는다 — 클래스·용량·모드를 맞춰야 묶인다
@@ -506,7 +523,7 @@ kubectl get pv records-pv -o jsonpath='{.spec.storageClassName}{"\n"}'
 #   storageClassName 을 빼먹으면 기본 클래스가 붙어 Pending → 지우고 다시 만든다
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: { name: records-pvc, namespace: records }
+metadata: { name: records-pvc, namespace: st-records }
 spec:
   storageClassName: <PV 와 같은 값>
   accessModes: ["ReadWriteOnce"]
@@ -525,7 +542,7 @@ spec:
 #          mountPath: /usr/share/nginx/html
 vi work/records-deploy.yaml
 kubectl apply -f work/records-deploy.yaml
-kubectl -n records rollout status deploy records-app
+kubectl -n st-records rollout status deploy records-app
 EOF
 }
 

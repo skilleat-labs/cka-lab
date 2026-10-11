@@ -12,7 +12,9 @@ exam_cleanup() {
   kdel service target-svc -n default
   kdel pod -l cka-lab=q19-sched -n default
   kdel pod sched-test -n default
-  echo "  broken-pod / fixed-pod / pull-fail / target-app / target-svc 삭제"
+  kdel pod netchk-q3 -n default
+  rmf /tmp/node-report.txt
+  echo "  broken-pod / fixed-pod / pull-fail / target-app / target-svc / netchk-q3 · /tmp/node-report.txt 삭제"
   # Q5 · Q6 에서 고장 낸 컨트롤플레인 매니페스트를 백업본으로 되돌린다
   cp_restore_all
 }
@@ -208,7 +210,7 @@ q3_grade() {
   check_output "Deployment 파드 레이블은 그대로" \
     "kubectl get deployment target-app -n default -o jsonpath='{.spec.template.metadata.labels.app}'" '^target-app$'
   check_output "임시 파드에서 target-svc 로 실제 응답" \
-    "kubectl run netchk-q3 -n default --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=5 http://target-svc 2>/dev/null" 'nginx'
+    "kubectl delete pod netchk-q3 -n default --ignore-not-found --timeout=20s &>/dev/null; kubectl run netchk-q3 -n default --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=5 http://target-svc 2>/dev/null" 'nginx'
 }
 q3_hint() { cat <<'EOF'
 kubectl get svc target-svc -o yaml | grep -A3 selector      # app: WRONG-LABEL
@@ -338,23 +340,33 @@ sched_manifest_cpu() {
 }
 
 # 백업본으로 되돌린다. 실제로 파일을 바꿨으면 0. 백업은 지운다 (오래된 백업이 나중에 덮어쓰지 않게)
+#   cp 가 실패하면 백업을 남긴다 (원본을 잃지 않게). 매니페스트가 이미 백업과 같으면 백업만 지운다.
 cp_restore_one() {   # cp_restore_one kube-apiserver|kube-scheduler
-  local bk="$CP_BK_DIR/$1.yaml" mf="$MF_DIR/$1.yaml" rc=1
+  local bk="$CP_BK_DIR/$1.yaml" mf="$MF_DIR/$1.yaml"
   _root test -f "$bk" 2>/dev/null || return 1
-  if ! _root cmp -s "$bk" "$mf" 2>/dev/null; then
-    _root cp "$bk" "$mf" && rc=0
+  if _root cmp -s "$bk" "$mf" 2>/dev/null; then
+    _root rm -f "$bk"; return 1
   fi
-  _root rm -f "$bk"
-  return $rc
+  if _root cp "$bk" "$mf"; then
+    _root rm -f "$bk"; return 0
+  fi
+  echo -e "  ${RED}$1.yaml 을 되돌리지 못했다${RESET} — 백업은 $bk 에 남겨 둔다"
+  return 1
 }
+CP_RESTORED=""   # cp_restore_all 이 실제로 되돌린 것 (exam_on_finish 가 알려 준다)
 cp_restore_all() {
-  cp_can_root || return 0
+  CP_RESTORED=""
+  if ! cp_can_root; then
+    # 암호 없는 sudo 가 안 되면 되돌릴 수 없다 — 백업이 남아 있으면 조용히 넘어가지 말고 알린다
+    [[ -d "$CP_BK_DIR" ]] && echo -e "  ${ORANGE}[주의] Q5/Q6 백업(${CP_BK_DIR})이 남아 있는데 sudo 권한이 없어 되돌리지 못했다${RESET} — ${CYAN}sudo -v${RESET} 후 다시 실행 ${DIM}(bash exam.sh clean)${RESET}"
+    return 0
+  fi
   _root test -d "$CP_BK_DIR" 2>/dev/null || return 0
   local api=1 sch=1 was_up=1
   cp_api_up && was_up=0
-  cp_restore_one kube-apiserver && api=0
-  cp_restore_one kube-scheduler && sch=0
-  _root rm -f "$CP_BK_DIR"/.*.broken 2>/dev/null
+  cp_restore_one kube-apiserver && { api=0; CP_RESTORED+=" kube-apiserver"; }
+  cp_restore_one kube-scheduler && { sch=0; CP_RESTORED+=" kube-scheduler"; }
+  _root sh -c 'rm -f "$1"/.*.broken' _ "$CP_BK_DIR" 2>/dev/null   # 글롭은 root 쉘 안에서 펼쳐야 한다 (700 디렉터리)
   _root rmdir "$CP_BK_DIR" 2>/dev/null
   (( api == 0 || sch == 0 )) || return 0
   echo "  Q5/Q6 컨트롤플레인 매니페스트를 원본으로 되돌렸다 — 다시 뜰 때까지 기다린다 (최대 3분)"
@@ -403,8 +415,32 @@ cp_break_scheduler() {
 cp_arm() {   # 문제에 들어갈 때 호출된다
   local n="$1"
   [[ "$n" == 5 || "$n" == 6 ]] || return 0
-  [[ -n "$(state_get "q${n}_armed")" && -z "$(state_get "q${n}_restored")" ]] && return 0
+  local armed=0
+  [[ -n "$(state_get "q${n}_armed")" && -z "$(state_get "q${n}_restored")" ]] && armed=1
   echo ""
+  # 두 곳을 동시에 고장 내지 않는다 — 이미 고장 낸 문제로 다시 들어갈 때도 상대 쪽 고장부터 되돌린다
+  # (예: 학생이 Q6 스케줄러를 직접 고친 뒤 Q5 → Q6 으로 돌아오면, API 서버가 죽은 채로 Q6 이 뜨던 문제)
+  if cp_can_root; then
+    if [[ "$n" == 5 ]]; then
+      # Q6 의 스케줄러가 아직 죽어 있으면 먼저 살린다
+      if ! cp_sched_up && cp_restore_one kube-scheduler; then
+        [[ -n "$(state_get q6_armed)" ]] && state_set q6_restored 1
+        echo "  (Q6 의 스케줄러 고장이 남아 있어 원본으로 되돌렸습니다)"
+        cp_wait sched up 120 || true
+      fi
+    else
+      # Q5 의 API 서버가 아직 죽어 있으면 먼저 살린다 (Q6 은 kubectl 이 돼야 풀 수 있다)
+      if ! cp_api_up && cp_restore_one kube-apiserver; then
+        [[ -n "$(state_get q5_armed)" ]] && state_set q5_restored 1
+        echo "  (Q5 의 API 서버 고장이 남아 있어 원본으로 되돌렸습니다 — 다시 뜰 때까지 기다립니다)"
+        if ! cp_wait api up 180; then
+          echo -e "  ${RED}API 서버가 3분 안에 돌아오지 않았습니다.${RESET} 잠시 뒤 ${CYAN}bash exam.sh go 6${RESET}"
+          return 0
+        fi
+      fi
+    fi
+  fi
+  (( armed )) && return 0
   if ! cp_can_root || ! _root test -f "$APISERVER_MF" 2>/dev/null; then
     echo -e "  ${RED}${BOLD}[Q${n}] 고장을 준비하지 못했습니다.${RESET}"
     echo -e "  ${DIM}이 문제는 컨트롤플레인 노드에서, root 또는 암호 없는 sudo 로 실행해야 합니다.${RESET}"
@@ -414,27 +450,12 @@ cp_arm() {   # 문제에 들어갈 때 호출된다
   echo -e "  ${ORANGE}${BOLD}[Q${n}] 컨트롤플레인을 일부러 고장 냅니다 — VM 스냅샷을 찍어 두었나요?${RESET}"
   echo -e "  ${DIM}원본은 ${CP_BK_DIR}/ 에 백업합니다. 꼬이면:${RESET} ${CYAN}bash exam.sh clean${RESET} ${DIM}(원본 복원 + 기록 삭제)${RESET}"
   if [[ "$n" == 5 ]]; then
-    # 두 곳을 동시에 고장 내지 않는다 — Q6 의 스케줄러가 아직 죽어 있으면 먼저 살린다
-    if ! cp_sched_up && cp_restore_one kube-scheduler; then
-      [[ -n "$(state_get q6_armed)" ]] && state_set q6_restored 1
-      echo "  (Q6 의 스케줄러 고장이 남아 있어 원본으로 되돌렸습니다)"
-      cp_wait sched up 120 || true
-    fi
     cp_break_apiserver || return 0
     state_set q5_armed 1; state_set q5_restored ""
     echo "  kube-apiserver 매니페스트를 바꿨습니다. kubelet 이 반영할 때까지 기다립니다 (최대 90초)..."
     if cp_wait api down 90; then echo "  API 서버가 내려갔습니다."
     else echo "  아직 응답합니다 — kubelet 이 곧 반영합니다. 잠시 뒤 kubectl get nodes 를 해 보세요."; fi
   else
-    # Q5 의 API 서버가 아직 죽어 있으면 먼저 살린다 (Q6 은 kubectl 이 돼야 풀 수 있다)
-    if ! cp_api_up && cp_restore_one kube-apiserver; then
-      [[ -n "$(state_get q5_armed)" ]] && state_set q5_restored 1
-      echo "  (Q5 의 API 서버 고장이 남아 있어 원본으로 되돌렸습니다 — 다시 뜰 때까지 기다립니다)"
-      if ! cp_wait api up 180; then
-        echo -e "  ${RED}API 서버가 3분 안에 돌아오지 않아 Q6 고장은 내지 않았습니다.${RESET} 잠시 뒤 ${CYAN}bash exam.sh go 6${RESET}"
-        return 0
-      fi
-    fi
     cp_break_scheduler || return 0
     state_set q6_armed 1; state_set q6_restored ""
     echo "  kube-scheduler 매니페스트를 바꿨습니다. kubelet 이 반영할 때까지 기다립니다 (최대 90초)..."
@@ -447,6 +468,22 @@ cp_arm() {   # 문제에 들어갈 때 호출된다
 # _lib 는 건드리지 않는다. 문제 화면이 뜨기 전에 고장을 내 둔다.
 eval "$(declare -f goto_q | sed '1s/^goto_q /_lib_goto_q /')"
 goto_q() { cp_arm "$1"; _lib_goto_q "$1"; }
+
+# 고장 낸 문제에 들어가지 않았으면(또는 고장을 준비하지 못했으면) 건강한 클러스터를 보고 통과시키면 안 된다
+cp_not_entered() {   # cp_not_entered <n> <배점> — 들어가지 않았으면 0점 항목 하나를 남기고 0
+  [[ -n "$(state_get "q${1}_armed")" ]] && return 1
+  check_result "Q${1} 고장 상태에서 복구" 1 "문제에 들어가지 않음 — 고장이 준비되지 않았다 (bash exam.sh go ${1})" "$2"
+  return 0
+}
+
+# 시험이 끝나거나(finish · 시간 마감) 기록을 지울 때 엔진이 부른다.
+# Q5/Q6 을 푸는 도중 끝내거나 skip 하면 API 서버·스케줄러가 고장 난 채로 남는다 — 원본으로 되돌린다.
+exam_on_finish() {
+  cp_restore_all
+  if [[ -n "$CP_RESTORED" ]]; then
+    echo -e "  ${CYAN}[Q5/Q6 원상복구]${RESET} 원본 매니페스트로 되돌렸다:${CP_RESTORED}"
+  fi
+}
 
 # ══════════════════════════════════════════════════════════════
 q5_title() { echo "Repair the API server (kubectl refused)"; }
@@ -506,6 +543,7 @@ q5_text_ko() { cat <<'EOF'
 EOF
 }
 q5_grade() {
+  cp_not_entered 5 5 && return 0
   check "매니페스트의 --etcd-servers 가 https://127.0.0.1:2379" \
     "_root grep -qE -- '--etcd-servers=https://127\.0\.0\.1:2379([[:space:]]|\$)' '$APISERVER_MF'"
   check "kube-apiserver 컨테이너가 실행 중 (crictl)" \
@@ -589,6 +627,7 @@ q6_sched_probe() {   # 임시 파드를 만들어 실제로 스케줄되는지 �
   return $rc
 }
 q6_grade() {
+  cp_not_entered 6 5 && return 0
   check "kube-scheduler 컨테이너가 실행 중 (crictl)" \
     "_root crictl ps --name kube-scheduler -q 2>/dev/null | grep -q ."
   check_output "kube-scheduler 스태틱 파드 Running" \

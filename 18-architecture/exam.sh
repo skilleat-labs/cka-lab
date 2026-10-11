@@ -8,7 +8,7 @@ EXAM_NQ=4
 
 exam_cleanup() {
   kdel deployment arch-demo -n default
-  rm -f /tmp/control-plane.txt /tmp/etcd-endpoint.txt /tmp/node-runtime.txt /tmp/selfheal.txt
+  rmf /tmp/control-plane.txt /tmp/etcd-endpoint.txt /tmp/node-runtime.txt /tmp/selfheal.txt
   echo "  arch-demo 및 /tmp 답안 파일 삭제"
 }
 exam_setup() { echo "  (미리 만들어둘 것 없음)"; }
@@ -94,7 +94,7 @@ q2_grade() {
   want=$(kubectl -n kube-system get pod -l component=kube-apiserver \
           -o jsonpath='{.items[0].spec.containers[0].command}' 2>/dev/null \
         | tr ',' '\n' | grep -o 'https://[^"]*:2379' | head -1)
-  actual=$(tr -d ' \n' < /tmp/etcd-endpoint.txt 2>/dev/null)
+  actual=$(tr -d ' \n' 2>/dev/null < /tmp/etcd-endpoint.txt)
   check_result "실제 kube-apiserver 의 값과 같다" \
     "$([[ -n "$want" && "$actual" == *"${want}"* ]] && echo 0 || echo 1)" \
     "실제 값: ${want:-찾지 못함} / 적어낸 값: ${actual:-비어 있음}"

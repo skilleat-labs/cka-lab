@@ -9,6 +9,27 @@ source "$(cd "$(dirname "$0")/.." && pwd)/_lib/exam-lib.sh"
 EXAM_TITLE="CKA 16강 실습 — Helm (install · upgrade · rollback · template) · Kustomize · CRD"
 EXAM_NQ=7
 
+# ── Q1~Q3: podinfo 차트 ─────────────────────────────────────────
+#   bitnami/nginx 는 2025년 Bitnami 이미지 정책 변경(docker.io/bitnami 의 버전 태그 이동)으로
+#   ImagePullBackOff 가 나기 쉬워서, 16강 교안·가이드와 같은 podinfo 로 바꿨다.
+REL=my-podinfo
+REL_NS=default
+# 이 세트가 추가하게 하는 저장소 (cleanup 은 이 주소의 저장소 중 시작 이후 생긴 것만 지운다)
+SET_REPO_URLS='stefanprodan\.github\.io/podinfo|argoproj\.github\.io/argo-helm'
+REPO_REC="$WORK_DIR/.helm-repos-before"
+
+# 릴리스의 최신 리비전 (숫자). history JSON 의 revision 은 숫자, list JSON 은 문자열이라 둘 다 받는다
+rel_rev() {
+  helm history "$REL" -n "$REL_NS" -o json 2>/dev/null \
+    | grep -oE '"revision":"?[0-9]+' | grep -oE '[0-9]+$' | sort -n | tail -1
+}
+# 릴리스가 만든 Deployment·Service 이름 — 차트의 이름 규칙에 기대지 않고 Helm 애너테이션으로 찾는다
+rel_obj() {   # rel_obj deployment|service
+  kubectl get "$1" -n "$REL_NS" \
+    -o jsonpath="{.items[?(@.metadata.annotations.meta\.helm\.sh/release-name==\"$REL\")].metadata.name}" 2>/dev/null \
+    | awk '{print $1}'
+}
+
 # ── Q5·Q6: Argo CD 차트 ─────────────────────────────────────────
 #   차트 7.7.0 = Argo CD v2.13.0. 이 버전은 CRD 를 crds/ 가 아니라 templates/ 에 두고
 #   crds.install 값으로 켜고 끈다 (--skip-crds 로는 안 빠진다).
@@ -31,10 +52,21 @@ Q7_EXPLAIN=/tmp/certificate-subject.txt
 
 exam_cleanup() {
   if command -v helm &>/dev/null; then
-    helm uninstall my-nginx &>/dev/null || true
+    helm uninstall "$REL" -n "$REL_NS" &>/dev/null || true
+    helm uninstall my-nginx &>/dev/null || true      # 예전 판(bitnami/nginx)의 잔여물
     helm uninstall "$Q6_REL" -n "$Q6_NS" &>/dev/null || true
+    # 이 세트가 추가하게 한 저장소 — 시작 때 없던 것만 지운다 (원래 있던 것은 남긴다)
+    if [[ -f "$REPO_REC" ]]; then
+      local name url
+      while read -r name url; do
+        [[ -z "$name" ]] && continue
+        echo "$url" | grep -qE "$SET_REPO_URLS" || continue
+        grep -qxF "$name $url" "$REPO_REC" && continue
+        helm repo remove "$name" &>/dev/null && echo "  helm repo $name 삭제"
+      done < <(helm repo list 2>/dev/null | awk 'NR>1{print $1" "$2}')
+      rm -f "$REPO_REC"
+    fi
   fi
-  kdel deployment,service -l app.kubernetes.io/instance=my-nginx -n default
   kdel deployment dev-web-app -n default
   kdel namespace "$Q6_NS"
   # CRD 는 setup 이 직접 만든 경우에만 지운다 (원래 있던 Argo CD · cert-manager 는 건드리지 않는다).
@@ -47,13 +79,16 @@ exam_cleanup() {
     kubectl delete crd "${CM_CRDS[@]}" --ignore-not-found --timeout=60s &>/dev/null &
     rm -f "$CM_MARK"
   fi
-  rm -rf /tmp/kustomize-lab "$Q5_OUT" "$Q7_LIST" "$Q7_EXPLAIN" 2>/dev/null || true
-  echo "  helm release my-nginx · $Q6_REL($Q6_NS), dev-web-app, /tmp/kustomize-lab 삭제"
+  rm -rf /tmp/kustomize-lab 2>/dev/null || true
+  rmf "$Q5_OUT" "$Q7_LIST" "$Q7_EXPLAIN"
+  echo "  helm release $REL · $Q6_REL($Q6_NS), dev-web-app, /tmp/kustomize-lab 삭제"
   echo "  $Q6_NS 네임스페이스, $Q5_OUT · $Q7_LIST · $Q7_EXPLAIN 삭제"
   echo "  (setup 이 만든 Argo CD · cert-manager CRD 만 삭제 — 원래 있던 CRD 는 남겨둠)"
 }
 exam_setup() {
   command -v helm &>/dev/null || echo "  [주의] helm 이 설치돼 있지 않습니다 — Q1~Q3 · Q5 · Q6 을 풀 수 없습니다"
+  # 지금 있는 저장소를 적어 둔다 → cleanup 이 이후에 추가된 것만 지운다
+  helm repo list 2>/dev/null | awk 'NR>1{print $1" "$2}' > "$REPO_REC" 2>/dev/null || : > "$REPO_REC"
   echo "  (인터넷이 필요합니다 — 차트와 CRD 를 내려받습니다)"
 
   # Q6 — Argo CD CRD 를 미리 설치해 둔다 (차트는 CRD 없이 설치하라는 문제)
@@ -89,51 +124,53 @@ exam_setup() {
 q1_title() { echo "Add a repo and install a chart"; }
 q1_text() { cat <<'EOF'
   1) add the chart repository
-     name bitnami / url https://charts.bitnami.com/bitnami
-  2) install the nginx chart as a release named my-nginx
+     name podinfo / url https://stefanprodan.github.io/podinfo
+  2) install the chart podinfo/podinfo as a release named my-podinfo
+     in namespace default
      set service.type=NodePort
 
 The release must show status "deployed".
 
 Verify:
-  helm list
-  kubectl get svc -l app.kubernetes.io/instance=my-nginx
+  helm list -n default
+  kubectl get deploy,svc my-podinfo
 EOF
 }
 q1_title_ko() { echo "repo 추가 후 차트 설치"; }
 q1_text_ko() { cat <<'EOF'
   1) 차트 저장소를 추가한다
-     이름 bitnami / 주소 https://charts.bitnami.com/bitnami
-  2) nginx 차트를 my-nginx 릴리스로 설치한다
+     이름 podinfo / 주소 https://stefanprodan.github.io/podinfo
+  2) podinfo/podinfo 차트를 default 네임스페이스에 my-podinfo 릴리스로 설치한다
      service.type=NodePort 로 설정
 
 릴리스 상태가 deployed 여야 한다.
 
 [확인]
-  helm list
-  kubectl get svc -l app.kubernetes.io/instance=my-nginx
+  helm list -n default
+  kubectl get deploy,svc my-podinfo
 EOF
 }
 q1_grade() {
   check "helm 이 설치돼 있다" "command -v helm"
-  check_output "bitnami repo 가 등록됨" "helm repo list 2>/dev/null" 'bitnami'
-  check_output "릴리스 my-nginx 가 있다" "helm list -A 2>/dev/null" 'my-nginx'
-  check_output "상태가 deployed" "helm list -A 2>/dev/null | grep my-nginx" 'deployed'
+  check_output "podinfo repo 가 등록됨" "helm repo list 2>/dev/null" 'stefanprodan\.github\.io/podinfo'
+  check_output "default 에 릴리스 my-podinfo 가 있다" "helm list -n $REL_NS -q 2>/dev/null" "^${REL}\$"
+  check_output "상태가 deployed" "helm status $REL -n $REL_NS 2>/dev/null" 'STATUS: deployed'
+  check_output "차트가 podinfo" "helm list -n $REL_NS 2>/dev/null | grep -E '^${REL}[[:space:]]'" 'podinfo-[0-9]'
   check_output "차트가 만든 Service 가 NodePort" \
-    "kubectl get svc -l app.kubernetes.io/instance=my-nginx -n default -o jsonpath='{.items[0].spec.type}'" '^NodePort$'
+    "kubectl get svc \"\$(rel_obj service)\" -n $REL_NS -o jsonpath='{.spec.type}'" '^NodePort$'
 }
 q1_hint() { cat <<'EOF'
-helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo add podinfo https://stefanprodan.github.io/podinfo
 helm repo update
-helm install my-nginx bitnami/nginx --set service.type=NodePort
-helm list
+helm install my-podinfo podinfo/podinfo -n default --set service.type=NodePort
+helm list -n default
 EOF
 }
 
 # ══════════════════════════════════════════════════════════════
 q2_title() { echo "Upgrade the release"; }
 q2_text() { cat <<'EOF'
-Upgrade the my-nginx release so that it runs 3 replicas.
+Upgrade the my-podinfo release so that it runs 3 replicas.
 
   helm upgrade with replicaCount=3
 
@@ -141,43 +178,46 @@ After the upgrade the release revision must be 2 or higher and three Pods
 must be running.
 
 Verify:
-  helm history my-nginx
-  kubectl get pods -l app.kubernetes.io/instance=my-nginx
+  helm history my-podinfo
+  kubectl get deploy my-podinfo
 EOF
 }
 q2_title_ko() { echo "릴리스 업그레이드"; }
 q2_text_ko() { cat <<'EOF'
-my-nginx 릴리스를 레플리카 3개로 업그레이드하시오.
+my-podinfo 릴리스를 레플리카 3개로 업그레이드하시오.
 
   helm upgrade 로 replicaCount=3
 
 업그레이드 후 릴리스 리비전이 2 이상이고 파드 3개가 떠야 한다.
 
 [확인]
-  helm history my-nginx
-  kubectl get pods -l app.kubernetes.io/instance=my-nginx
+  helm history my-podinfo
+  kubectl get deploy my-podinfo
 EOF
 }
 q2_grade() {
-  check_output "릴리스 리비전이 2 이상" \
-    "helm list -A -o json 2>/dev/null | grep -o '\"revision\":\"[0-9]*\"' | head -1" '"[2-9]"'
+  local rev dep
+  rev=$(rel_rev); dep=$(rel_obj deployment)
+  check_result "릴리스 리비전이 2 이상 (현재: ${rev:-없음})" \
+    "$([[ -n "$rev" ]] && (( rev >= 2 )) && echo 0 || echo 1)" "helm history $REL -n $REL_NS"
   check_output "Deployment 의 replicas 가 3" \
-    "kubectl get deployment -l app.kubernetes.io/instance=my-nginx -n default -o jsonpath='{.items[0].spec.replicas}'" '^3$'
-  wait_ready "-l app.kubernetes.io/instance=my-nginx" default
+    "kubectl get deployment '${dep:-none}' -n $REL_NS -o jsonpath='{.spec.replicas}'" '^3$'
+  [[ -n "$dep" ]] && kubectl rollout status deployment "$dep" -n "$REL_NS" --timeout="${EXAM_WAIT}s" &>/dev/null
   check_output "파드 3개가 Ready" \
-    "kubectl get deployment -l app.kubernetes.io/instance=my-nginx -n default -o jsonpath='{.items[0].status.readyReplicas}'" '^3$'
+    "kubectl get deployment '${dep:-none}' -n $REL_NS -o jsonpath='{.status.readyReplicas}'" '^3$'
 }
 q2_hint() { cat <<'EOF'
-helm upgrade my-nginx bitnami/nginx --set replicaCount=3 --set service.type=NodePort
-helm history my-nginx
-kubectl get pods -l app.kubernetes.io/instance=my-nginx
+helm upgrade my-podinfo podinfo/podinfo -n default --set replicaCount=3 --set service.type=NodePort
+#   (또는 --reuse-values --set replicaCount=3 — 값을 다시 안 주면 service.type 이 기본값으로 돌아간다)
+helm history my-podinfo -n default
+kubectl get deploy my-podinfo
 EOF
 }
 
 # ══════════════════════════════════════════════════════════════
 q3_title() { echo "Roll back the release"; }
 q3_text() { cat <<'EOF'
-Roll the my-nginx release back to revision 1.
+Roll the my-podinfo release back to revision 1.
 
   - check the revisions with helm history
   - roll back to revision 1
@@ -186,13 +226,13 @@ After the rollback there must be a new revision (3 or higher) and the
 Deployment must be back to 1 replica.
 
 Verify:
-  helm history my-nginx
-  kubectl get deployment -l app.kubernetes.io/instance=my-nginx
+  helm history my-podinfo
+  kubectl get deploy my-podinfo
 EOF
 }
 q3_title_ko() { echo "릴리스 롤백"; }
 q3_text_ko() { cat <<'EOF'
-my-nginx 릴리스를 리비전 1 로 롤백하시오.
+my-podinfo 릴리스를 리비전 1 로 롤백하시오.
 
   - helm history 로 리비전을 확인한다
   - 리비전 1 로 롤백한다
@@ -201,21 +241,23 @@ my-nginx 릴리스를 리비전 1 로 롤백하시오.
 돌아와야 한다.
 
 [확인]
-  helm history my-nginx
-  kubectl get deployment -l app.kubernetes.io/instance=my-nginx
+  helm history my-podinfo
+  kubectl get deploy my-podinfo
 EOF
 }
 q3_grade() {
-  check_output "리비전이 3 이상 (롤백도 새 리비전이다)" \
-    "helm list -A -o json 2>/dev/null | grep -o '\"revision\":\"[0-9]*\"' | head -1" '"[3-9]"'
-  check_output "history 에 rollback 기록" "helm history my-nginx 2>/dev/null" 'Rollback|rollback'
+  local rev dep
+  rev=$(rel_rev); dep=$(rel_obj deployment)
+  check_result "리비전이 3 이상 (롤백도 새 리비전이다 · 현재: ${rev:-없음})" \
+    "$([[ -n "$rev" ]] && (( rev >= 3 )) && echo 0 || echo 1)" "helm history $REL -n $REL_NS"
+  check_output "history 에 rollback 기록" "helm history $REL -n $REL_NS 2>/dev/null" 'Rollback|rollback'
   check_output "replicas 가 1 로 돌아왔다" \
-    "kubectl get deployment -l app.kubernetes.io/instance=my-nginx -n default -o jsonpath='{.items[0].spec.replicas}'" '^1$'
+    "kubectl get deployment '${dep:-none}' -n $REL_NS -o jsonpath='{.spec.replicas}'" '^1$'
 }
 q3_hint() { cat <<'EOF'
-helm history my-nginx
-helm rollback my-nginx 1
-helm history my-nginx      # Rollback to 1 이라는 줄이 추가된다
+helm history my-podinfo -n default
+helm rollback my-podinfo 1 -n default
+helm history my-podinfo -n default      # Rollback to 1 이라는 줄이 추가된다
 EOF
 }
 
@@ -263,7 +305,7 @@ q4_grade() {
   check_output "overlay 에 namePrefix: dev-" \
     "cat /tmp/kustomize-lab/overlays/dev/kustomization.yaml 2>/dev/null" 'namePrefix:\s*dev-'
   check_output "overlay 가 base 를 참조" \
-    "cat /tmp/kustomize-lab/overlays/dev/kustomization.yaml 2>/dev/null" '\.\./\.\./base|resources'
+    "cat /tmp/kustomize-lab/overlays/dev/kustomization.yaml 2>/dev/null" '\.\./\.\./base'
   check "Deployment dev-web-app 이 생성됨" "kubectl get deployment dev-web-app -n default"
   check_output "이미지 nginx:1.24" \
     "kubectl get deployment dev-web-app -n default -o jsonpath='{.spec.template.spec.containers[0].image}'" 'nginx:1\.24'

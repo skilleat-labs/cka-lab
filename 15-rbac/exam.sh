@@ -169,8 +169,11 @@ EOF
 q3_grade() {
   check "ClusterRole node-reader 존재" "kubectl get clusterrole node-reader"
   check_output "리소스 nodes" "kubectl get clusterrole node-reader -o jsonpath='{.rules[0].resources}'" 'nodes'
-  check_output "verb get/list/watch" \
-    "kubectl get clusterrole node-reader -o jsonpath='{.rules[0].verbs}'" 'get.*list.*watch'
+  # 순서와 상관없이 하나씩 본다 (--verb=list,get,watch 로 만들어도 맞다)
+  local v
+  for v in get list watch; do
+    check_output "verb $v" "kubectl get clusterrole node-reader -o jsonpath='{.rules[0].verbs}'" "\"$v\""
+  done
   check "ClusterRoleBinding node-reader-binding 존재" "kubectl get clusterrolebinding node-reader-binding"
   check_output "roleRef 가 node-reader" \
     "kubectl get clusterrolebinding node-reader-binding -o jsonpath='{.roleRef.name}'" '^node-reader$'
@@ -198,8 +201,9 @@ the permissions granted so far, and nothing more:
   list nodes (cluster wide)      -> yes
   delete pods in default         -> no
   list secrets in default        -> no
+  list pods in kube-system       -> no
 
-If any of the four does not match, fix the Role / ClusterRole so that it
+If any of the five does not match, fix the Role / ClusterRole so that it
 does. Do not add extra permissions.
 
 Verify:
@@ -216,8 +220,9 @@ kubectl auth can-i 로 my-sa ServiceAccount 가 지금까지 준 권한만
   클러스터 전체 nodes list      → yes
   default 에서 pods delete      → no
   default 에서 secrets list     → no
+  kube-system 에서 pods list    → no
 
-네 가지 중 맞지 않는 게 있으면 Role / ClusterRole 을 고쳐서 맞춘다.
+다섯 가지 중 맞지 않는 게 있으면 Role / ClusterRole 을 고쳐서 맞춘다.
 필요 없는 권한을 더 주면 안 된다.
 
 [확인]

@@ -19,13 +19,28 @@ exam_cleanup() {
   kdel rolebinding app-rb
   kdel role app-role
   kdel serviceaccount app-sa
+  kdel deployment drain-demo
   kubectl uncordon worker-1 &>/dev/null || true
-  echo "  nginx-deploy · nginx-svc · app-config · config-pod · task-pv/pvc · RBAC · broken-app 삭제, worker-1 uncordon"
+  echo "  nginx-deploy · nginx-svc · app-config · config-pod · task-pv/pvc · RBAC · broken-app · drain-demo 삭제, worker-1 uncordon"
 }
 
 exam_setup() {
-  kubectl run broken-app --image=nginx:broken --restart=Never &>/dev/null || true
+  # Q7 의 broken-app 은 컨트롤러 없는 맨 파드다. worker-1 에 뜨면 Q6 drain 이 --force 없이는 멈춘다 —
+  # 힌트대로 풀 수 있게 worker-2 에 고정한다 (worker-2 가 없는 클러스터면 스케줄러에 맡긴다)
+  local ov=()
+  kubectl get node worker-2 &>/dev/null && ov=(--overrides='{"apiVersion":"v1","spec":{"nodeName":"worker-2"}}')
+  kubectl run broken-app --image=nginx:broken --restart=Never ${ov[@]+"${ov[@]}"} &>/dev/null || true
   echo "  Q7 용 broken-app 파드 생성 (ImagePullBackOff)"
+  # Q6 — drain 했는지는 "worker-1 의 파드가 비워졌는가" 로 본다. 옮겨질 파드를 미리 깔아 둔다
+  kubectl create deployment drain-demo --image=nginx:1.24 --replicas=4 &>/dev/null || true
+  local i
+  for i in $(seq 1 20); do
+    [[ -z "$(kubectl get pods -l app=drain-demo --field-selector spec.nodeName= -o name 2>/dev/null)" \
+       && -n "$(kubectl get pods -l app=drain-demo -o name 2>/dev/null)" ]] && break
+    sleep 1
+  done
+  drain_mark "app=drain-demo" worker-1
+  echo "  Q6 용 drain-demo Deployment 생성 (nginx · 4개, worker-1 에 $(cat "$WORK_DIR/.drain-before" 2>/dev/null || echo 0)개)"
 }
 
 q1_title() { echo "Create a Deployment [15 pts]"; }
@@ -174,7 +189,7 @@ PersistentVolumeClaim
 
 Verify:
   kubectl get pv task-pv       -> Bound
-  kubectl get pvc task-pvc     -> Bound
+  kubectl get pvc task-pvc     -> Bound, VOLUME task-pv
 EOF
 }
 q4_title_ko() { echo "PersistentVolume + PVC [15점]"; }
@@ -196,7 +211,7 @@ PersistentVolumeClaim
 
 [확인]
   kubectl get pv task-pv       → Bound
-  kubectl get pvc task-pvc     → Bound
+  kubectl get pvc task-pvc     → Bound, VOLUME task-pv
 EOF
 }
 q4_hint() { echo "PV 와 PVC 의 storageClassName·accessModes·용량이 맞아야 Bound 된다"; }
@@ -204,7 +219,8 @@ q4_grade() {
   check_output "PV task-pv 용량 500Mi" "kubectl get pv task-pv -o jsonpath='{.spec.capacity.storage}'" "^500Mi$" 4
   check_output "PV accessMode ReadWriteOnce" "kubectl get pv task-pv -o jsonpath='{.spec.accessModes[0]}'" "^ReadWriteOnce$" 3
   check_output "PV hostPath /tmp/task-data" "kubectl get pv task-pv -o jsonpath='{.spec.hostPath.path}'" "^/tmp/task-data$" 2
-  check_output "PVC task-pvc STATUS=Bound" "kubectl get pvc task-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 6
+  check_output "PVC task-pvc STATUS=Bound" "kubectl get pvc task-pvc -n default -o jsonpath='{.status.phase}'" "^Bound$" 4
+  check_output "PVC task-pvc 가 task-pv 에 바인딩 (volumeName)" "kubectl get pvc task-pvc -n default -o jsonpath='{.spec.volumeName}'" "^task-pv$" 2
 }
 
 q5_title() { echo "RBAC [15 pts]"; }
@@ -259,6 +275,9 @@ q6_text() { cat <<'EOF'
     - allow deletion of emptyDir data
 (2) When the maintenance is done, make worker-1 schedulable again.
 
+Note: a bare Pod that has no controller (Deployment, ReplicaSet, ...) blocks
+the drain — it needs --force (the Pod is deleted and not recreated).
+
 Verify:
   kubectl get nodes   -> worker-1 is Ready and not SchedulingDisabled
 EOF
@@ -270,12 +289,17 @@ q6_text_ko() { cat <<'EOF'
     - emptyDir 데이터는 삭제 허용
 (2) 유지보수 완료 후 worker-1 을 다시 스케줄 가능 상태로 전환한다.
 
+참고: 컨트롤러(Deployment·ReplicaSet 등) 없는 맨 파드가 있으면 drain 이
+멈춘다 — --force 가 필요하다 (그 파드는 지워지고 다시 만들어지지 않는다).
+
 [확인]
   kubectl get nodes   → worker-1 이 Ready, SchedulingDisabled 아님
 EOF
 }
 q6_hint() { cat <<'EOF'
 kubectl drain worker-1 --ignore-daemonsets --delete-emptydir-data
+#   "cannot delete Pods that declare no controller" 가 나오면 → --force 를 붙인다
+kubectl get pods -o wide -l app=drain-demo     # worker-1 에 남은 파드가 없어야 한다
 kubectl uncordon worker-1
 EOF
 }
@@ -283,10 +307,11 @@ q6_grade() {
   if ! kubectl get node worker-1 &>/dev/null; then
     check_result "worker-1 노드 (이 클러스터에 없음 — 통과 처리)" 0 "" 10; return
   fi
+  check "drain 으로 worker-1 의 drain-demo 파드가 다른 노드로 옮겨졌다" "drain_moved 'app=drain-demo' worker-1" 4
   check_output "worker-1 스케줄 가능 (uncordon 완료)" \
-    "kubectl get node worker-1 -o jsonpath='{.spec.unschedulable}'" "^$|^false$" 5
+    "kubectl get node worker-1 -o jsonpath='{.spec.unschedulable}'" "^$|^false$" 3
   check_output "worker-1 Ready 상태" \
-    "kubectl get node worker-1 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 5
+    "kubectl get node worker-1 -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" "^True$" 3
 }
 
 q7_title() { echo "Troubleshoot a Pod [25 pts]"; }

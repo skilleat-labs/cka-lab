@@ -16,7 +16,13 @@
 #   qN_hint()                 (선택) 힌트
 #   qN_enter()                (선택) 그 문제에 처음 들어갈 때 한 번 — 다른 문제를 방해하는 환경
 #                             (예: 노드 자원을 미리 잡아 두기)을 시작부터 깔지 않으려고 쓴다
+#                             apply/create 가 실패하면 들어간 것으로 치지 않고 다음 show 때 다시 부른다
+#   exam_on_finish()          (선택) 시험이 끝나거나 버려질 때 — 진짜 마감 · start · clean · reset.
+#                             망가뜨린 컨트롤플레인 되돌리기 등. 여러 번 불려도 되게(멱등) 짠다
 #
+# 세트에서 쓰는 도우미:  kdel <kubectl delete 인자>   (백그라운드 삭제, 기다림 상한 있음)
+#                       rmf <경로...>                 (root 소유 파일까지 지우기 · sudo -n)
+#                       wait_ready <파드|-l 셀렉터> [ns]
 # 학생이 쓰는 명령:
 #   bash exam.sh start    환경 준비 + Q1 출제
 #   bash exam.sh show     현재 문제 다시 보기
@@ -24,7 +30,7 @@
 #   bash exam.sh skip     현재 점수로 확정하고 다음으로
 #   bash exam.sh hint     힌트 보기 (기록에 남음)
 #   bash exam.sh status   진행 현황
-#   bash exam.sh finish   최종 리포트
+#   bash exam.sh finish   리포트 (진행 중이면 중간 리포트만 — 기록·마감하지 않는다)
 #   bash exam.sh clean    클러스터의 시험 리소스 삭제 + 진행 기록 삭제 (원상복구)
 #   bash exam.sh reset    진행 기록만 삭제
 # ============================================================
@@ -45,22 +51,27 @@ mkdir -p "$WORK_DIR"
 #   kubeconfig 파일은 건드리지 않는다 — 이 스크립트 안에서만 KUBECONFIG 앞에 덮어쓰기 파일을 붙인다.
 #   (kubectl 에 -n default 를 붙이는 방식은 YAML 의 metadata.namespace 와 부딪혀서 쓰지 않는다)
 USER_NS=""
+_yq() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; printf '"%s"' "$s"; }   # YAML 큰따옴표 문자열
 _pin_default_ns() {
   [[ -n "${EXAM_KEEP_NS:-}" ]] && return 0
-  local cl us ov="$WORK_DIR/.kubeconfig-default-ns"
-  USER_NS=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}' 2>/dev/null)
+  local cl="" us="" out t ov="$WORK_DIR/.kubeconfig-default-ns"
+  # kubectl 한 번으로 세 값을 읽는다 (명령마다 도는 코드라 호출 수가 곧 지연이다)
+  out=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}{"\n"}{.contexts[0].context.cluster}{"\n"}{.contexts[0].context.user}{"\n"}' 2>/dev/null)
+  { IFS= read -r USER_NS; IFS= read -r cl; IFS= read -r us; } <<< "$out"
   [[ -z "$USER_NS" || "$USER_NS" == "default" ]] && return 0
-  cl=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.cluster}' 2>/dev/null)
-  us=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.user}' 2>/dev/null)
   [[ -z "$cl" || -z "$us" ]] && return 0
-  cat > "$ov" <<KCFG
+  # 임시 파일에 다 쓴 뒤 옮긴다 — 반쯤 쓰인 파일을 kubectl 이 읽지 않게. 못 쓰면 덮어쓰기 없이 간다
+  t=$(mktemp "$ov.XXXXXX" 2>/dev/null) || return 0
+  if ! cat > "$t" 2>/dev/null <<KCFG
 apiVersion: v1
 kind: Config
 current-context: cka-lab-default-ns
 contexts:
 - name: cka-lab-default-ns
-  context: { cluster: "$cl", user: "$us", namespace: default }
+  context: { cluster: $(_yq "$cl"), user: $(_yq "$us"), namespace: default }
 KCFG
+  then rm -f "$t"; return 0; fi
+  mv -f "$t" "$ov" 2>/dev/null || { rm -f "$t"; return 0; }
   export KUBECONFIG="$ov:${KUBECONFIG:-$HOME/.kube/config}"
 }
 ns_notice() {   # 학생 터미널의 기본 칸이 default 가 아니면 알려 준다 — 답을 엉뚱한 칸에 만들기 쉽다
@@ -74,11 +85,35 @@ sep() { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━�
 thin() { echo -e "${DIM}──────────────────────────────────────────────────────────────${RESET}"; }
 
 # ── 상태 파일 (key=value 한 줄씩) ────────────────────────────────
+#   웹 패널과 터미널이 동시에 쓸 수 있다 — 임시 파일(mktemp)에 다 쓴 뒤 mv 로 바꿔치고,
+#   flock 이 있으면(우분투) 읽고-고치고-쓰는 동안 잠근다. 없으면(맥) 잠금 없이 원자적 교체만.
 state_get() { [[ -f "$STATE" ]] && grep -E "^$1=" "$STATE" | tail -1 | cut -d= -f2- || true; }
+_state_write() {
+  local t; t=$(mktemp "$STATE.XXXXXX") || return 1
+  { [[ -f "$STATE" ]] && grep -vE "^$1=" "$STATE"; echo "$1=$2"; } > "$t"
+  mv -f "$t" "$STATE"
+}
 state_set() {
-  local k="$1" v="$2"
-  [[ -f "$STATE" ]] && grep -vE "^$k=" "$STATE" > "$STATE.tmp" || true
-  echo "$k=$v" >> "$STATE.tmp"; mv "$STATE.tmp" "$STATE"
+  if command -v flock &>/dev/null; then
+    ( flock -w 10 9 || true; _state_write "$1" "$2" ) 9>"$STATE.lock"
+  else
+    # flock 이 없으면 mkdir 잠금 (원자적). 5초 넘게 못 잡으면 남은 잠금으로 보고 그냥 쓴다
+    local i=0
+    until mkdir "$STATE.lockd" 2>/dev/null; do
+      (( ++i > 100 )) && { rm -rf "$STATE.lockd"; mkdir "$STATE.lockd" 2>/dev/null; break; }
+      sleep 0.05
+    done
+    _state_write "$1" "$2"
+    rmdir "$STATE.lockd" 2>/dev/null
+  fi
+  return 0
+}
+# 진행 기록을 지운다 — 지문 언어(lang)는 학생이 고른 것이라 남긴다
+state_reset() {
+  local l; l=$(state_get lang)
+  rm -f "$STATE" "$STATE.tmp"      # .tmp: 예전 엔진이 남긴 찌꺼기 — 남아 있으면 지운 기록이 되살아났다
+  [[ -n "$l" ]] && state_set lang "$l"
+  return 0
 }
 now() { date +%s; }
 
@@ -147,6 +182,8 @@ time_banner() {  # 문제 화면·채점 화면 위에 남은 시간을 한 줄�
 # 시간이 지났으면 남은 문제를 0점으로 확정하고 리포트를 띄운다.
 #   어느 명령에서든 먼저 불러서, 시간 뒤에는 더 풀 수 없게 한다.
 enforce_limit() {
+  # 제한시간 안에 정상으로 마친 시험은 나중에 show/go 를 해도 시간 초과로 바꾸지 않는다
+  [[ -n "$(state_get finished)" && -z "$(state_get timeup)" ]] && return 0
   time_expired || return 0
   if [[ -n "$(state_get timeup)" ]]; then
     # 이미 마감된 시험 — 시간이 지난 뒤에는 더 풀 수 없다
@@ -167,7 +204,7 @@ enforce_limit() {
   echo -e "  ${RED}${BOLD}⏰ 제한시간 ${EXAM_LIMIT_MIN}분이 지났습니다 — 시험을 마감합니다${RESET}"
   sep
   echo -e "  ${DIM}풀지 못한 문제는 0점으로 확정됩니다. 아래 리포트를 확인하세요.${RESET}"
-  cmd_finish
+  cmd_finish          # current > NQ 이므로 진짜 마감 — exam_on_finish 도 여기서 불린다
   echo ""
   echo -e "  ${CYAN}다시 풀려면  bash exam.sh start${RESET}  ${DIM}(진행 기록이 초기화됩니다)${RESET}"
   exit 0
@@ -306,7 +343,47 @@ _ck_report() {
 
 # 리소스 삭제를 백그라운드로 — cleanup 의 delete 들은 서로 독립적이라 동시에 돌려도 된다.
 #   exam_cleanup 안에서 kdel 을 쓰면 엔진이 cleanup 직후 wait 로 모두 끝날 때까지 기다린다.
-kdel() { kubectl delete "$@" --ignore-not-found &>/dev/null & }
+#   기다림에는 끝을 둔다 — finalizer 에 걸린 PVC, 죽은 노드 위의 파드 같은 것은 영영 안 지워져서
+#   엔진의 wait 가 끝나지 않았다. 기본은 "지워질 때까지 기다리되 EXAM_DEL_TIMEOUT 초(60)까지".
+#   --wait=false 로 바로 돌려주면 setup 이 같은 이름을 다시 만들 때 "being deleted" 로 막히고
+#   (setup_guarded 는 AlreadyExists 를 실패로 안 본다) 그 리소스 없이 시험이 시작된다 — 그래서 기다린다.
+#   네임스페이스처럼 오래 걸리는 것은 호출부가 --wait=false 를 주고, wait_ns_terminated 가 마저 기다린다.
+EXAM_DEL_TIMEOUT="${EXAM_DEL_TIMEOUT:-60}"
+kdel() {
+  local a
+  for a in "$@"; do
+    [[ "$a" == --wait* || "$a" == --timeout* ]] && { kubectl delete "$@" --ignore-not-found &>/dev/null & return 0; }
+  done
+  kubectl delete "$@" --ignore-not-found --timeout="${EXAM_DEL_TIMEOUT}s" &>/dev/null &
+}
+
+# root 소유 파일도 지운다 — /tmp 는 sticky 라 학생이 sudo 로 만든 파일을 rm 으로 못 지운다.
+#   sudo -n: 비밀번호를 묻지 않는다 (물을 상황이면 조용히 건너뛴다)
+rmf() { rm -rf -- "$@" 2>/dev/null; sudo -n rm -rf -- "$@" 2>/dev/null; true; }
+
+# ── 시험이 끝나거나 버려질 때 부르는 세트 훅 (선택) ──────────────
+#   세트가 exam_on_finish() 를 정의하면 진짜 마감(마지막 문제 뒤 · 시간 초과)과
+#   start · clean · reset 때 부른다. 망가뜨려 둔 컨트롤플레인 매니페스트를 되돌리는 용도
+#   (22-troubleshooting). 여러 번 불릴 수 있으므로 멱등으로 짠다.
+run_on_finish() {
+  [[ "$(type -t exam_on_finish)" == "function" ]] || return 0
+  exam_on_finish || true
+  return 0
+}
+
+# API 서버 응답 확인. 훅이 있는 세트는 훅이 API 서버를 되살리는 중일 수 있어 EXAM_API_WAIT 초까지 기다린다
+EXAM_API_WAIT="${EXAM_API_WAIT:-90}"
+api_ready() {
+  kubectl get nodes &>/dev/null && return 0
+  [[ "$(type -t exam_on_finish)" == "function" ]] || return 1
+  local waited=0
+  echo -e "  ${DIM}API 서버 응답을 기다립니다 (최대 ${EXAM_API_WAIT}초)...${RESET}"
+  while (( waited < EXAM_API_WAIT )); do
+    sleep 3; waited=$((waited + 3))
+    kubectl get nodes &>/dev/null && return 0
+  done
+  return 1
+}
 
 # 파드 Ready 대기 — 채점 전 안정화용.
 #   kubectl wait 는 watch 라서 Ready 가 되는 순간 바로 돌아온다 (1초 폴링보다 훨씬 빠르다).
@@ -315,19 +392,32 @@ kdel() { kubectl delete "$@" --ignore-not-found &>/dev/null & }
 EXAM_WAIT="${EXAM_WAIT:-15}"
 wait_ready() {
   local sel="$1" ns="${2:-default}" t0; t0=$(_ms)
-  [[ -z "$(kubectl get pods -n "$ns" $sel -o name 2>/dev/null)" ]] && return 1
+  # 지우는 중(deletionTimestamp)인 파드는 빼고 본다 — 고친 직후엔 옛 파드가 Terminating 으로 남아 있다.
+  #   한 줄에 "이름|지우는중|대기사유" — 지우는 중이 아닌 줄만 남긴다
+  #   이름 하나를 주면 단일 객체라 .items 가 없다 → field-selector 로 목록 형태로 받는다
+  local q=($sel); [[ "$sel" == -l* ]] || q=(--field-selector "metadata.name=$sel")
+  _wr_list() {
+    kubectl get pods -n "$ns" "${q[@]}" -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.deletionTimestamp}{"|"}{.status.containerStatuses[*].state.waiting.reason}{"\n"}{end}' 2>/dev/null \
+      | awk -F'|' '$1!="" && $2==""'
+  }
+  local live; live=$(_wr_list)
+  [[ -z "$live" ]] && return 1
 
-  # 가망 없는 상태면 즉시 포기 — 여기서 기다리는 시간이 채점 지연의 대부분이었다
-  local bad
-  bad=$(kubectl get pods -n "$ns" $sel -o jsonpath='{range .items[*]}{.status.containerStatuses[*].state.waiting.reason} {end}' 2>/dev/null)
-  case "$bad" in
-    *ImagePullBackOff*|*ErrImagePull*|*InvalidImageName*|*CrashLoopBackOff*|*CreateContainerConfigError*)
-      [[ "$EXAM_TIMING" == "1" ]] && echo -e "  ${DIM}(wait_ready: $bad — 기다리지 않음)${RESET}" >&2
-      return 1 ;;
-  esac
+  # 가망 없는 상태면 포기 — 여기서 기다리는 시간이 채점 지연의 대부분이었다.
+  #   다만 방금 고친 경우 새 파드가 아직 옛 상태를 들고 있을 수 있어 3초 뒤 한 번만 다시 본다
+  local bad_re='ImagePullBackOff|ErrImagePull|InvalidImageName|CrashLoopBackOff|CreateContainerConfigError'
+  if cut -d'|' -f3 <<< "$live" | grep -qE "$bad_re"; then
+    sleep 3; live=$(_wr_list)
+    [[ -z "$live" ]] && return 1
+    if cut -d'|' -f3 <<< "$live" | grep -qE "$bad_re"; then
+      [[ "$EXAM_TIMING" == "1" ]] && echo -e "  ${DIM}(wait_ready: $(cut -d'|' -f3 <<< "$live" | tr '\n' ' ')— 기다리지 않음)${RESET}" >&2
+      return 1
+    fi
+  fi
 
-  local target
-  if [[ "$sel" == -l* ]]; then target=(pod $sel); else target=("pod/$sel"); fi
+  # 지우는 중인 파드는 Ready 가 될 리 없으므로, 살아 있는 파드 이름만 콕 집어 기다린다
+  local target=() n
+  while IFS= read -r n; do [[ -n "$n" ]] && target+=("pod/$n"); done < <(cut -d'|' -f1 <<< "$live")
   kubectl wait --for=condition=Ready -n "$ns" "${target[@]}" --timeout="${EXAM_WAIT}s" &>/dev/null
   local rc=$?
   [[ "$EXAM_TIMING" == "1" ]] && echo -e "  ${DIM}(wait_ready $sel: $(( $(_ms) - t0 ))ms, rc=$rc)${RESET}" >&2
@@ -364,24 +454,27 @@ wait_ns_terminated() {
 #   리소스가 빠진 채 시험이 시작됐다. setup 동안만 kubectl 을 감싸 apply/create 의 실패를 모은다.
 #   AlreadyExists 는 실패로 보지 않는다 (남겨 두는 공용 리소스가 있다).
 SETUP_ERR="$WORK_DIR/.setup-errors"
-setup_guarded() {
-  : > "$SETUP_ERR"
+ENTER_ERR="$WORK_DIR/.enter-errors"
+_GUARD_ERR=""
+_guarded() {   # _guarded <오류파일> <함수>  — 함수 안의 kubectl apply/create 실패를 오류파일에 모은다
+  _GUARD_ERR="$1"; : > "$_GUARD_ERR"
   kubectl() {
     case "${1:-}" in
       apply|create)
         local e rc; e=$(mktemp)
         command kubectl "$@" 2>"$e"; rc=$?
         if (( rc != 0 )); then
-          grep -viE 'already ?exists' "$e" | grep -v '^[[:space:]]*$' >> "$SETUP_ERR"
+          grep -viE 'already ?exists' "$e" | grep -v '^[[:space:]]*$' >> "$_GUARD_ERR"
         fi
         cat "$e" >&2; rm -f "$e"
         return $rc ;;
       *) command kubectl "$@" ;;
     esac
   }
-  exam_setup
+  "$2"
   unset -f kubectl
 }
+setup_guarded() { _guarded "$SETUP_ERR" exam_setup; }
 
 # ── etcdctl 준비 확인 ────────────────────────────────────────────
 #   kubeadm 클러스터에는 etcd 가 static pod 로만 있고, 호스트에 etcdctl 바이너리가
@@ -423,13 +516,14 @@ drain_moved() {  # drain_moved <레이블셀렉터> <노드> — 0 이면 비워
 }
 
 # ── 진행바 ───────────────────────────────────────────────────────
+is_full() { [[ "$1" == "$2" && "$2" =~ ^[0-9]+$ && "$2" -gt 0 ]]; }   # 0/0 은 만점이 아니다 (채점 항목이 없었다)
 progress_bar() {
   local cur="$1" i out=""
   for ((i=1;i<=EXAM_NQ;i++)); do
     local rec; rec=$(state_get "q$i")
     if [[ -n "$rec" ]]; then
       local p="${rec%%/*}" t="${rec#*/}"; t="${t%%:*}"
-      [[ "$p" == "$t" ]] && out+="${GREEN}●${RESET}" || out+="${ORANGE}◐${RESET}"
+      is_full "$p" "$t" && out+="${GREEN}●${RESET}" || out+="${ORANGE}◐${RESET}"
     elif [[ "$i" == "$cur" ]]; then out+="${BLUE}◉${RESET}"
     else out+="${DIM}○${RESET}"; fi
     out+=" "
@@ -480,7 +574,14 @@ enter_q() {
   [[ "$(type -t "q${n}_enter")" == "function" ]] || return 0
   [[ -n "$(state_get "q${n}_entered")" ]] && return 0
   echo -e "\n${CYAN}[SETUP] Q${n} 환경을 준비합니다...${RESET}"
-  "q${n}_enter"
+  _guarded "$ENTER_ERR" "q${n}_enter"
+  if [[ -s "$ENTER_ERR" ]]; then
+    # 실패했으면 들어간 것으로 치지 않는다 — 다음 show/go 때 다시 시도한다
+    echo -e "${RED}[SETUP] Q${n} 환경 일부를 만들지 못했습니다${RESET} ${DIM}(전체: work/.enter-errors)${RESET}"
+    sort -u "$ENTER_ERR" | head -8 | sed 's/^/    /'
+    echo -e "  ${ORANGE}잠시 뒤 ${BOLD}bash exam.sh show${RESET}${ORANGE} 로 다시 시도합니다.${RESET}"
+    return 1
+  fi
   state_set "q${n}_entered" 1
 }
 
@@ -488,7 +589,12 @@ enter_q() {
 goto_q() {
   local n="$1" cur
   cur=$(state_get current)
-  [[ -n "$cur" && "$cur" != "$n" ]] && q_close "$cur"
+  if [[ "$cur" == "$n" ]]; then       # 지금 문제로 '이동' — 시계를 다시 걸지 않고 다시 보여 주기만
+    enter_q "$n"
+    show_question "$n"
+    return 0
+  fi
+  [[ -n "$cur" ]] && q_close "$cur"
   state_set current "$n"
   state_set "q${n}_start" "$(now)"
   enter_q "$n"
@@ -540,9 +646,11 @@ cmd_start() {
   echo -e "  ${BOLD}${EXAM_TITLE}${RESET}"
   echo -e "  ${EXAM_NQ}문제 · 한 문제씩 풀고 채점하며 진행합니다"
   sep
-  rm -f "$STATE" "$QLOG" "$JSONL"
-  kubectl get nodes &>/dev/null || {
+  run_on_finish            # 이전 시험이 망가뜨려 둔 것(컨트롤플레인 등)을 먼저 되돌린다
+  # 클러스터에 닿는지 먼저 본다 — 못 닿으면 지난 기록은 그대로 둔다
+  api_ready || {
     echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"; exit 1; }
+  state_reset; rm -f "$QLOG" "$JSONL" "$ENTER_ERR"
   ns_notice
   echo -e "\n${CYAN}[CLEAN] 이전 시험 리소스를 정리합니다...${RESET}"
   exam_cleanup; wait
@@ -557,6 +665,10 @@ cmd_start() {
     echo -e "${GREEN}[SETUP] 완료${RESET}"
   fi
   state_set started "$(now)"
+  # 이번 시험의 제한시간을 적어 둔다 — EXAM_LIMIT_MIN=30 bash exam.sh start 처럼 준 값을
+  # 뒤의 명령(check·go·패널)이 잊지 않게. exam_main 이 이 값을 우선한다
+  state_set limit "$EXAM_LIMIT_MIN"
+  state_set warn "$EXAM_WARN_MIN"
   state_set current 1
   state_set q1_start "$(now)"
   enter_q 1
@@ -573,6 +685,7 @@ cmd_show() {
   local cur; cur=$(state_get current)
   [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.  bash exam.sh start${RESET}"; exit 1; }
   (( cur > EXAM_NQ )) && { echo -e "${GREEN}모든 문제를 마쳤습니다.  bash exam.sh finish${RESET}"; exit 0; }
+  enter_q "$cur"           # 지난번 문제 환경 준비가 실패했으면 여기서 다시 시도한다
   show_question "$cur"
 }
 
@@ -589,7 +702,8 @@ cmd_check() {
   run_grade "$cur"
   local el; el=$(q_elapsed "$cur")
   thin
-  if (( Q_PASS == Q_TOTAL )); then
+  (( Q_TOTAL == 0 )) && echo -e "  ${ORANGE}채점 항목이 하나도 없습니다 — 채점 스크립트 문제일 수 있습니다. 다시 check 하거나 강사에게 알려 주세요.${RESET}"
+  if is_full "$Q_PASS" "$Q_TOTAL"; then
     echo -e "  ${GREEN}${BOLD}Q${cur}: ${Q_PASS}/${Q_TOTAL}  ✓ 만점${RESET}   ${DIM}(소요 $(fmt_dur $el))${RESET}"
     record_q "$cur" "$Q_PASS" "$Q_TOTAL"
     state_set "q${cur}_tries" "$(( $(state_get "q${cur}_tries") + 1 ))"
@@ -664,7 +778,7 @@ cmd_status() {
     if [[ -n "$rec" ]]; then
       local p="${rec%%/*}"; local rest="${rec#*/}"; local t="${rest%%:*}"; local el="${rest#*:}"
       sumP=$((sumP+p)); sumT=$((sumT+t))
-      local mark; [[ "$p" == "$t" ]] && mark="${GREEN}✓${RESET}" || mark="${ORANGE}◐${RESET}"
+      local mark; is_full "$p" "$t" && mark="${GREEN}✓${RESET}" || mark="${ORANGE}◐${RESET}"
       local flags=""; [[ -n "$(state_get "q${i}_skipped")" ]] && flags+=" skip"; [[ -n "$(state_get "q${i}_hint")" ]] && flags+=" hint"
       printf "  %b Q%d  %-34s %3s/%-3s %10s%b\n" "$mark" "$i" "$title" "$p" "$t" "$(fmt_dur $el)" "${flags:+  ${DIM}[${flags# }]${RESET}}"
     elif [[ "$i" == "$cur" ]]; then
@@ -678,8 +792,48 @@ cmd_status() {
   echo ""
 }
 
-cmd_finish() {
+# 아직 푸는 중인가 — 진행 중에 finish 를 부르면 기록하지 않고 중간 리포트만 보여 준다.
+#   진짜 마감은 advance(마지막 문제 뒤)와 enforce_limit(시간 초과)에서만 일어난다.
+exam_running() {
+  local cur; cur=$(state_get current)
+  [[ -n "$cur" ]] && (( cur <= EXAM_NQ )) && [[ -z "$(state_get timeup)" && -z "$(state_get finished)" ]]
+}
+
+cmd_preview() {
   local st; st=$(state_get started); local tot=$(( $(now) - ${st:-$(now)} ))
+  local cur; cur=$(state_get current)
+  local i sumP=0 sumT=0 done_n=0
+  echo ""; sep
+  echo -e "  ${BOLD}${EXAM_TITLE} — 중간 리포트${RESET}  ${DIM}(시험 진행 중 · 기록하지 않음)${RESET}"
+  time_banner
+  sep
+  for ((i=1;i<=EXAM_NQ;i++)); do
+    local rec; rec=$(state_get "q$i"); local title; title=$(q_title "$i")
+    if [[ -n "$rec" ]]; then
+      local p="${rec%%/*}"; local rest="${rec#*/}"; local t="${rest%%:*}"; local el="${rest#*:}"
+      sumP=$((sumP+p)); sumT=$((sumT+t)); done_n=$((done_n+1))
+      local mark; is_full "$p" "$t" && mark="${GREEN}✓${RESET}" || mark="${ORANGE}◐${RESET}"
+      printf "  %b Q%d  %-34s %3s/%-3s %10s\n" "$mark" "$i" "$title" "$p" "$t" "$(fmt_dur $el)"
+    elif [[ "$i" == "$cur" ]]; then
+      printf "  %b Q%d  %-34s %b\n" "${BLUE}◉${RESET}" "$i" "$title" "${BLUE}← 지금 (아직 채점 전)${RESET}"
+    else
+      printf "  %b Q%d  %-34s %b\n" "${DIM}○${RESET}" "$i" "$title" "${DIM}아직 채점 전${RESET}"
+    fi
+  done
+  thin
+  echo -e "  채점한 ${done_n}/${EXAM_NQ}문제  ${BOLD}${sumP} / ${sumT} ${EXAM_UNIT}${RESET}   경과 $(fmt_dur $tot)"
+  echo -e "  ${DIM}시험은 계속됩니다. 마지막 문제를 채점(또는 skip)하면 최종 리포트가 나옵니다.${RESET}"
+  echo -e "  ${DIM}지금 문제로 돌아가기: bash exam.sh show${RESET}"
+  echo ""
+}
+
+cmd_finish() {
+  local cur; cur=$(state_get current)
+  [[ -z "$cur" ]] && { echo -e "${ORANGE}아직 시작하지 않았습니다.  bash exam.sh start${RESET}"; return 0; }
+  exam_running && { cmd_preview; return 0; }
+  local st; st=$(state_get started)
+  local fin; fin=$(state_get finished)
+  local tot=$(( ${fin:-$(now)} - ${st:-$(now)} ))     # 다시 봐도 총 소요는 처음 마친 시각 기준
   local i sumP=0 sumT=0 slowest=0 slowQ=0
   echo ""; sep
   echo -e "  ${BOLD}${EXAM_TITLE} — 최종 리포트${RESET}"
@@ -701,7 +855,7 @@ cmd_finish() {
     local p="${rec%%/*}"; local rest="${rec#*/}"; local t="${rest%%:*}"; local el="${rest#*:}"
     sumP=$((sumP+p)); sumT=$((sumT+t))
     (( el > slowest )) && { slowest=$el; slowQ=$i; }
-    local mark; [[ "$p" == "$t" ]] && mark="${GREEN}✓${RESET}" || mark="${ORANGE}◐${RESET}"
+    local mark; is_full "$p" "$t" && mark="${GREEN}✓${RESET}" || mark="${ORANGE}◐${RESET}"
     local flags=""; [[ -n "$(state_get "q${i}_skipped")" ]] && flags+=" skip"; [[ -n "$(state_get "q${i}_hint")" ]] && flags+=" hint"
     local tries; tries=$(state_get "q${i}_tries"); [[ -n "$tries" && "$tries" -gt 1 ]] && flags+=" ${tries}회"
     printf "  %b Q%d  %-34s %3s/%-3s %10s%b\n" "$mark" "$i" "$title" "$p" "$t" "$(fmt_dur $el)" "${flags:+  ${DIM}[${flags# }]${RESET}}"
@@ -714,21 +868,27 @@ cmd_finish() {
   sep
   echo -e "  ${DIM}지나온 문제 전체: cat work/questions-so-far.txt   ·   리소스 정리: bash exam.sh clean${RESET}"
   echo ""
-  state_set finished "$(now)"
+  [[ -z "$fin" ]] && state_set finished "$(now)"      # 처음 마친 시각만 남긴다
+  run_on_finish
 }
 
-cmd_reset() { rm -f "$STATE" "$QLOG"; echo -e "${GREEN}진행 기록을 지웠습니다.${RESET}"; }
+cmd_reset() {
+  run_on_finish
+  state_reset; rm -f "$QLOG" "$ENTER_ERR"
+  echo -e "${GREEN}진행 기록을 지웠습니다.${RESET}"
+}
 
 cmd_clean() {
   echo ""
   sep
   echo -e "  ${BOLD}${EXAM_TITLE} — 원상복구${RESET}"
   sep
-  kubectl get nodes &>/dev/null || {
+  run_on_finish            # 컨트롤플레인을 망가뜨리는 세트는 여기서 먼저 되살린다 (그래야 kubectl 이 닿는다)
+  api_ready || {
     echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다.${RESET}"; exit 1; }
   echo -e "\n${CYAN}[CLEAN] 클러스터의 시험 리소스를 삭제합니다...${RESET}"
   exam_cleanup; wait
-  rm -f "$STATE" "$QLOG"
+  state_reset; rm -f "$QLOG" "$JSONL" "$ENTER_ERR"
   echo -e "${GREEN}[CLEAN] 완료 — 진행 기록도 지웠습니다.${RESET}"
   echo ""
 }
@@ -777,6 +937,12 @@ cmd_meta() {    # key=value 로 세트 정보 출력
 
 exam_main() {
   EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-0}"   # 세트가 정하지 않았으면 무제한
+  # start 때 적어 둔 이번 시험의 제한시간이 있으면 그것을 쓴다 (start 는 새로 정한다)
+  if [[ "${1:-}" != "start" ]]; then
+    local sl sw; sl=$(state_get limit); sw=$(state_get warn)
+    [[ "$sl" =~ ^[0-9]+$ ]] && EXAM_LIMIT_MIN="$sl"
+    [[ "$sw" =~ ^[0-9]+$ ]] && EXAM_WARN_MIN="$sw"
+  fi
   case "${1:-}" in meta|qtext|hinttext|lang|"") ;; *) _pin_default_ns ;; esac
   case "${1:-}" in
     start)  cmd_start ;;
@@ -807,7 +973,7 @@ exam_main() {
       echo -e "  ${CYAN}bash exam.sh go 2${RESET}     2번 문제로 이동 (되돌아가기 가능 · next / prev 도 됨)"
       echo -e "  ${CYAN}bash exam.sh hint${RESET}     힌트 (사용 기록이 남음)"
       echo -e "  ${CYAN}bash exam.sh status${RESET}   진행 현황"
-      echo -e "  ${CYAN}bash exam.sh finish${RESET}   최종 리포트"
+      echo -e "  ${CYAN}bash exam.sh finish${RESET}   리포트 (진행 중이면 기록하지 않는 중간 리포트)"
       echo -e "  ${CYAN}bash exam.sh clean${RESET}    시험 리소스 전부 삭제 + 진행 기록 삭제 (원상복구)"
       echo -e "  ${CYAN}bash exam.sh reset${RESET}    진행 기록만 삭제"
       echo -e "  ${CYAN}bash exam.sh lang ko${RESET}  지문을 한글로 (기본은 영어 — 실제 시험과 같게)"

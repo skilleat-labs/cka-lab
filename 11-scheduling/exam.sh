@@ -70,11 +70,17 @@ q1_grade() {
     "kubectl get pod ssd-pod -n default -o jsonpath='{.spec.nodeName}'" 'worker-1'
   check_output "nodeAffinity(required) 사용" \
     "kubectl get pod ssd-pod -n default -o jsonpath='{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution}'" 'disktype'
-  check_output "operator In / values ssd" \
-    "kubectl get pod ssd-pod -n default -o jsonpath='{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0]}'" 'In'
-  check_result "nodeName 을 직접 박지 않았다" \
-    "$(kubectl get pod ssd-pod -n default -o jsonpath='{.spec.affinity}' 2>/dev/null | grep -q nodeAffinity && echo 0 || echo 1)" \
-    "affinity 없이 nodeName/nodeSelector 로 붙이면 오답"
+  # 'In' 만 찾으면 NotIn 도 걸린다 — key=operator=values 로 정확히 본다
+  check_output "key disktype / operator In / values ssd" \
+    "kubectl get pod ssd-pod -n default -o jsonpath='{range .spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[*]}{.key}={.operator}={.values[*]}{\" \"}{end}'" '(^| )disktype=In=ssd( |$)'
+  # 스케줄러가 배치해도 spec.nodeName 은 채워지므로 nodeName 직접 지정 여부는 파드 spec 만으로는 구분할 수 없다.
+  #   대신 nodeAffinity 가 있고 nodeSelector 는 쓰지 않았는지 본다.
+  local na ns_sel
+  na=$(kubectl get pod ssd-pod -n default -o jsonpath='{.spec.affinity.nodeAffinity}' 2>/dev/null)
+  ns_sel=$(kubectl get pod ssd-pod -n default -o jsonpath='{.spec.nodeSelector}' 2>/dev/null)
+  check_result "nodeSelector 가 아니라 nodeAffinity 로 배치했다" \
+    "$([[ -n "$na" && ( -z "$ns_sel" || "$ns_sel" == '{}' ) ]] && echo 0 || echo 1)" \
+    "$([[ -z "$na" ]] && echo 'nodeAffinity 가 없음' || echo "nodeSelector 를 함께 썼다: $ns_sel")"
 }
 q1_hint() { cat <<'EOF'
 kubectl explain pod.spec.affinity.nodeAffinity --recursive | head -30
@@ -267,9 +273,12 @@ q4_grade() {
   check_result "기존 Deployment 를 고쳤다 (지우고 다시 만들지 않음)" \
     "$([[ "$rev" -ge 2 ]] && echo 0 || echo 1)" \
     "revision=${rev} — 새로 만들면 1 이 된다"
-  wait_ready "-l app=web-logger" priority
-  check_output "파드가 Ready" \
-    "kubectl -n priority get deployment web-logger -o jsonpath='{.status.readyReplicas}'" '^2$'
+  # readyReplicas 는 롤아웃 중 surge 로 잠깐 3 이 될 수 있다 — 롤아웃을 기다린 뒤 updated/available 로 본다
+  kubectl -n priority rollout status deployment/web-logger --timeout="${EXAM_WAIT}s" &>/dev/null
+  local st; st=$(kubectl -n priority get deployment web-logger -o jsonpath='{.status.updatedReplicas}/{.status.availableReplicas}' 2>/dev/null)
+  check_result "파드가 Ready (updated/available = ${st:-없음})" \
+    "$([[ "${st%%/*}" == 2 && "${st#*/}" =~ ^[0-9]+$ && "${st#*/}" -ge 2 ]] && echo 0 || echo 1)" \
+    "kubectl -n priority rollout status deployment/web-logger 로 확인"
 }
 q4_hint() { cat <<'EOF'
 # 기존 값을 먼저 본다 — "보다 낮게" 가 조건이다

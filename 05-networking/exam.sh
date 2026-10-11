@@ -9,8 +9,8 @@ EXAM_NQ=4
 exam_cleanup() {
   kdel deployment web api storefront -n default
   kdel service web-svc api-svc storefront-svc -n default
-  kdel pod dns-test -n default
-  echo "  web / api / storefront / web-svc / api-svc / storefront-svc / dns-test 삭제"
+  kdel pod dns-test netchk-q1 -n default          # netchk-q1: Q1 채점용 임시 파드(중단되면 남는다)
+  echo "  web / api / storefront / web-svc / api-svc / storefront-svc / dns-test / netchk-q1 삭제"
 }
 exam_setup() {
   # ── Q4: 포트를 하나도 선언하지 않은 Deployment (학생이 named port 를 추가한다)
@@ -84,8 +84,9 @@ q1_grade() {
   check_output "selector app=web" "kubectl get service web-svc -n default -o jsonpath='{.spec.selector.app}'" '^web$'
   check_output "Endpoints 에 파드 IP 3개" \
     "kubectl get endpoints web-svc -n default -o jsonpath='{.subsets[0].addresses[*].ip}' | wc -w" '^\s*3$'
+  # 이전 채점이 중단돼 남은 같은 이름의 파드가 있으면 run 이 AlreadyExists 로 실패한다 — 먼저 지운다
   check_output "임시 파드에서 web-svc 로 실제 HTTP 응답" \
-    "kubectl run netchk-q1 -n default --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=5 http://web-svc 2>/dev/null" 'nginx'
+    "kubectl delete pod netchk-q1 -n default --ignore-not-found --now &>/dev/null; kubectl run netchk-q1 -n default --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=5 http://web-svc 2>/dev/null" 'nginx'
 }
 q1_hint() { cat <<'EOF'
 kubectl create deployment web --image=nginx:1.24 --replicas=3
@@ -197,10 +198,18 @@ q3_grade() {
     "kubectl get pod dns-test -n default -o jsonpath='{.spec.containers[0].image}'" 'busybox'
   if kubectl get pod dns-test -n default &>/dev/null; then
     local cip; cip=$(kubectl get svc web-svc -n default -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-    check_output "파드 안에서 web-svc 이름이 해석된다" \
-      "kubectl exec dns-test -n default -- nslookup web-svc 2>/dev/null" "${cip:-Address}"
-    check_output "FQDN 도 해석된다 (web-svc.default.svc.cluster.local)" \
-      "kubectl exec dns-test -n default -- nslookup web-svc.default.svc.cluster.local 2>/dev/null" 'Address'
+    cip="${cip//[^0-9a-fA-F.:]/}"
+    if [[ -n "$cip" && "$cip" != None ]]; then
+      # web-svc 의 ClusterIP 자체가 나와야 한다 (Server: 줄의 DNS 주소로 통과하지 않게)
+      local cre="(^|[^0-9.])${cip//./\\.}([^0-9.]|$)"
+      check_output "파드 안에서 web-svc 이름이 해석된다 (→ $cip)" \
+        "kubectl exec dns-test -n default -- nslookup web-svc 2>/dev/null" "$cre"
+      check_output "FQDN 도 해석된다 (web-svc.default.svc.cluster.local → $cip)" \
+        "kubectl exec dns-test -n default -- nslookup web-svc.default.svc.cluster.local 2>/dev/null" "$cre"
+    else
+      check_result "파드 안에서 web-svc 이름이 해석된다" 1 "web-svc 의 ClusterIP 를 찾지 못함 (Q1 의 web-svc 를 먼저 만든다)"
+      check_result "FQDN 도 해석된다 (web-svc.default.svc.cluster.local)" 1 "web-svc 의 ClusterIP 를 찾지 못함"
+    fi
   else
     check_result "web-svc 이름 해석" 1 "파드가 없음"
     check_result "FQDN 해석" 1 "파드가 없음"
@@ -274,12 +283,15 @@ q4_grade() {
     "kubectl get deployment storefront -n default -o jsonpath='${CP}.protocol}'" '^TCP$'
 
   # 롤아웃이 끝나야 새 파드(포트 http 있음)만 Endpoints 에 들어간다 — 먼저 기다린다
-  local rc=1
-  if kubectl get deployment storefront -n default &>/dev/null; then
+  #   처음부터 롤아웃이 끝난 상태라, 포트 http 를 추가한 뒤에만 점수를 준다
+  local rc=1 note='kubectl rollout status deployment/storefront 로 확인'
+  if [[ "$(kubectl get deployment storefront -n default -o jsonpath='{.spec.template.spec.containers[0].ports[?(@.name=="http")].containerPort}' 2>/dev/null)" == 80 ]]; then
     kubectl rollout status deployment/storefront -n default --timeout="${EXAM_WAIT}s" &>/dev/null; rc=$?
+  else
+    note='컨테이너 포트 http(80) 가 아직 없다 — 먼저 Deployment 를 고친다'
   fi
-  check_result "롤아웃 완료 (새 파드가 모두 Ready)" "$rc" \
-    "$([[ $rc == 0 ]] || echo 'kubectl rollout status deployment/storefront 로 확인')"
+  check_result "포트를 추가한 새 버전으로 롤아웃 완료 (새 파드가 모두 Ready)" "$rc" \
+    "$([[ $rc == 0 ]] || echo "$note")"
 
   check "Service storefront-svc 존재" "kubectl get service storefront-svc -n default"
   check_output "타입 NodePort" "kubectl get service storefront-svc -n default -o jsonpath='{.spec.type}'" '^NodePort$'
