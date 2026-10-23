@@ -89,7 +89,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 > 각 폴더에 어떤 문제가 들어 있는지 자세한 내용은 [PROBLEMS.md](PROBLEMS.md) 참고.
 
 **폴더 앞 번호 = 온라인 강의 번호입니다.** 11강을 봤다면 `11-scheduling` 을 풉니다. 위에서부터 순서대로 풀면 강의 순서와 같습니다.
-번호가 비는 강의(1·2·9·12·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
+번호가 비는 강의(1·2·12·17·21·23강)는 실습 세트가 없고, 24강(시험 전략과 모의고사)은 `mock-*` 을, 마지막에 `final-test` 를 풉니다.
 
 ### 강의별 실습
 
@@ -101,6 +101,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | `06-config` | 6강 설정을 이미지 밖으로 | ConfigMap(envFrom · 키 하나 · 볼륨), Secret(base64 · secretKeyRef), 수정 반영 · immutable |
 | `07-resources` | 7강 네임스페이스와 자원 | 네임스페이스, requests/limits, OOMKilled, QoS, LimitRange, ResourceQuota, 자원 배분 |
 | `08-ingress` | 8강 밖에서 이름으로 들어오기 — Ingress → Gateway API | 경로·호스트 라우팅, TLS, 네임스페이스 격리, Gateway 이전 |
+| `09-probes` | 9강 파드가 건강한지 확인하기 — probe | CrashLoopBackOff 읽기(종료 코드 · logs --previous), liveness(httpGet), readiness 와 Endpoints, startupProbe, 틀린 probe 고치기, tcpSocket |
 | `10-workloads` | 10강 Deployment 로는 안 되는 일 | Deployment 롤백, CronJob, DaemonSet, 네이티브 사이드카 |
 | `11-scheduling` | 11강 스케줄링 | Affinity, Taint/Toleration, HPA, PriorityClass |
 | `13-storage` | 13강 스토리지 | PV, PVC, StorageClass, StatefulSet, emptyDir |

@@ -21,6 +21,7 @@
 | `06-config` | 강의 실습 | 5 | 38 | ConfigMap · Secret · 반영 · immutable |
 | `07-resources` | 강의 실습 | 7 | 40 | 네임스페이스 · requests/limits · OOM · QoS · LimitRange · ResourceQuota |
 | `08-ingress` | 강의 실습 | 4 | 33 | Ingress · 호스트 기반 · TLS · NetworkPolicy |
+| `09-probes` | 강의 실습 | 6 | 43 | CrashLoopBackOff · liveness · readiness/Endpoints · startupProbe · tcpSocket |
 | `10-workloads` | 강의 실습 | 4 | 25 | Deployment · CronJob · DaemonSet · 사이드카 |
 | `11-scheduling` | 강의 실습 | 4 | 24 | Affinity · Taint · HPA · PriorityClass |
 | `13-storage` | 강의 실습 | 4 | 31 | PV/PVC · StorageClass · StatefulSet · emptyDir |
@@ -156,6 +157,17 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | P2 | 호스트 기반 라우팅 Ingress |
 | P3 | TLS Ingress |
 | P4 | NetworkPolicy 로 ing-production 네임스페이스 격리 |
+
+## 09-probes — probe (43항목)
+
+| 문제 | 내용 |
+|------|------|
+| Q1 | CrashLoopBackOff 파드 `flaky` 의 종료 코드 · Last State 사유 · restartPolicy · `logs --previous` 토큰, OnFailure 파드 `tidy` 의 STATUS 를 파일로 |
+| Q2 | Deployment `storefront` 에 livenessProbe(httpGet / · 80 · delay 5 · period 10) 추가 — 재시작 0 |
+| Q3 | readiness 실패로 Endpoints 에서 빠진 `catalog` 파드 찾기 → 지우지 않고 index.html 되살려 Endpoints 3개로 |
+| Q4 | 45초 걸려 뜨는 `ledger` 가 liveness 에 죽는다 → startupProbe(exec, 유예 ≥ 60초) 추가, liveness 는 그대로 |
+| Q5 | liveness 경로가 틀려(`/health` → 404) 재시작되는 `gateway` — 응답 코드 기록 후 Deployment 를 고쳐 재시작 0 |
+| Q6 | tcpSocket readiness · liveness 를 단 파드 `relay` 생성 → 기존 Service `relay` 의 Endpoints 에 들어간다 |
 
 ## 10-workloads — 워크로드 (20항목)
 
