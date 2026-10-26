@@ -304,11 +304,14 @@ In the default namespace, create a StatefulSet named web-sts.
   volumeClaimTemplate   name www-storage / 1Gi / ReadWriteOnce
   mountPath             /usr/share/nginx/html
 
-Three PVCs must be created automatically:
-  www-storage-web-sts-0 / -1 / -2
+The PVC www-storage-web-sts-0 must be created automatically
+from the volumeClaimTemplate. Do not create any PV.
 
-Note: with a no-provisioner default StorageClass the Pods may stay
-Pending (no PV to bind). That is fine — only the PVCs are graded.
+Note: the default StorageClass here has no provisioner, so no PV
+appears and web-sts-0 stays Pending. A StatefulSet starts its Pods
+one by one (podManagementPolicy: OrderedReady) — web-sts-1 is not
+created until web-sts-0 is Ready, so www-storage-web-sts-1 / -2 do
+not appear yet. That is expected and is not graded.
 
 Verify:
   kubectl get statefulset web-sts
@@ -324,11 +327,14 @@ default 네임스페이스에 web-sts StatefulSet 을 만드시오.
   volumeClaimTemplate   이름 www-storage / 1Gi / ReadWriteOnce
   mountPath             /usr/share/nginx/html
 
-PVC 3개가 자동 생성되어야 한다:
-  www-storage-web-sts-0 / -1 / -2
+volumeClaimTemplate 으로 PVC www-storage-web-sts-0 이 자동 생성되어야 한다.
+PV 는 만들지 않는다.
 
-참고: 기본 StorageClass 가 no-provisioner 라 PV 가 없으면 파드가 Pending 으로
-남을 수 있다. 괜찮다 — PVC 생성까지만 채점한다.
+참고: 이 클러스터의 기본 StorageClass 는 no-provisioner 라 PV 가 생기지 않고,
+web-sts-0 은 Pending 으로 남는다. StatefulSet 은 파드를 하나씩 순서대로 띄운다
+(podManagementPolicy: OrderedReady). web-sts-0 이 Ready 가 되기 전에는
+web-sts-1 을 만들지 않으므로 www-storage-web-sts-1 / -2 도 아직 생기지 않는다.
+정상이며 채점하지 않는다.
 
 [확인]
   kubectl get statefulset web-sts
@@ -346,9 +352,11 @@ q3_grade() {
     "kubectl get statefulset web-sts -n default -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}'" '^1Gi$'
   check_output "mountPath /usr/share/nginx/html" \
     "kubectl get statefulset web-sts -n default -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[*].mountPath}'" '/usr/share/nginx/html'
+  # OrderedReady — PV 가 없으면 web-sts-0 이 Pending 이라 -1 · -2 파드와 PVC 는 생기지 않는다. -0 만 본다
+  check "파드 web-sts-0 생성" "kubectl get pod web-sts-0 -n default"
   check "PVC www-storage-web-sts-0 자동 생성" "kubectl get pvc www-storage-web-sts-0 -n default"
-  check "PVC www-storage-web-sts-1 자동 생성" "kubectl get pvc www-storage-web-sts-1 -n default"
-  check "PVC www-storage-web-sts-2 자동 생성" "kubectl get pvc www-storage-web-sts-2 -n default"
+  check_output "PVC www-storage-web-sts-0 accessMode ReadWriteOnce" \
+    "kubectl get pvc www-storage-web-sts-0 -n default -o jsonpath='{.spec.accessModes[*]}'" '^ReadWriteOnce$'
 }
 q3_hint() { cat <<'EOF'
 # StatefulSet 도 kubectl create 가 없다 — YAML.
@@ -356,8 +364,11 @@ q3_hint() { cat <<'EOF'
 #   spec.volumeClaimTemplates:
 #   - metadata: { name: www-storage }
 #     spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 1Gi } } }
-# PVC 가 Bound 되려면 그만큼의 PV 가 있어야 한다. 여기서는 PVC 생성까지만 채점한다.
+# PVC 가 Bound 되려면 그만큼의 PV 가 있어야 한다. 여기서는 -0 PVC 생성까지만 채점한다.
+# 파드는 0 → 1 → 2 순서로 뜬다(OrderedReady). -0 이 Pending 이면 -1 · -2 는 아직 안 생긴다.
+#   (spec.podManagementPolicy: Parallel 이면 셋을 한꺼번에 만든다 — 이 문제에서는 필요 없다)
 kubectl get pvc
+kubectl describe pod web-sts-0 | tail -3
 EOF
 }
 

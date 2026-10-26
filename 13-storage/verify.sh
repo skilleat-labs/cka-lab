@@ -133,13 +133,15 @@ check_output "volumeClaimTemplates[0].metadata.name = www-storage" \
 pvc0_exists=$(kubectl get pvc www-storage-web-sts-0 -n default --no-headers 2>/dev/null | wc -l | tr -d ' ')
 check "PVC www-storage-web-sts-0 자동 생성됨" "$([ "$pvc0_exists" -ge 1 ] && echo pass || echo fail)"
 
-# P3-6: www-storage-web-sts-1 PVC 존재
-pvc1_exists=$(kubectl get pvc www-storage-web-sts-1 -n default --no-headers 2>/dev/null | wc -l | tr -d ' ')
-check "PVC www-storage-web-sts-1 자동 생성됨" "$([ "$pvc1_exists" -ge 1 ] && echo pass || echo fail)"
+# OrderedReady — PV 가 없으면 web-sts-0 이 Pending 이라 -1 · -2 파드와 PVC 는 생기지 않는다. -0 만 본다
+# P3-6: 파드 web-sts-0 존재
+pod0_exists=$(kubectl get pod web-sts-0 -n default --no-headers 2>/dev/null | wc -l | tr -d ' ')
+check "파드 web-sts-0 생성됨" "$([ "$pod0_exists" -ge 1 ] && echo pass || echo fail)"
 
-# P3-7: www-storage-web-sts-2 PVC 존재
-pvc2_exists=$(kubectl get pvc www-storage-web-sts-2 -n default --no-headers 2>/dev/null | wc -l | tr -d ' ')
-check "PVC www-storage-web-sts-2 자동 생성됨" "$([ "$pvc2_exists" -ge 1 ] && echo pass || echo fail)"
+# P3-7: www-storage-web-sts-0 PVC accessMode = ReadWriteOnce
+check_output "PVC www-storage-web-sts-0 accessMode = ReadWriteOnce" \
+  "kubectl get pvc www-storage-web-sts-0 -n default -o jsonpath='{.spec.accessModes[*]}'" \
+  "ReadWriteOnce"
 
 echo ""
 
