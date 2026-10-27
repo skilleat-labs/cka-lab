@@ -1,0 +1,145 @@
+================================================================
+  CKA Mock Exam 7 — 스토리지 · NetworkPolicy · Gateway API · 자원 · 우선순위
+  5문항 · 100점 · 제한시간 40분
+================================================================
+
+  실행 :  bash exam.sh start      (한 문제씩 출제 · check 로 바로 채점)
+  채점 :  bash exam.sh check
+  현황 :  bash exam.sh status
+  정리 :  bash exam.sh clean
+
+  start 가 Gateway API 컨트롤러(NGINX Gateway Fabric)를 설치한다 — 인터넷 필요, 최대 3분.
+  문제마다 네임스페이스가 따로라 순서를 바꿔 풀어도 된다.
+  40분이 지나면 남은 문제는 0점으로 마감된다.
+
+
+----------------------------------------------------------------
+ Q1. StorageClass 로 PVC 만들어 Deployment 에 마운트 [Storage · 20점]
+----------------------------------------------------------------
+
+  StorageClass media-store 와 PersistentVolume 몇 개가 이미 있다.
+
+    (a) media 네임스페이스에 PVC media-data 를 만든다
+          storageClassName   media-store
+          요청 용량          1Gi
+          접근 모드          ReadWriteOnce
+
+    (b) 이미 있는 Deployment media-web(컨테이너 web)에
+        /usr/share/nginx/html 로 마운트한다. Deployment 를 지우지 않는다.
+
+    (c) 실행 중인 파드 안에서 /usr/share/nginx/html/index.html 을 만들고
+        내용을 정확히  media-ok  로 한다.
+
+  PV 는 만들지 않고, PVC 에 volumeName 도 적지 않는다.
+  PVC 는 Bound, 파드는 Running 이어야 한다.
+
+  [확인]
+    kubectl get sc,pv
+    kubectl -n media get pvc media-data
+    kubectl -n media exec deploy/media-web -c web -- df -h /usr/share/nginx/html
+
+
+----------------------------------------------------------------
+ Q2. NetworkPolicy — web 팀의 frontend 만        [Net · 20점]
+----------------------------------------------------------------
+
+  orders 네임스페이스의 Deployment api(레이블 app=api)는
+  Service api 의 80 포트로 노출돼 있다.
+
+  orders 네임스페이스에 NetworkPolicy api-allow-frontend 를 만든다.
+    - 대상: app=api 파드
+    - 허용: team=web 레이블이 붙은 네임스페이스에서 도는
+            app=frontend 파드가 보내는 TCP 80 만
+
+  끝나면 그 밖의 어떤 트래픽도 api 에 닿으면 안 된다.
+  orders 네임스페이스에 이미 있는 NetworkPolicy 도 살펴본다.
+
+  테스트 파드가 이미 있다.
+    web-team/frontend   (ns team=web, app=frontend)  → 닿아야 한다
+    web-team/batch      (ns team=web, app=batch)     → 막혀야 한다
+    qa-team/frontend    (ns team=qa,  app=frontend)  → 막혀야 한다
+    orders/monitor      (같은 ns,     app=monitor)   → 막혀야 한다
+
+  [확인]
+    kubectl get ns --show-labels
+    kubectl -n orders get networkpolicy
+    kubectl -n web-team exec frontend -- wget -qO- -T 3 http://api.orders
+    kubectl -n qa-team  exec frontend -- wget -qO- -T 3 http://api.orders
+
+
+----------------------------------------------------------------
+ Q3. Gateway API — 경로로 나누기              [Net · 20점]
+----------------------------------------------------------------
+
+  Gateway API 컨트롤러가 설치돼 있고 GatewayClass nginx 를 제공한다.
+  portal 네임스페이스에 Service portal-main 과 portal-api(포트 80)가 이미 있다.
+
+    (1) portal 에 Gateway portal-gw 를 만든다
+          gatewayClassName   nginx
+          리스너             이름 http, 포트 80, 프로토콜 HTTP
+
+    (2) portal 에 HTTPRoute portal-route 를 만든다
+          parentRefs         portal-gw
+          hostnames          portal.example.local
+          규칙               경로 접두사 /api  → Service portal-api, 포트 80
+                             경로 접두사 /     → Service portal-main, 포트 80
+
+  컨트롤러가 Gateway 용 Service 를 만든다. 그 Service 로 Host 가
+  portal.example.local 인 요청을 보내면 위처럼 나뉘어야 한다.
+
+  [확인]
+    kubectl -n portal get gateway,httproute
+    kubectl -n portal get svc            # portal-gw 용으로 생긴 Service (NodePort)
+    curl -H 'Host: portal.example.local' http://<NodeIP>:<nodePort>/api/orders   → portal-api ...
+    curl -H 'Host: portal.example.local' http://<NodeIP>:<nodePort>/             → portal-main ...
+
+
+----------------------------------------------------------------
+ Q4. ResourceQuota 안에 Deployment 넣기           [W&S · 20점]
+----------------------------------------------------------------
+
+  batch 네임스페이스의 Deployment worker(replicas 3)에 실행 중인 파드가 없다.
+  이 네임스페이스에는 ResourceQuota batch-quota 가 있다.
+
+  이유를 찾고, Deployment 에 자원 설정을 넣어 3개가 모두 뜨게 한다.
+  값은 정확히 아래대로 쓴다.
+
+    컨테이너 app         requests  cpu 100m  memory 128Mi
+                         limits    cpu 200m  memory 256Mi
+    컨테이너 log-agent   requests  cpu 50m   memory 32Mi
+                         limits    cpu 100m  memory 64Mi
+
+  ResourceQuota 는 바꾸거나 지우지 않는다. replicas 도 바꾸지 않고,
+  Deployment 를 지우지도 않는다.
+
+  [확인]
+    kubectl -n batch describe rs -l app=worker | grep -i -A3 events
+    kubectl -n batch get deploy worker
+    kubectl -n batch describe resourcequota batch-quota
+
+
+----------------------------------------------------------------
+ Q5. PriorityClass 로 Pending 파드 밀어 넣기   [W&S · 20점]
+----------------------------------------------------------------
+
+  ml 네임스페이스의 Deployment inference 파드가 Pending 에 멈춰 있다.
+  이 파드는 example.com/accelerator 1개가 필요한데, 그것을 2개 가진 노드는
+  하나뿐이고 둘 다 Deployment trainer(PriorityClass ml-batch, 값 100)가 쓰고 있다.
+
+    (a) PriorityClass inference-critical 을 만든다
+          value              1000000
+          preemptionPolicy   PreemptLowerPriority
+          globalDefault      false
+          description        latency-sensitive inference
+
+    (b) Deployment inference 가 이 PriorityClass 를 쓰게 한다.
+
+  inference 파드가 trainer 파드 하나를 밀어내고(선점) Running 이 되어야 한다.
+  trainer 는 건드리지 않는다 (scale · 수정 · 파드 삭제 금지).
+  두 Deployment 모두 지우지 않는다.
+
+  [확인]
+    kubectl -n ml get pods -o wide
+    kubectl -n ml get pods -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority,STATUS:.status.phase
+    kubectl -n ml get events --field-selector reason=Preempted
+

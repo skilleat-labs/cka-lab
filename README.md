@@ -123,6 +123,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | `mock-4` | 스케줄링 · 네트워킹 · 운영 | 45분 |
 | `mock-5` | 자동화 · 권한 · 트러블슈팅 | 50분 |
 | `mock-6` | 2026 출제 주제 — PriorityClass · Helm template · 사이드카 · NetworkPolicy · 기본 StorageClass | 20분 |
+| `mock-7` | 실제 동작까지 보는 5문항 — PVC 마운트 · NetworkPolicy(AND) · Gateway API 경로 · ResourceQuota+requests/limits · PriorityClass 선점 | 40분 |
 
 ### Final Test (`final-test`)
 

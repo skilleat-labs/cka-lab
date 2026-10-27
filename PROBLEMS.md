@@ -34,6 +34,7 @@
 | `mock-3` | 30분 속도 점검 | 6 | 100점 | Pod·Deploy/NodePort·Secret/CM·롤백·PV/PVC·NetworkPolicy (store ns) |
 | `mock-4` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
 | `mock-5` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
+| `mock-7` | 모의고사 | 5 | 100점 | PVC 마운트 · NetworkPolicy(AND) · Gateway API 경로 · ResourceQuota+requests/limits · PriorityClass 선점 (목표 40분) |
 
 > 채점 항목 수는 `exam.sh` 가 검사하는 개별 체크 개수다. 모의고사만 100점 배점제를 쓴다.
 > 강의 실습 10개는 2026-09-22 에 `exam.sh` 순차 진행형으로 전환하면서 채점을 더 촘촘하게 고쳤다
@@ -298,6 +299,20 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q5 | Service Endpoint 수정 | Troubleshooting | 20 |
 | Q6 | CrashLoopBackOff 수정 | Troubleshooting | 10 |
 | Q7 | 클러스터 업그레이드 계획 | Architecture | 10 |
+
+---
+
+### mock-7 — 실제 동작까지 보는 5문항 (목표 40분)
+
+마지막 채점 항목이 전부 실제 동작(마운트 · 통신 · 라우팅 · 파드 생성 · 선점)이다. Q3 용 NGINX Gateway Fabric 은 start 가 없으면 설치한다 (인터넷 필요).
+
+| 문제 | 내용 | 도메인 | 배점 |
+|------|------|--------|------|
+| Q1 | StorageClass `media-store`(WaitForFirstConsumer) 로 PVC `media-data` → 기존 `media-web` 에 마운트, 파드 안에서 index.html 작성 | Storage | 20 |
+| Q2 | `api-allow-frontend` — team=web 네임스페이스의 app=frontend 만 (AND). 이미 있는 `legacy-open` 이 전부 열어 둔다 | Networking | 20 |
+| Q3 | Gateway `portal-gw` + HTTPRoute `portal-route` — Host `portal.example.local`, `/api` → portal-api, `/` → portal-main | Networking | 20 |
+| Q4 | ResourceQuota 에 막혀 파드 0개인 `worker`(컨테이너 2개) 에 requests/limits — 쿼터는 그대로 | Workloads | 20 |
+| Q5 | PriorityClass `inference-critical`(1000000) 로 Pending 인 `inference` 가 `trainer` 하나를 선점 — 장치는 노드 확장 리소스 | Scheduling | 20 |
 
 ---
 
