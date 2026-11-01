@@ -44,6 +44,24 @@ STATE="$WORK_DIR/.progress"
 QLOG="$WORK_DIR/questions-so-far.txt"
 mkdir -p "$WORK_DIR"
 
+# ── work/ 에 쓸 수 있는지 먼저 본다 ───────────────────────────────
+#   웹 패널을 root 로 띄워 시험을 보면 work/ 의 기록 파일이 root 소유가 된다. 그 뒤 vboxuser 로
+#   exam.sh 를 돌리면 기록을 못 써서 "Permission denied" 가 줄줄이 나고, 정리·준비가 반쯤만 된다.
+_unwritable=""
+[[ -w "$WORK_DIR" ]] || _unwritable="$WORK_DIR"
+for _f in "$WORK_DIR"/.[!.]* "$WORK_DIR"/*; do
+  [[ -e "$_f" && ! -w "$_f" ]] && { _unwritable="$_f"; break; }
+done
+if [[ -n "$_unwritable" ]]; then
+  echo -e "${RED}[중단] 진행 기록 폴더에 쓸 수 없습니다: ${_unwritable}${RESET}" >&2
+  echo -e "  다른 사용자(보통 root — sudo 나 root 로 띄운 웹 패널)가 만든 파일입니다. 한 번만 소유자를 바꾸세요:" >&2
+  _root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  echo -e "    ${CYAN}sudo chown -R $(id -un):$(id -gn) \"${_root}\"${RESET}" >&2
+  echo -e "  ${DIM}웹 패널과 터미널은 같은 사용자로 쓰세요.${RESET}" >&2
+  exit 1
+fi
+unset _unwritable _f _root
+
 # ── 시험 스크립트 안에서는 기본 네임스페이스를 default 로 고정 ─────────
 #   세트의 정리·준비·채점 코드 중 -n 없이 쓴 kubectl 은 "default 기준" 으로 쓴 것이다.
 #   그런데 학생이 kubectl config set-context --namespace=study 처럼 기본 칸을 바꿔 두면
