@@ -667,7 +667,10 @@ cmd_start() {
   run_on_finish            # 이전 시험이 망가뜨려 둔 것(컨트롤플레인 등)을 먼저 되돌린다
   # 클러스터에 닿는지 먼저 본다 — 못 닿으면 지난 기록은 그대로 둔다
   api_ready || {
-    echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"; exit 1; }
+    echo -e "${RED}[ERROR] kubectl 을 실행할 수 없습니다. kubeconfig 를 확인하세요.${RESET}"
+    echo "  사용자 $(id -un) · HOME=$HOME · KUBECONFIG=${KUBECONFIG:-(없음)}"
+    kubectl get nodes 2>&1 | head -3 | sed 's/^/  /'
+    exit 1; }
   state_reset; rm -f "$QLOG" "$JSONL" "$ENTER_ERR"
   ns_notice
   echo -e "\n${CYAN}[CLEAN] 이전 시험 리소스를 정리합니다...${RESET}"

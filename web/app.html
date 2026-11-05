@@ -154,6 +154,7 @@ const $ = s => document.querySelector(s);
 let SET = localStorage.getItem('cka.set') || '';
 let ST = null, JOB = null, TICK = null, HINT = null;   // HINT = {q, text, open}
 let PREVIEW = null;        // 진행 중에 누른 '중간 리포트' 출력 — 기록은 남지 않는다
+let JOBFAIL = null;        // 실패한 시작·정리의 {cmd, output} — 없으면 화면이 그대로라 아무 일도 없는 것처럼 보인다
 let TIMEUP_SENT = false;   // 시간 종료를 서버에 알렸는지 (한 번만 보낸다)
 let CFG = {shell:true};
 let LANG = localStorage.getItem('cka.lang') || 'en';
@@ -425,12 +426,18 @@ function render(){
   }
   $('#setSub').textContent = ST.nq ? `${ST.nq}문제 · ${ST.unit}` : '';
   renderDots(); renderTimer(); renderLang();
-  $('#left').innerHTML = leftHTML();
+  $('#left').innerHTML = jobFailHTML() + leftHTML();
   $('#actions').innerHTML = actionsHTML();
   bind();
 }
 
 // ── 왼쪽: 문제 · 힌트 · 채점 결과 · 진행 현황 ────────────────────────
+function jobFailHTML(){
+  if(!JOBFAIL || (JOB && !JOB.done)) return '';
+  return `<div class="card"><h2 style="color:#991b1b">${esc(cmdLabel(JOBFAIL.cmd))} 실패</h2>
+    <pre class="log">${esc(JOBFAIL.output)}</pre>
+    <div class="bar" style="margin-top:10px"><button class="quiet" id="closeFail">닫기</button></div></div>`;
+}
 function leftHTML(){
   if(JOB && !JOB.done){
     return `<div class="card">
@@ -543,6 +550,7 @@ const cmdLabel = c =>
 
 function bind(){
   const cp = $('#closePreview'); if(cp) cp.onclick = () => { PREVIEW = null; render(); };
+  const cf = $('#closeFail'); if(cf) cf.onclick = () => { JOBFAIL = null; render(); };
   document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => run(b.dataset.cmd, b.dataset.confirm));
   document.querySelectorAll('[data-go]').forEach(el => el.onclick = e => {
     if(el.disabled) return;
@@ -589,9 +597,11 @@ async function run(cmd, confirmMsg){
   if(cmd === 'start' || cmd === 'reset') TIMEUP_SENT = false;
   JOB = {id:r.job, cmd, output:'', done:false};
   PREVIEW = null;
+  JOBFAIL = null;
   render();
   const j = await waitJob(r.job, true);
   JOB = null;
+  if(j && j.rc && ['start', 'clean', 'reset'].includes(cmd)) JOBFAIL = {cmd, output: (j.output || '').trim()};
   // 진행 중에 누른 리포트는 기록되지 않는 중간 리포트다 — 출력을 그대로 보여 준다
   if(cmd === 'finish' && j) PREVIEW = (j.output || '').trim();
   await refresh();
@@ -619,7 +629,7 @@ async function waitJob(id, live){
 }
 
 $('#sets').onchange = async e => {
-  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null; PREVIEW = null; TIMEUP_SENT = false;
+  SET = e.target.value; localStorage.setItem('cka.set', SET); JOB = null; HINT = null; PREVIEW = null; JOBFAIL = null; TIMEUP_SENT = false;
   followSet();                 // 터미널도 그 세트 폴더로 따라간다
   await refresh();
 };
