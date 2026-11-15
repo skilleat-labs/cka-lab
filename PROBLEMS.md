@@ -35,6 +35,7 @@
 | `mock-4` | 모의고사 | 7 | 100점 | 전 범위 (목표 45분) |
 | `mock-5` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
 | `mock-7` | 모의고사 | 5 | 100점 | PVC 마운트 · NetworkPolicy(AND) · Gateway API 경로 · ResourceQuota+requests/limits · PriorityClass 선점 (목표 40분) |
+| `mock-8` | 모의고사 | 7 | 100점 | 후기 상위 7유형 — Helm template+install · HPA · Ingress→Gateway API · 기본 StorageClass · kubelet 이 멈춘 워커 · NetworkPolicy 고르기 · PriorityClass (목표 40분) |
 
 > 채점 항목 수는 `exam.sh` 가 검사하는 개별 체크 개수다. 모의고사만 100점 배점제를 쓴다.
 > 강의 실습 10개는 2026-09-22 에 `exam.sh` 순차 진행형으로 전환하면서 채점을 더 촘촘하게 고쳤다
@@ -313,6 +314,22 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 | Q3 | Gateway `portal-gw` + HTTPRoute `portal-route` — Host `portal.example.local`, `/api` → portal-api, `/` → portal-main | Networking | 20 |
 | Q4 | ResourceQuota 에 막혀 파드 0개인 `worker`(컨테이너 2개) 에 requests/limits — 쿼터는 그대로 | Workloads | 20 |
 | Q5 | PriorityClass `inference-critical`(1000000) 로 Pending 인 `inference` 가 `trainer` 하나를 선점 — 장치는 노드 확장 리소스 | Scheduling | 20 |
+
+---
+
+### mock-8 — 후기 상위 7유형 40분 점검
+
+2025–2026 합격 후기 9건에서 많이 언급된 유형 중 한 클러스터에서 40분 안에 풀 수 있는 7개. Q1 차트 · CRD 와 Q3 용 NGINX Gateway Fabric 때문에 인터넷이 필요하다. Q5 는 그 문제에 들어갈 때 워커 노드 하나의 kubelet 을 실제로 멈추고, `clean` · 마감 · 다시 `start` 할 때 되살린다.
+
+| 문제 | 내용 | 도메인 | 배점 |
+|------|------|--------|------|
+| Q1 | argo/argo-cd 7.7.0 을 릴리스 `cd-main` · `cd-system` 으로 렌더링(`/tmp/mock8-argocd.yaml`, CRD 제외) + 같은 조건으로 설치 | Architecture | 15 |
+| Q2 | `checkout/cart-api` 에 HPA `cart-api-hpa` — 2~6, CPU 60%, 스케일 다운 안정화 45초 | Workloads | 10 |
+| Q3 | `bookstore` 의 Ingress `books-ingress`(HTTPS)를 Gateway `books-gateway` + HTTPRoute `books-route` 로 옮기고 Ingress 삭제 | Networking | 20 |
+| Q4 | StorageClass `fast-nvme`(rancher.io/local-path · WaitForFirstConsumer · Retain)를 유일한 기본으로. `bulk-hdd` 는 지우지 않는다 | Storage | 10 |
+| Q5 | NotReady 워커 복구 — kubelet 이 disabled + 정지, 드롭인의 실행 파일 경로도 틀림 | Troubleshooting | 15 |
+| Q6 | `/tmp/mock8-netpol/policy-1~3.yaml` 중 하나만 적용 — shopfront 네임스페이스만 `stockroom/stock-api` 의 TCP 80 으로 | Networking | 15 |
+| Q7 | PriorityClass `relay-priority` = 사용자 정의 최댓값 - 1, `telemetry/metrics-relay` 에 연결 | Scheduling | 15 |
 
 ---
 
