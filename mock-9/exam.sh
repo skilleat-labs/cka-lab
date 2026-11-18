@@ -5,8 +5,8 @@
 # 목적: 시험 직전에 자신감을 올리는 세트. 출제 유형 문서(CKA_출제유형_문제와풀이_2025-2026)의 풀이를
 #       공부했으면 그대로 풀리는 형태로, 이름과 값만 바꿔 냈다. 문서에 없는 함정은 넣지 않았다.
 #   Q1 Helm template + CRD 없이 install (7/9) · Q2 HPA (4/9) · Q3 Ingress → Gateway API (7/9)
-#   Q4 CRD 목록 · 필드 설명을 파일로 (4/9) · Q5 kubelet 이 멈춘 워커 (5/9) · Q6 NetworkPolicy 고르기 (5/9)
-# 인터넷이 필요하다 — Q1 차트·CRD, Q3 Gateway API 컨트롤러(NGINX Gateway Fabric), Q4 cert-manager CRD.
+#   Q4 기존 PV 에 붙는 PVC + Deployment 파일 수정 (3/9) · Q5 kubelet 이 멈춘 워커 (5/9) · Q6 NetworkPolicy 작성 (5/9)
+# 인터넷이 필요하다 — Q1 차트·CRD, Q3 Gateway API 컨트롤러(NGINX Gateway Fabric).
 # Q5 는 그 문제에 들어갈 때 워커 노드 하나의 kubelet 을 실제로 멈춘다. clean · 마감 · 다시 start 할 때 되살린다.
 # (mock-8 과 같은 방식이다. 다만 mock-8 과 달리 kubelet 설정은 건드리지 않는다 — 멈추고 disable 만 한다)
 set -uo pipefail
@@ -17,7 +17,7 @@ EXAM_TITLE="CKA Mock Exam 9 — 시험 전 마지막 점검 · 자주 나오는 
 EXAM_NQ=6
 EXAM_LIMIT_MIN="${EXAM_LIMIT_MIN:-35}"   # 제한시간(분) — 0 이면 무제한
 
-NAMESPACES="gitops-tools streaming cafe front-office back-office guest-zone"
+NAMESPACES="gitops-tools streaming cafe wiki front-office back-office guest-zone"
 
 # ── Q1: Argo CD 차트 (16-helm · mock-8 과 같은 차트·버전) ──
 #   차트 7.7.0 = Argo CD v2.13.0. CRD 를 crds/ 가 아니라 templates/ 에 두고 crds.install 값으로 켜고 끈다.
@@ -40,18 +40,8 @@ gw_mode() { cat "$MODE_FILE" 2>/dev/null || echo none; }
 Q3_NS=cafe
 Q3_HOST=cafe.example.local
 
-# ── Q4: cert-manager CRD 만 (cert-manager 본체는 설치하지 않는다. 16-helm 과 같은 버전) ──
-CM_VERSION=v1.16.2
-CM_CRDS_URL="https://github.com/cert-manager/cert-manager/releases/download/${CM_VERSION}/cert-manager.crds.yaml"
-CM_CRDS=(certificaterequests.cert-manager.io certificates.cert-manager.io challenges.acme.cert-manager.io
-         clusterissuers.cert-manager.io issuers.cert-manager.io orders.acme.cert-manager.io)
-CM_MARK="$WORK_DIR/.cert-manager-crds-by-setup"
-Q4_LIST=/tmp/mock9-crds.txt
-Q4_EXPLAIN=/tmp/mock9-privatekey.txt
-
-# ── Q6: 준비된 정책 파일 세 개 중 하나 고르기 ──
-Q6_DIR=/tmp/mock9-netpol
-Q6_SUM="$WORK_DIR/.q6-files.cksum"
+# ── Q4: 학생이 고쳐서 적용할 Deployment 파일 (setup 이 만든다. 아직 적용하지 않은 상태로 준다) ──
+Q4_FILE=/tmp/mock9-wiki-deploy.yaml
 
 # ══════════════════════════════════════════════════════════════
 # Q5 — 워커 노드의 kubelet 을 멈추고 되살리는 도구 (mock-8 과 같다)
@@ -207,7 +197,7 @@ exam_cleanup() {
     fi
   fi
   rm -f "$ARGO_REC"
-  rmf "$Q1_OUT" "$Q4_LIST" "$Q4_EXPLAIN" "$Q6_DIR"
+  rmf "$Q1_OUT" "$Q4_FILE"
   # CRD 는 setup 이 만든 경우, 또는 학생이 crds.install 을 켠 채 설치해 이 릴리스 소유가 된 경우에만 지운다
   own=$(kubectl get crd applications.argoproj.io \
         -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-name}/{.metadata.annotations.meta\.helm\.sh/release-namespace}' 2>/dev/null)
@@ -215,17 +205,14 @@ exam_cleanup() {
     kubectl delete crd "${ARGO_CRDS[@]}" --ignore-not-found --timeout=60s &>/dev/null &
     rm -f "$ARGO_MARK"
   fi
-  if [[ -f "$CM_MARK" ]]; then
-    kubectl delete crd "${CM_CRDS[@]}" --ignore-not-found --timeout=60s &>/dev/null &
-    rm -f "$CM_MARK"
-  fi
   for ns in $NAMESPACES; do
     kubectl get namespace "$ns" &>/dev/null && kubectl delete namespace "$ns" --wait=false &>/dev/null
   done
-  rm -f "$MODE_FILE" "$Q6_SUM" "$Q5_NODE_FILE" "$Q5_IP_FILE" "$NODE_VIA_FILE"
-  echo "  gitops-tools · streaming · cafe · front-office · back-office · guest-zone 네임스페이스, Helm 릴리스 $Q1_REL"
-  echo "  $Q1_OUT · $Q4_LIST · $Q4_EXPLAIN · $Q6_DIR 삭제"
-  echo "  (setup 이 만든 Argo CD · cert-manager CRD 만 삭제. Gateway API 컨트롤러는 남겨둠 — 완전 제거: kubectl delete ns nginx-gateway)"
+  kdel pv wiki-pv          # 네임스페이스가 지워지며 PVC 가 사라져야 PV 삭제가 끝난다
+  rm -f "$MODE_FILE" "$Q5_NODE_FILE" "$Q5_IP_FILE" "$NODE_VIA_FILE"
+  echo "  gitops-tools · streaming · cafe · wiki · front-office · back-office · guest-zone 네임스페이스, Helm 릴리스 $Q1_REL"
+  echo "  PV wiki-pv / $Q1_OUT · $Q4_FILE 삭제"
+  echo "  (setup 이 만든 Argo CD CRD 만 삭제. Gateway API 컨트롤러는 남겨둠 — 완전 제거: kubectl delete ns nginx-gateway)"
 }
 
 setup_gateway_api() {
@@ -403,19 +390,58 @@ YAML
   rm -rf "$d"
   echo "  Q3  cafe 에 menu(+menu-svc:80) · Secret cafe-tls · Ingress menu-ingress 배치"
 
-  # ── Q4: cert-manager CRD 만 설치 (컨트롤러 없음 → 파드는 생기지 않는다)
-  if kubectl get crd certificates.cert-manager.io &>/dev/null; then
-    echo "  Q4  cert-manager CRD 가 이미 있습니다 — 그대로 씁니다"
-  else
-    touch "$CM_MARK"
-    kubectl apply -f "$CM_CRDS_URL" &>/dev/null \
-      && echo "  Q4  cert-manager ${CM_VERSION} CRD 6개 설치 (CRD 만 — cert-manager 본체는 없음)" \
-      || echo -e "  ${RED}Q4  cert-manager CRD 설치 실패 (인터넷 연결 확인)${RESET}"
-  fi
-  # kubectl explain 은 CRD 가 Established 된 뒤에야 스키마를 보여 준다
-  kubectl wait --for=condition=Established crd/certificates.cert-manager.io --timeout=30s &>/dev/null || true
+  # ── Q4: 관리자가 미리 만든 PV + 볼륨이 emptyDir 인 Deployment 파일 (적용하지 않고 파일로만 둔다)
+  cat <<'YAML' | kubectl apply -f - &>/dev/null
+apiVersion: v1
+kind: Namespace
+metadata: { name: wiki }
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wiki-pv
+  labels: { app: wiki }
+spec:
+  storageClassName: wiki-hdd
+  capacity: { storage: 500Mi }
+  accessModes: ["ReadWriteOnce"]
+  persistentVolumeReclaimPolicy: Retain
+  hostPath: { path: /tmp/mock9-wiki-data, type: DirectoryOrCreate }
+YAML
+  rmf "$Q4_FILE"
+  cat > "$Q4_FILE" <<'YAML'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wiki
+  namespace: wiki
+  labels:
+    app: wiki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wiki
+  template:
+    metadata:
+      labels:
+        app: wiki
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.27
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: data
+        emptyDir: {}
+YAML
+  echo "  Q4  wiki 네임스페이스 · PV wiki-pv (500Mi · wiki-hdd) · $Q4_FILE (아직 적용 안 됨)"
 
-  # ── Q6: 보호할 orders-api 와 접속을 시도할 파드 두 개 + 정책 파일 세 개
+  # ── Q6: 보호할 orders-api 와 접속을 시도할 파드 세 개
   cat <<YAML | kubectl apply -f - &>/dev/null
 apiVersion: v1
 kind: Namespace
@@ -446,6 +472,14 @@ spec:
 ---
 apiVersion: v1
 kind: Pod
+metadata: { name: batch, namespace: back-office, labels: { app: batch } }
+spec:
+  affinity: ${AFF}
+  terminationGracePeriodSeconds: 1
+  containers: [ { name: c, image: "busybox:1.36", command: ["sh", "-c", "sleep 36000"] } ]
+---
+apiVersion: v1
+kind: Pod
 metadata: { name: web, namespace: front-office, labels: { app: web } }
 spec:
   affinity: ${AFF}
@@ -460,70 +494,7 @@ spec:
   terminationGracePeriodSeconds: 1
   containers: [ { name: c, image: "busybox:1.36", command: ["sh", "-c", "sleep 36000"] } ]
 YAML
-  rmf "$Q6_DIR"; mkdir -p "$Q6_DIR"
-  # policy-a — 너무 넓다: 출발지는 맞지만 ports 가 없어 모든 포트를 연다
-  cat > "$Q6_DIR/policy-a.yaml" <<'YAML'
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: orders-api-policy-a
-  namespace: back-office
-spec:
-  podSelector:
-    matchLabels:
-      app: orders-api
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: front-office
-YAML
-  # policy-b — 정답: front-office 네임스페이스에서 오는 TCP 80 만
-  cat > "$Q6_DIR/policy-b.yaml" <<'YAML'
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: orders-api-policy-b
-  namespace: back-office
-spec:
-  podSelector:
-    matchLabels:
-      app: orders-api
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: front-office
-      ports:
-        - protocol: TCP
-          port: 80
-YAML
-  # policy-c — 너무 넓다: namespaceSelector: {} = 모든 네임스페이스
-  cat > "$Q6_DIR/policy-c.yaml" <<'YAML'
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: orders-api-policy-c
-  namespace: back-office
-spec:
-  podSelector:
-    matchLabels:
-      app: orders-api
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 80
-YAML
-  ( cd "$Q6_DIR" && cksum policy-a.yaml policy-b.yaml policy-c.yaml ) > "$Q6_SUM" 2>/dev/null
-  echo "  Q6  back-office/orders-api(+Service) · front-office/web · guest-zone/visitor 배치, $Q6_DIR 에 policy-a~c.yaml"
+  echo "  Q6  back-office/orders-api(+Service) · back-office/batch · front-office/web · guest-zone/visitor 배치"
   return 0
 }
 
@@ -866,80 +837,91 @@ q3_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-# Q4 — CRD 목록 · 필드 설명을 파일로
+# Q4 — 기존 PV 에 붙는 PVC + Deployment 파일 수정
 # ══════════════════════════════════════════════════════════════
-q4_title() { echo "Save a CRD list and a CRD field description to files [15 pts]"; }
+q4_title() { echo "Bind a PVC to an existing PV and use it in a Deployment [15 pts]"; }
 q4_text() { cat <<'EOF'
-The cert-manager CRDs are installed in the cluster (only the CRDs, not
-cert-manager itself).
+An administrator has already created the PersistentVolume wiki-pv.
 
-  (a) Save the list of ALL cert-manager CRDs to
-        /tmp/mock9-crds.txt
-      using kubectl's default output format (do not use -o).
-      The file must not contain any other CRDs.
+  (a) In the wiki namespace create a PVC named wiki-pvc that binds to wiki-pv
+        request        300Mi
+        access mode    ReadWriteOnce
 
-  (b) Save the documentation of the field spec.privateKey of the
-      cert-manager Certificate resource to
-        /tmp/mock9-privatekey.txt
-      using kubectl.
+  (b) The file /tmp/mock9-wiki-deploy.yaml contains a Deployment that has
+      not been applied yet. Edit the file so that its volume uses the
+      PVC wiki-pvc, then apply it. The Pod must be Running.
+
+Do not modify the PersistentVolume.
 
 Verify:
-  cat /tmp/mock9-crds.txt
-  head /tmp/mock9-privatekey.txt
+  kubectl get pv wiki-pv
+  kubectl -n wiki get pvc wiki-pvc        -> Bound
+  kubectl -n wiki get pods                -> Running
 EOF
 }
-q4_title_ko() { echo "CRD 목록과 필드 설명을 파일로 저장 [15점]"; }
+q4_title_ko() { echo "기존 PV 에 붙는 PVC 만들고 Deployment 에 연결 [15점]"; }
 q4_text_ko() { cat <<'EOF'
-클러스터에 cert-manager 의 CRD 가 설치돼 있다 (CRD 만 — cert-manager 본체는 없다).
+관리자가 PersistentVolume wiki-pv 를 미리 만들어 두었다.
 
-  (a) cert-manager 의 CRD 목록 전부를
-        /tmp/mock9-crds.txt
-      에 kubectl 의 기본 출력 형식으로 저장한다 (-o 를 쓰지 않는다).
-      다른 CRD 가 섞이면 안 된다.
+  (a) wiki 네임스페이스에 PVC wiki-pvc 를 만들어 wiki-pv 에 바인딩한다
+        요청 용량    300Mi
+        접근 모드    ReadWriteOnce
 
-  (b) cert-manager 의 Certificate 리소스에서 spec.privateKey 필드의 설명을
-        /tmp/mock9-privatekey.txt
-      에 kubectl 로 뽑아 저장한다.
+  (b) /tmp/mock9-wiki-deploy.yaml 에는 아직 적용하지 않은 Deployment 가 들어 있다.
+      이 파일의 볼륨이 PVC wiki-pvc 를 쓰도록 고쳐서 적용한다.
+      파드가 Running 이어야 한다.
+
+PersistentVolume 은 수정하지 않는다.
 
 [확인]
-  cat /tmp/mock9-crds.txt
-  head /tmp/mock9-privatekey.txt
+  kubectl get pv wiki-pv
+  kubectl -n wiki get pvc wiki-pvc        → Bound
+  kubectl -n wiki get pods                → Running
 EOF
 }
 q4_hint() { cat <<'EOF'
-# (a) '기본 출력 형식' = -o 없이 나오는 표. grep 으로 cert-manager 만 거른다
-kubectl get crd | grep cert-manager > /tmp/mock9-crds.txt
-cat /tmp/mock9-crds.txt
+# PV 의 조건을 먼저 읽는다 — storageClassName · accessModes · 용량이 PVC 와 맞아야 붙는다
+kubectl get pv wiki-pv -o jsonpath='{.spec.storageClassName} {.spec.accessModes} {.spec.capacity.storage}{"\n"}'
 
-# (b) kubectl explain 은 CRD 의 스키마도 설명해 준다
-kubectl api-resources --api-group=cert-manager.io        # 리소스 이름 확인
-kubectl explain certificate.spec.privateKey > /tmp/mock9-privatekey.txt
-head /tmp/mock9-privatekey.txt
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wiki-pvc
+  namespace: wiki
+spec:
+  storageClassName: <PV 와 같게>
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 300Mi
+
+# 파일의 volumes 를 고친다 (emptyDir: {} 줄을 바꾼다)
+vi /tmp/mock9-wiki-deploy.yaml
+#   volumes:
+#   - name: data
+#     persistentVolumeClaim:
+#       claimName: wiki-pvc
+kubectl apply -f /tmp/mock9-wiki-deploy.yaml
+
+# PVC 가 Pending 이면 kubectl -n wiki describe pvc wiki-pvc 의 Events 를 본다
 EOF
 }
 q4_grade() {
-  # (a) CRD 목록 — 이름이 다 있고, 기본 형식(NAME  CREATED AT)이고, 다른 CRD 가 없어야 한다
-  check "$Q4_LIST 이 있다" "test -s $Q4_LIST" 1
-  local want got ts other has=1
-  [[ -s "$Q4_LIST" ]] && has=0
-  want=$(kubectl get crd -o name 2>/dev/null | grep -c 'cert-manager\.io$'); want="${want//[^0-9]/}"; want="${want:-0}"
-  got=$(grep -oE '^[a-z0-9.-]+\.cert-manager\.io' "$Q4_LIST" 2>/dev/null | sort -u | wc -l); got="${got//[^0-9]/}"; got="${got:-0}"
-  ts=$(grep -cE '^[a-z0-9.-]+\.cert-manager\.io[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$Q4_LIST" 2>/dev/null); ts="${ts//[^0-9]/}"; ts="${ts:-0}"
-  other=$(grep -vE '^NAME[[:space:]]|^[[:space:]]*$|cert-manager\.io' "$Q4_LIST" 2>/dev/null | wc -l); other="${other//[^0-9]/}"; other="${other:-0}"
-  check_result "(a) cert-manager CRD 가 모두 들어 있다 (${got}/${want})" \
-    "$([[ $has == 0 && "$want" -gt 0 && "$got" == "$want" ]] && echo 0 || echo 1)" \
-    "$([[ "$want" == "0" ]] && echo '클러스터에 cert-manager CRD 가 없다 — bash exam.sh start 로 다시 준비' || echo 'kubectl get crd | grep cert-manager')" 4
-  check_result "(a) 기본 출력 형식이다 (NAME · CREATED AT)" \
-    "$([[ $has == 0 && "$want" -gt 0 && "$ts" == "$want" ]] && echo 0 || echo 1)" "-o name / -o yaml 이 아니라 그냥 kubectl get crd 의 줄이어야 한다" 2
-  check_result "(a) 다른 CRD 가 섞이지 않았다" \
-    "$([[ $has == 0 && "$got" -gt 0 && "$other" == "0" ]] && echo 0 || echo 1)" \
-    "$([[ $has == 0 && "$got" -gt 0 ]] && echo "cert-manager 가 아닌 줄 ${other}개 — grep 으로 거른다" || echo 'cert-manager CRD 줄이 없다')" 2
-
-  # (b) kubectl explain 결과
-  check "$Q4_EXPLAIN 이 있다" "test -s $Q4_EXPLAIN" 1
-  check_output "(b) Certificate 리소스의 설명이다" "cat $Q4_EXPLAIN 2>/dev/null" '^KIND:[[:space:]]+Certificate$' 2
-  check_output "(b) spec.privateKey 필드의 설명이다" "cat $Q4_EXPLAIN 2>/dev/null" '^(FIELD|RESOURCE):[[:space:]]+privateKey' 2
-  check_output "(b) privateKey 의 하위 필드가 보인다 (rotationPolicy 등)" "cat $Q4_EXPLAIN 2>/dev/null" 'rotationPolicy' 1
+  local pvc="kubectl -n wiki get pvc wiki-pvc -o jsonpath"
+  check "PVC wiki-pvc 존재 (wiki)" "kubectl -n wiki get pvc wiki-pvc" 2
+  check_output "(a) 요청 300Mi · ReadWriteOnce" \
+    "$pvc='{.spec.resources.requests.storage}/{.spec.accessModes[0]}'" '^300Mi/ReadWriteOnce$' 2
+  check_output "(a) storageClassName 이 PV 와 같다 (wiki-hdd)" "$pvc='{.spec.storageClassName}'" '^wiki-hdd$' 2
+  check_output "(a) wiki-pv 에 Bound" "$pvc='{.status.phase}/{.spec.volumeName}'" '^Bound/wiki-pv$' 3
+  local fileok=1
+  [[ -f "$Q4_FILE" ]] && grep -qE "claimName[\"']?:[[:space:]]*[\"']?wiki-pvc" "$Q4_FILE" && fileok=0
+  check_result "(b) $Q4_FILE 에 claimName: wiki-pvc 를 넣었다" "$fileok" \
+    "파일을 직접 고쳐서 apply 한다 (kubectl edit 로는 파일이 바뀌지 않는다)" 1
+  check_output "(b) Deployment wiki 의 볼륨이 wiki-pvc 를 쓴다" \
+    "kubectl -n wiki get deployment wiki -o jsonpath='{.spec.template.spec.volumes[*].persistentVolumeClaim.claimName}'" '(^| )wiki-pvc( |$)' 3
+  wait_ready "-l app=wiki" wiki || true
+  check_output "(b) 파드가 Running · Ready (1/1)" \
+    "kubectl -n wiki get deployment wiki -o jsonpath='{.status.readyReplicas}/{.spec.replicas}'" '^1/1$' 2
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -1050,108 +1032,112 @@ q5_grade() {
 }
 
 # ══════════════════════════════════════════════════════════════
-# Q6 — NetworkPolicy 고르기
+# Q6 — NetworkPolicy 작성
 # ══════════════════════════════════════════════════════════════
-q6_title() { echo "NetworkPolicy: apply the least permissive of three [20 pts]"; }
+q6_title() { echo "NetworkPolicy: allow only one namespace [20 pts]"; }
 q6_text() { cat <<'EOF'
 In the back-office namespace the Pod orders-api (label app=orders-api) is
-exposed by the Service orders-api on port 80.
+exposed by the Service orders-api on port 80. Right now every Pod in the
+cluster can reach it.
 
-Requirement:
-  Only Pods in the front-office namespace may reach orders-api,
-  and only on TCP port 80.
+Create ONE NetworkPolicy in the back-office namespace.
 
-Three candidate manifests are prepared:
+  name      allow-front-office
+  applies   to Pods labelled app=orders-api
+  allows    ingress on TCP port 80 ONLY from Pods in the
+            front-office namespace
 
-  /tmp/mock9-netpol/policy-a.yaml
-  /tmp/mock9-netpol/policy-b.yaml
-  /tmp/mock9-netpol/policy-c.yaml
-
-Apply exactly ONE of them - the least permissive one that meets the
-requirement. Do not edit the files and do not create any other NetworkPolicy.
+Every other Pod - including other Pods in back-office - must be blocked.
 
 Test Pods already exist:
   front-office/web     -> must reach orders-api
   guest-zone/visitor   -> must be blocked
+  back-office/batch    -> must be blocked
 
 Verify:
+  kubectl get ns front-office --show-labels
   kubectl -n front-office exec web     -- wget -qO- -T 3 http://orders-api.back-office
   kubectl -n guest-zone   exec visitor -- wget -qO- -T 3 http://orders-api.back-office
+  kubectl -n back-office  exec batch   -- wget -qO- -T 3 http://orders-api
 EOF
 }
-q6_title_ko() { echo "NetworkPolicy — 세 개 중 최소 권한인 것 하나 적용 [20점]"; }
+q6_title_ko() { echo "NetworkPolicy — 한 네임스페이스에서만 허용 [20점]"; }
 q6_text_ko() { cat <<'EOF'
 back-office 네임스페이스의 파드 orders-api(레이블 app=orders-api)는
-Service orders-api 의 80 포트로 노출돼 있다.
+Service orders-api 의 80 포트로 노출돼 있다. 지금은 클러스터의 모든 파드가 접속할 수 있다.
 
-요구 사항:
-  front-office 네임스페이스의 파드만 orders-api 에 접근할 수 있고,
-  그것도 TCP 80 포트로만 가능해야 한다.
+back-office 네임스페이스에 NetworkPolicy 를 하나 만든다.
 
-후보 매니페스트 세 개가 준비돼 있다.
+  이름      allow-front-office
+  대상      레이블 app=orders-api 인 파드
+  허용      front-office 네임스페이스의 파드에서 오는 TCP 80 만
 
-  /tmp/mock9-netpol/policy-a.yaml
-  /tmp/mock9-netpol/policy-b.yaml
-  /tmp/mock9-netpol/policy-c.yaml
-
-이 중 정확히 하나만 적용한다 — 요구 사항을 만족하는 것 중 최소 권한인 것.
-파일을 고치지 말고, 다른 NetworkPolicy 를 따로 만들지도 않는다.
+그 밖의 파드는 back-office 안의 다른 파드까지 포함해 모두 막혀야 한다.
 
 테스트 파드가 이미 있다.
   front-office/web     → orders-api 에 닿아야 한다
   guest-zone/visitor   → 막혀야 한다
+  back-office/batch    → 막혀야 한다
 
 [확인]
+  kubectl get ns front-office --show-labels
   kubectl -n front-office exec web     -- wget -qO- -T 3 http://orders-api.back-office
   kubectl -n guest-zone   exec visitor -- wget -qO- -T 3 http://orders-api.back-office
+  kubectl -n back-office  exec batch   -- wget -qO- -T 3 http://orders-api
 EOF
 }
 q6_hint() { cat <<'EOF'
-# 1) 실제 레이블부터 본다 — 정책은 레이블로 고른다
-kubectl get ns front-office back-office --show-labels
-kubectl -n back-office get pods --show-labels
+# 네임스페이스에 자동으로 붙는 레이블을 쓴다
+kubectl get ns front-office --show-labels      # kubernetes.io/metadata.name=front-office
 
-# 2) 세 파일을 나란히 본다 — 대상(podSelector) · 출발지(from) · 포트(ports)
-cat /tmp/mock9-netpol/policy-*.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-front-office
+  namespace: back-office
+spec:
+  podSelector:
+    matchLabels:
+      app: orders-api
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: front-office
+    ports:
+    - protocol: TCP
+      port: 80
 
-# 3) 조건보다 넓은 것을 지운다
-#    namespaceSelector: {}   → 모든 네임스페이스
-#    ports 가 없다           → 모든 포트
-
-# 4) 하나만 적용. 잘못 적용했으면 kubectl -n back-office delete networkpolicy <이름>
+# kubernetes.io 문서의 "Network Policies" 페이지 예제를 복사해 고치면 빠르다
 EOF
 }
 q6_grade() {
-  local P=back-office
-  check "정답 정책 orders-api-policy-b 가 적용됐다" "kubectl -n $P get networkpolicy orders-api-policy-b" 6
-  local names n other=""
-  names=$(kubectl -n "$P" get networkpolicy -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
-  n=$(wc -w <<< "$names"); n="${n//[^0-9]/}"
-  # 어느 것이 왜 틀렸는지는 알려 주지 않는다 — 고르는 것이 문제다
-  [[ " $names " == *" orders-api-policy-a "* ]] && other+="policy-a "
-  [[ " $names " == *" orders-api-policy-c "* ]] && other+="policy-c "
-  # 아무것도 적용하지 않은 상태에서 점수가 새지 않게, 정책이 하나라도 있을 때만 통과
-  check_result "다른 후보(policy-a · policy-c)는 적용하지 않았다" \
-    "$([[ "${n:-0}" -ge 1 && -z "$other" ]] && echo 0 || echo 1)" \
-    "$([[ "${n:-0}" -lt 1 ]] && echo '적용된 정책이 없다' || echo "적용돼 있음: ${other}— kubectl delete 로 지운다")" 3
-  check_result "back-office 의 NetworkPolicy 가 정답 하나뿐이다" \
-    "$([[ "$names" == "orders-api-policy-b" ]] && echo 0 || echo 1)" "현재 ${n:-0}개: ${names:-없음}" 3
-  check_result "준비된 파일을 고치지 않았다" \
-    "$([[ "${n:-0}" -ge 1 && -s "$Q6_SUM" ]] && ( cd "$Q6_DIR" 2>/dev/null && cksum policy-a.yaml policy-b.yaml policy-c.yaml 2>/dev/null ) | diff -q - "$Q6_SUM" &>/dev/null && echo 0 || echo 1)" \
-    "$([[ "${n:-0}" -lt 1 ]] && echo '적용된 정책이 없다' || echo "$Q6_DIR 의 파일이 바뀌었거나 없다 — bash exam.sh start 로 다시 준비")" 2
+  local P=back-office NP="kubectl -n back-office get networkpolicy allow-front-office -o jsonpath"
+  local has=1; kubectl -n "$P" get networkpolicy allow-front-office &>/dev/null && has=0
+  check "NetworkPolicy allow-front-office 존재" "kubectl -n $P get networkpolicy allow-front-office" 3
+  check_output "대상이 app=orders-api" "$NP='{.spec.podSelector.matchLabels.app}'" '^orders-api$' 3
+  check_output "허용 포트 TCP 80" \
+    "$NP='{range .spec.ingress[*].ports[*]}{.protocol}:{.port}{\" \"}{end}'" '(^| )TCP:80( |$)' 2
 
-  # 실제 연결 — 허용 경로가 살아 있고 정책이 걸려 있을 때만 '막힘' 을 믿는다
+  # 실제 연결 — 정책이 있고 허용 경로가 살아 있을 때만 '막힘' 을 믿는다 (orders-api 가 죽어서 안 닿는 것과 구분)
   wait_ready orders-api "$P" || true
-  local probe='wget -qO- -T 3 http://orders-api.back-office.svc.cluster.local 2>/dev/null' a b served=1
+  local probe='wget -qO- -T 3 http://orders-api.back-office.svc.cluster.local 2>/dev/null' a b c served=1
   a=$(kubectl -n front-office exec web     -- sh -c "$probe" 2>/dev/null)
   b=$(kubectl -n guest-zone   exec visitor -- sh -c "$probe" 2>/dev/null)
+  c=$(kubectl -n "$P"         exec batch   -- sh -c "$probe" 2>/dev/null)
   grep -qi nginx <<< "$a" && served=0
+  local none="allow-front-office 정책이 없다"
   check_result "front-office/web → orders-api:80 응답 (허용)" \
-    "$([[ "${n:-0}" -ge 1 && $served == 0 ]] && echo 0 || echo 1)" \
-    "$([[ "${n:-0}" -lt 1 ]] && echo '적용된 정책이 없다' || echo '응답 없음 — 적용한 정책이 front-office 를 실제로 고르는지 확인')" 3
-  check_result "guest-zone/visitor → orders-api 차단" \
-    "$([[ "${n:-0}" -ge 1 && $served == 0 ]] && ! grep -qi nginx <<< "$b" && echo 0 || echo 1)" \
-    "$([[ "${n:-0}" -lt 1 ]] && echo '적용된 정책이 없다' || { [[ $served != 0 ]] && echo '허용 경로부터 확인' || echo 'visitor 가 닿는다 — 요구보다 넓게 여는 정책이다'; })" 3
+    "$([[ $has == 0 && $served == 0 ]] && echo 0 || echo 1)" \
+    "$([[ $has != 0 ]] && echo "$none" || echo '응답 없음 — namespaceSelector 의 레이블이 front-office 에 실제로 붙어 있는지 확인')" 4
+  check_result "guest-zone/visitor → orders-api 차단 (다른 네임스페이스)" \
+    "$([[ $has == 0 && $served == 0 ]] && ! grep -qi nginx <<< "$b" && echo 0 || echo 1)" \
+    "$([[ $has != 0 ]] && echo "$none" || { [[ $served != 0 ]] && echo '허용 경로부터 확인' || echo 'visitor 가 닿는다 — 네임스페이스를 너무 넓게 골랐다'; })" 4
+  check_result "back-office/batch → orders-api 차단 (같은 네임스페이스)" \
+    "$([[ $has == 0 && $served == 0 ]] && ! grep -qi nginx <<< "$c" && echo 0 || echo 1)" \
+    "$([[ $has != 0 ]] && echo "$none" || { [[ $served != 0 ]] && echo '허용 경로부터 확인' || echo 'batch 가 닿는다 — from 에 같은 네임스페이스 파드까지 들어 있다'; })" 4
 }
 
 exam_main "$@"
