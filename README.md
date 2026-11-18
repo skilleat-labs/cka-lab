@@ -125,6 +125,7 @@ bash verify.sh                # ③ 자동 채점 — 항목별 PASS/FAIL
 | `mock-6` | 2026 출제 주제 — PriorityClass · Helm template · 사이드카 · NetworkPolicy · 기본 StorageClass | 20분 |
 | `mock-7` | 실제 동작까지 보는 5문항 — PVC 마운트 · NetworkPolicy(AND) · Gateway API 경로 · ResourceQuota+requests/limits · PriorityClass 선점 | 40분 |
 | `mock-8` | 합격 후기 상위 7유형 — Helm · HPA · Ingress→Gateway API · 기본 StorageClass · kubelet 이 멈춘 워커 · NetworkPolicy 고르기 · PriorityClass | 40분 |
+| `mock-9` | 시험 전 마지막 점검 — 출제 유형 문서 그대로 풀리는 6유형: Helm · HPA · Ingress→Gateway API · CRD · kubelet 이 멈춘 워커 · NetworkPolicy 고르기 | 35분 |
 
 ### Final Test (`final-test`)
 
