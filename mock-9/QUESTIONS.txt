@@ -9,7 +9,7 @@
   정리 :  bash exam.sh clean
 
   출제 유형 문서의 풀이를 공부했으면 그대로 풀리는 문제들이다. 이름과 값만 다르다.
-  start 가 Argo CD · cert-manager CRD 와 Gateway API 컨트롤러를 설치한다 — 인터넷 필요, 최대 3분.
+  start 가 Argo CD CRD 와 Gateway API 컨트롤러를 설치한다 — 인터넷 필요, 최대 3분.
   Q5 에 들어가면 워커 노드 하나의 kubelet 이 실제로 멈춘다. clean · 마감 · 다시 start 할 때 되살린다.
   문제마다 네임스페이스가 따로라 순서를 바꿔 풀어도 된다.
   35분이 지나면 남은 문제는 0점으로 마감된다.
@@ -91,23 +91,25 @@
 
 
 ----------------------------------------------------------------
- Q4. CRD 목록과 필드 설명을 파일로 저장            [Architecture · 15점]
+ Q4. 기존 PV 에 붙는 PVC 만들고 Deployment 에 연결      [Storage · 15점]
 ----------------------------------------------------------------
 
-  클러스터에 cert-manager 의 CRD 가 설치돼 있다 (CRD 만 — cert-manager 본체는 없다).
+  관리자가 PersistentVolume wiki-pv 를 미리 만들어 두었다.
 
-    (a) cert-manager 의 CRD 목록 전부를
-          /tmp/mock9-crds.txt
-        에 kubectl 의 기본 출력 형식으로 저장한다 (-o 를 쓰지 않는다).
-        다른 CRD 가 섞이면 안 된다.
+    (a) wiki 네임스페이스에 PVC wiki-pvc 를 만들어 wiki-pv 에 바인딩한다
+          요청 용량    300Mi
+          접근 모드    ReadWriteOnce
 
-    (b) cert-manager 의 Certificate 리소스에서 spec.privateKey 필드의 설명을
-          /tmp/mock9-privatekey.txt
-        에 kubectl 로 뽑아 저장한다.
+    (b) /tmp/mock9-wiki-deploy.yaml 에는 아직 적용하지 않은 Deployment 가 들어 있다.
+        이 파일의 볼륨이 PVC wiki-pvc 를 쓰도록 고쳐서 적용한다.
+        파드가 Running 이어야 한다.
+
+  PersistentVolume 은 수정하지 않는다.
 
   [확인]
-    cat /tmp/mock9-crds.txt
-    head /tmp/mock9-privatekey.txt
+    kubectl get pv wiki-pv
+    kubectl -n wiki get pvc wiki-pvc        → Bound
+    kubectl -n wiki get pods                → Running
 
 
 ----------------------------------------------------------------
@@ -128,29 +130,27 @@
 
 
 ----------------------------------------------------------------
- Q6. NetworkPolicy — 세 개 중 최소 권한인 것 하나 적용      [Net · 20점]
+ Q6. NetworkPolicy — 한 네임스페이스에서만 허용              [Net · 20점]
 ----------------------------------------------------------------
 
   back-office 네임스페이스의 파드 orders-api(레이블 app=orders-api)는
-  Service orders-api 의 80 포트로 노출돼 있다.
+  Service orders-api 의 80 포트로 노출돼 있다. 지금은 클러스터의 모든 파드가 접속할 수 있다.
 
-  요구 사항:
-    front-office 네임스페이스의 파드만 orders-api 에 접근할 수 있고,
-    그것도 TCP 80 포트로만 가능해야 한다.
+  back-office 네임스페이스에 NetworkPolicy 를 하나 만든다.
 
-  후보 매니페스트 세 개가 준비돼 있다.
+    이름      allow-front-office
+    대상      레이블 app=orders-api 인 파드
+    허용      front-office 네임스페이스의 파드에서 오는 TCP 80 만
 
-    /tmp/mock9-netpol/policy-a.yaml
-    /tmp/mock9-netpol/policy-b.yaml
-    /tmp/mock9-netpol/policy-c.yaml
-
-  이 중 정확히 하나만 적용한다 — 요구 사항을 만족하는 것 중 최소 권한인 것.
-  파일을 고치지 말고, 다른 NetworkPolicy 를 따로 만들지도 않는다.
+  그 밖의 파드는 back-office 안의 다른 파드까지 포함해 모두 막혀야 한다.
 
   테스트 파드가 이미 있다.
     front-office/web     → orders-api 에 닿아야 한다
     guest-zone/visitor   → 막혀야 한다
+    back-office/batch    → 막혀야 한다
 
   [확인]
+    kubectl get ns front-office --show-labels
     kubectl -n front-office exec web     -- wget -qO- -T 3 http://orders-api.back-office
     kubectl -n guest-zone   exec visitor -- wget -qO- -T 3 http://orders-api.back-office
+    kubectl -n back-office  exec batch   -- wget -qO- -T 3 http://orders-api

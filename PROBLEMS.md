@@ -36,7 +36,7 @@
 | `mock-5` | 모의고사 | 7 | 100점 | 전 범위 (목표 50분) |
 | `mock-7` | 모의고사 | 5 | 100점 | PVC 마운트 · NetworkPolicy(AND) · Gateway API 경로 · ResourceQuota+requests/limits · PriorityClass 선점 (목표 40분) |
 | `mock-8` | 모의고사 | 7 | 100점 | 후기 상위 7유형 — Helm template+install · HPA · Ingress→Gateway API · 기본 StorageClass · kubelet 이 멈춘 워커 · NetworkPolicy 고르기 · PriorityClass (목표 40분) |
-| `mock-9` | 모의고사 | 6 | 100점 | 시험 전 마지막 점검 — 출제 유형 문서 그대로 풀리는 6유형: Helm · HPA · Ingress→Gateway API · CRD 목록/explain · kubelet 이 멈춘 워커 · NetworkPolicy 고르기 (목표 35분) |
+| `mock-9` | 모의고사 | 6 | 100점 | 시험 전 마지막 점검 — 출제 유형 문서 그대로 풀리는 6유형: Helm · HPA · Ingress→Gateway API · PV/PVC · kubelet 이 멈춘 워커 · NetworkPolicy 작성 (목표 35분) |
 
 > 채점 항목 수는 `exam.sh` 가 검사하는 개별 체크 개수다. 모의고사만 100점 배점제를 쓴다.
 > 강의 실습 10개는 2026-09-22 에 `exam.sh` 순차 진행형으로 전환하면서 채점을 더 촘촘하게 고쳤다
@@ -336,16 +336,16 @@ Gateway API 설치가 안 된 환경에서는 Q3 가 자동으로 제외되고 2
 
 ### mock-9 — 시험 전 마지막 점검 (35분)
 
-출제 유형 문서의 풀이를 공부했으면 그대로 풀리는 형태 — 이름과 값만 바꿨고 문서에 없는 함정은 없다. mock-8 보다 쉽다. 인터넷 필요(Q1 · Q3 · Q4). Q5 는 워커의 kubelet 을 실제로 멈추고 `clean` · 마감 · 다시 `start` 때 되살린다.
+출제 유형 문서의 풀이를 공부했으면 그대로 풀리는 형태 — 이름과 값만 바꿨고 문서에 없는 함정은 없다. mock-8 보다 쉽다. 인터넷 필요(Q1 · Q3). Q5 는 워커의 kubelet 을 실제로 멈추고 `clean` · 마감 · 다시 `start` 때 되살린다.
 
 | 문제 | 내용 | 도메인 | 배점 |
 |------|------|--------|------|
 | Q1 | argo/argo-cd 7.7.0 을 릴리스 `argocd` · `gitops-tools` 로 렌더링(`/tmp/mock9-argocd.yaml`, CRD 제외) + 같은 조건으로 설치 | Architecture | 15 |
 | Q2 | `streaming/video-api` 에 HPA `video-api-scaler` — 1~5, CPU 70%, 스케일 다운 안정화 60초 | Workloads | 15 |
 | Q3 | `cafe` 의 Ingress `menu-ingress`(HTTPS)를 Gateway `cafe-gateway` + HTTPRoute `cafe-route` 로 옮기고 Ingress 삭제 | Networking | 20 |
-| Q4 | cert-manager CRD 목록을 `/tmp/mock9-crds.txt` 에, `certificate.spec.privateKey` 설명을 `/tmp/mock9-privatekey.txt` 에 | Architecture | 15 |
+| Q4 | 기존 PV `wiki-pv` 에 붙는 PVC `wiki-pvc`(300Mi) 를 만들고 `/tmp/mock9-wiki-deploy.yaml` 을 고쳐 적용 | Storage | 15 |
 | Q5 | NotReady 워커 복구 — kubelet 이 disabled + 정지 (`enable --now`) | Troubleshooting | 15 |
-| Q6 | `/tmp/mock9-netpol/policy-a~c.yaml` 중 최소 권한인 것 하나 — front-office 네임스페이스만 `back-office/orders-api` 의 TCP 80 으로 | Networking | 20 |
+| Q6 | NetworkPolicy `allow-front-office` 작성 — front-office 네임스페이스만 `back-office/orders-api` 의 TCP 80 으로 | Networking | 20 |
 
 ---
 
